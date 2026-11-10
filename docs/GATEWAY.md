@@ -21,6 +21,8 @@ The installed roles are:
 
 The updater releases Nginx's old 443 listener before starting the gateway. It installs Ubuntu's `python3-aiohttp` and `python3-cryptography` packages and a dedicated `accessgate-gateway` service user. Only the port-binding capability is granted; the gateway runs without root, has a read-only application/configuration filesystem and can write only its private runtime directory. Known reset cleanup includes the gateway service.
 
+Version 0.5.1 also gives that account group-read access to **both** retained portal TLS files. A legacy portal.crt can be root:root 0640 under the original installer umask, even though its public certificate is safe to serve to clients. Before changing listeners the installer runs a real `runuser -u accessgate-gateway -- /usr/bin/python3 -m access_gate.gateway --check` probe from the application directory. This loads its configuration, issuing credentials and portal TLS pair without starting a listener. It detects missing/denied files immediately and preserves their contents and the existing root trust.
+
 An unrelated/custom 443 listener must not occupy this VM's address. Do not install the earlier optional Nginx site example alongside the built-in gateway; remove that reviewed example's site if you previously enabled it. The installer does not delete unrelated Nginx sites or firewall settings. Legacy 0.3 interception still needs its matching rollback before updating, as described in the README.
 
 ## DNS and device prerequisites
@@ -97,6 +99,13 @@ nginx -t
 ```
 
 Unknown-name TLS rejection can mean a disabled/missing rule, an unreachable policy API or an expiring issuer. HTTP 502 means authorization/origin connectivity or verified upstream TLS failed; inspect the actual path rather than disabling verification. Gateway access/body logging is disabled; do not add logs containing codes, cookies, ticket query strings or request bodies.
+
+If 0.5.0 failed with `PermissionError` in `load_cert_chain()` and port 443 is refused, run the normal update to 0.5.1 or later. It repairs the retained portal TLS ownership/modes and clears the owned gateway unit's failed state. No reset, CA replacement or new code database is needed. To check credential access manually after updating:
+
+```bash
+cd /opt/access-gate
+runuser -u accessgate-gateway -- /usr/bin/python3 -m access_gate.gateway --check
+```
 
 ## State, renewal and rollback
 

@@ -1,5 +1,6 @@
 """DNS-directed HTTPS gateway for the managed domain list and browser grants."""
 import asyncio
+import argparse
 import contextlib
 import http.client
 import ipaddress
@@ -325,6 +326,21 @@ async def serve(config):
     finally: await runner.cleanup()
 
 
-if __name__ == '__main__':
-    configuration = json.loads(Path('/etc/access-gate/gateway/gateway.json').read_text())
-    asyncio.run(serve(configuration))
+def main(argv=None, configuration_path=Path('/etc/access-gate/gateway/gateway.json')):
+    parser = argparse.ArgumentParser(description='Access Gate HTTPS gateway')
+    parser.add_argument('--check', action='store_true', help='Validate credential access/TLS without binding ports')
+    args = parser.parse_args(argv)
+    try:
+        configuration = json.loads(Path(configuration_path).read_text())
+        if args.check:
+            for name in ('issuer_cert', 'issuer_key', 'portal_cert', 'portal_key'):
+                with Path(configuration[name]).open('rb') as handle: handle.read(1)
+            Gateway(configuration)
+            print('Gateway credentials are readable and the TLS certificate/key pair loads successfully.')
+        else:
+            asyncio.run(serve(configuration))
+    except (OSError, ValueError) as exc:
+        raise SystemExit('Gateway startup/check failed: ' + str(exc)) from exc
+
+
+if __name__ == '__main__': main()

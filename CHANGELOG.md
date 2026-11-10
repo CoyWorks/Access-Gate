@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.1
+
+- Fix gateway startup when the retained portal certificate was created with restrictive permissions, such as root:root 0640 under the installer's umask 027. Normalize both portal.crt and portal.key to root:accessgate-gateway 0640 while preserving their contents and the root/issuing CA.
+- Refuse symlinked portal TLS files before changing their ownership/mode. Keep the original root CA directory/private key permissions untouched.
+- Add a no-listener `python3 -m access_gate.gateway --check` credential/TLS probe and run it as the actual gateway service user before switching listeners. Install its runuser dependency and reset only the owned gateway unit's failed/start-limit state before restart.
+- Add regression coverage for restrictive legacy certificate modes, unchanged keys/certificates/root permissions, symlink refusal and the no-bind credential probe.
+
 ## 0.5.0
 
 - Install the client-facing HTTPS gateway on 10.40.22.5:443. Generate short-lived exact-host certificates on demand only for currently restricted names, including deep subdomains, with a bounded in-memory TLS-context cache.

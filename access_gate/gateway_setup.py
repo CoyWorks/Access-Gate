@@ -30,7 +30,8 @@ def prepare(root=Path('/'), gid=None):
     if directory.is_symlink(): raise ValueError('Gateway configuration must not be a symlink.')
     directory.mkdir(mode=0o750, exist_ok=True)
     files = [directory/name for name in ('issuer.crt', 'issuer.key', 'gateway.json')]
-    if any(path.is_symlink() for path in files): raise ValueError('Gateway state files must not be symlinks.')
+    portal_files = [base/'portal.crt', base/'portal.key']
+    if any(path.is_symlink() for path in files + portal_files): raise ValueError('Gateway state and TLS files must not be symlinks.')
     cert_path, key_path, config_path = files
     if cert_path.exists() != key_path.exists(): raise ValueError('Gateway issuer state is incomplete. Restore the saved matching key/certificate.')
     renew = not cert_path.exists()
@@ -71,7 +72,9 @@ def prepare(root=Path('/'), gid=None):
     atomic_write(config_path, json.dumps(gateway, indent=2)+'\n')
     if gid is None: gid = grp.getgrnam('accessgate-gateway').gr_gid
     os.chown(directory, 0 if os.geteuid()==0 else os.geteuid(), gid); directory.chmod(0o750)
-    for path in files + [base/'portal.key']:
+    # OpenSSL under the installer's umask 027 can leave an existing public certificate
+    # root:root 0640. The separate gateway needs group access to BOTH cert and key.
+    for path in files + portal_files:
         os.chown(path, 0 if os.geteuid()==0 else os.geteuid(), gid); path.chmod(0o640)
     return gateway
 

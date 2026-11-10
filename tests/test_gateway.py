@@ -21,7 +21,7 @@ from werkzeug.serving import make_server, WSGIRequestHandler
 from cryptography import x509
 
 from access_gate.core import Store
-from access_gate.gateway import Gateway, BootstrapResolver, PublicResolver, public_ip, safe_headers, answer_addresses
+from access_gate.gateway import Gateway, BootstrapResolver, PublicResolver, public_ip, safe_headers, answer_addresses, main
 from access_gate.gateway_tls import CertificateCache, server_context
 from access_gate.gateway_setup import prepare
 from access_gate.web import create_app
@@ -75,6 +75,40 @@ class GatewayConfigurationTests(unittest.TestCase):
         with self.assertRaises(ValueError): prepare(self.root, gid=os.getgid())
         (base/'issuer.key').symlink_to(self.root/'outside.key')
         with self.assertRaises(ValueError): prepare(self.root, gid=os.getgid())
+
+    def test_legacy_restricted_portal_certificate_gets_gateway_group_access_without_regeneration(self):
+        base = self.root/'etc/access-gate'
+        certificate = (base/'portal.crt').read_bytes()
+        protected = {name: (base/name).read_bytes() for name in ('portal.key', 'ca/root.key', 'ca/root.crt', 'gateway/issuer.key')}
+        (base/'portal.crt').chmod(0o600)
+        (base/'portal.key').chmod(0o600)
+        (base/'ca').chmod(0o700); (base/'ca/root.key').chmod(0o600)
+        prepare(self.root, gid=os.getgid())
+        for name in ('portal.crt', 'portal.key'):
+            metadata = (base/name).stat()
+            self.assertEqual(metadata.st_mode & 0o777, 0o640)
+            self.assertEqual(metadata.st_gid, os.getgid())
+        self.assertEqual((base/'portal.crt').read_bytes(), certificate)
+        self.assertEqual(protected, {name: (base/name).read_bytes() for name in protected})
+        self.assertEqual((base/'ca').stat().st_mode & 0o777, 0o700)
+        self.assertEqual((base/'ca/root.key').stat().st_mode & 0o777, 0o600)
+        self.assertIsInstance(CertificateCache(self.config, lambda host: True).context, ssl.SSLContext)
+
+    def test_credential_check_loads_tls_and_does_not_start_a_listener(self):
+        configuration = self.root/'check.json'; configuration.write_text(json.dumps(self.config))
+        with patch('access_gate.gateway.asyncio.run') as run:
+            main(['--check'], configuration_path=configuration)
+            run.assert_not_called()
+        (Path(self.config['portal_cert'])).unlink()
+        with self.assertRaisesRegex(SystemExit, 'portal.crt'):
+            main(['--check'], configuration_path=configuration)
+
+    def test_portal_tls_symlinks_are_refused_before_permissions_change(self):
+        base = self.root/'etc/access-gate'
+        outside = self.root/'outside.crt'; outside.write_bytes((base/'portal.crt').read_bytes()); outside.chmod(0o600)
+        (base/'portal.crt').unlink(); (base/'portal.crt').symlink_to(outside)
+        with self.assertRaises(ValueError): prepare(self.root, gid=os.getgid())
+        self.assertEqual(outside.stat().st_mode & 0o777, 0o600)
 
     def test_cache_is_bounded_and_temporary_private_keys_are_removed(self):
         cache = CertificateCache(self.config, lambda host: True); cache.limit = 2

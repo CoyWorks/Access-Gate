@@ -55,7 +55,7 @@ fi
 /usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" check
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography gunicorn openssl ca-certificates curl iproute2
+apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography gunicorn openssl ca-certificates curl iproute2 util-linux
 if [[ $resume_install -eq 1 ]]; then
     for unit in access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
@@ -130,6 +130,7 @@ chown root:root /etc/access-gate/acl-token
 chmod 0600 /etc/access-gate/acl-token
 chown -R accessgate:accessgate /var/lib/access-gate/data
 /usr/bin/python3 -m access_gate.gateway_setup
+runuser -u accessgate-gateway -- /usr/bin/python3 -m access_gate.gateway --check
 
 cat > /etc/nginx/sites-available/access-gate <<'NGINX'
 server {
@@ -208,6 +209,7 @@ UNIT
 nginx -t
 systemctl daemon-reload
 systemctl enable nginx access-gate.service access-gate-gateway.service
+systemctl reset-failed access-gate-gateway.service
 # Nginx releases its former HTTPS listener before the new gateway binds port 443.
 systemctl restart nginx
 systemctl restart access-gate.service
