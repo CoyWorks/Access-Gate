@@ -235,3 +235,5 @@ Tests cover DNS export/import, large lists, migration, code/batch behavior, inde
 ## Backup and restore
 
 Administration now provides encrypted backups and validated restore jobs. Restoring revokes all saved codes and sessions. See [recovery instructions](docs/RECOVERY.md).
+
+Code generation also supports [printable/PDF cards and QR prefill](docs/EXPORTS.md).

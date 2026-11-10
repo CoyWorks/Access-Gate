@@ -542,13 +542,28 @@ def create_app(config=None):
         try:
             if 'week' in request.form and 'validity_value' not in request.form:
                 raise GateError('This form is from an older version. Reload Create batch before generating codes.')
+            from .exports import options
+            export_kind,include_qr=options(request.form.get('export','text'),request.form.get('qr')=='1',request.form.get('count','10'))
             batch_id,codes = store.create_batch(name=request.form.get('name',''),
                 count=request.form.get('count','10'),validity_value=request.form.get('validity_value','7'),
                 validity_unit=request.form.get('validity_unit','days'),access_value=request.form.get('access_value','15'),
                 access_unit=request.form.get('access_unit','minutes'))
         except GateError as exc:
             return render_template('new_batch.html',csrf=csrf(),values=request.form,error=str(exc)),400
-        return render_template('batch.html',codes=codes,batch=store.batch_detail(batch_id))
+        details=store.batch_detail(batch_id)
+        try:
+            if export_kind=='pdf':
+                from .exports import pdf_cards
+                import io
+                return send_file(io.BytesIO(pdf_cards(codes,details,portal_url,include_qr)),mimetype='application/pdf',as_attachment=True,download_name='access-codes-'+batch_id+'.pdf',max_age=0)
+            if export_kind=='print':
+                from .exports import qr_svg,qr_url
+                cards=[dict(code=code,qr=qr_svg(qr_url(portal_url,code)) if include_qr else None) for code in codes]
+                return render_template('print_codes.html',cards=cards,batch=details,portal_url=portal_url)
+        except Exception:
+            # The batch already exists: preserve this one-time output, never create another.
+            return render_template('batch.html',codes=codes,batch=details,export_error='Export failed. This batch was generated once. Save the codes below before leaving; they cannot be recovered later.'),200
+        return render_template('batch.html',codes=codes,batch=details)
 
     @app.get('/admin/batches/<batch_id>')
     @admin_only

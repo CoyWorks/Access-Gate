@@ -142,3 +142,12 @@ if(requestDecision){
   };
   refresh();setInterval(refresh,3000);
 }
+
+// A QR fragment is never a redemption request and is removed before other navigation.
+const codeInput=document.getElementById('code');
+if(codeInput && window.location.hash && /^#code=[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$/.test(window.location.hash)){
+  codeInput.value=window.location.hash.slice(6);
+  window.history.replaceState(null,'',window.location.pathname+window.location.search);
+}
+const printCards=document.getElementById('print-cards');
+if(printCards)printCards.addEventListener('click',()=>window.print());

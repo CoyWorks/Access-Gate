@@ -54,3 +54,6 @@ Requests, code history and cleanup: [OPERATIONS.md](docs/OPERATIONS.md).
 
 ### 0.10.0 — #14 delivered
 Encrypted SQLite/CA/configuration backup, preflight and confirmed fail-closed restore are implemented. #3 and #5 signed off by the operator on 11 November 2026. See docs/RECOVERY.md for the recovery exercise and target checks.
+
+### 0.11.0 — #15 delivered
+One-time printable/PDF exports with optional local QR codes, explicit redemption and text fallback. Profile labels remain a dependency of future #11; current cards describe the current global restricted-domain scope.

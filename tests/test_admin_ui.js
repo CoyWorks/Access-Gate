@@ -6,18 +6,22 @@ class Element {
   append(...items){this.children.push(...items);}
   replaceChildren(...items){this.children=items;}
 }
-async function scenario(ids,answer){
+async function scenario(ids,answer,fragment){
   const elements=Object.fromEntries(ids.map(id=>[id,new Element()])),intervals=[],navigations=[];
   if(elements['request-decision'])elements['request-decision'].dataset.requestId='a'.repeat(32);
   if(elements['sessions-panel'])Object.assign(elements['sessions-panel'].dataset,{state:'active',page:'1'});
   const document={getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),querySelectorAll:()=>[]};
   let fail=false;
-  const context={document,Intl,Date,URL,URLSearchParams,AbortSignal,fetch:async()=>{if(fail)throw Error();return {ok:true,json:async()=>answer};},setInterval:fn=>intervals.push(fn),window:{location:{href:'https://portal.example/request-access',origin:'https://portal.example',replace:url=>navigations.push(url)}}};
+  const cleared=[];
+  const context={document,Intl,Date,URL,URLSearchParams,AbortSignal,fetch:async()=>{if(fail)throw Error();return {ok:true,json:async()=>answer};},setInterval:fn=>intervals.push(fn),window:{history:{replaceState:(_state,_title,url)=>cleared.push(url)},location:{hash:fragment||'',pathname:'/',search:'',href:'https://portal.example/request-access',origin:'https://portal.example',replace:url=>navigations.push(url)}}};
   vm.runInNewContext(fs.readFileSync('static/gate.js','utf8'),context);
   await new Promise(resolve=>setImmediate(resolve));
-  return {elements,intervals,navigations,fail:()=>{fail=true;}};
+  return {elements,intervals,navigations,cleared,fail:()=>{fail=true;}};
 }
 (async()=>{
+ const qr=await scenario(['code'],{},'#code=ABCD-2345');
+ assert.equal(qr.elements.code.value,'ABCD-2345');assert.deepEqual(qr.cleared,['/']);assert.equal(qr.navigations.length,0);
+ const invalidQR=await scenario(['code'],{},'#code=<script>');assert.equal(invalidQR.elements.code.value,undefined);
  const approved=await scenario(['request-decision','request-decision-status','request-continue'],{state:'approved',active:true,expires:Date.now()/1000+900,continue_url:'/request-access/'+'a'.repeat(32)+'/continue'});
  assert.equal(approved.navigations[0],'https://portal.example/request-access/'+'a'.repeat(32)+'/continue');
  assert.equal(approved.elements['request-continue'].hidden,false);

@@ -1,3 +1,8 @@
+# 0.11.0
+
+- Add one-time printable A4/PDF code cards and locally generated optional QR prefill (#15).
+- Keep single-use code storage; rendering failures retain the original generated codes as text.
+
 # 0.10.0
 
 - Add encrypted consistent backups, private restore preflight and confirmed fail-closed recovery through a fixed-action maintenance worker (#14).

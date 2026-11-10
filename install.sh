@@ -55,7 +55,7 @@ fi
 /usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" check
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography gunicorn openssl ca-certificates curl iproute2 util-linux
+apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core gunicorn openssl ca-certificates curl iproute2 util-linux
 if [[ $resume_install -eq 1 ]]; then
     for unit in access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi

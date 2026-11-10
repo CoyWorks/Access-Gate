@@ -5,3 +5,6 @@ main{max-width:1320px}nav,.page-heading,.toolbar,.pagination,.status-totals{disp
 .health-detail{white-space:normal;min-width:260px;max-width:700px}code{overflow-wrap:anywhere}#session-refresh,#health-time{color:#b2bfd4}
 
 .request-reason{white-space:pre-wrap;overflow-wrap:anywhere}.toolbar input[type=date]{max-width:175px;margin:0}.toolbar select{max-width:250px}
+
+input[type=checkbox]{display:inline-block;width:auto;margin:0 8px 0 0}.code-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.code-card{color:#111;background:white;border:1px solid #999;border-radius:8px;padding:16px;break-inside:avoid;overflow-wrap:anywhere}.code-card h2{font-size:1.1rem;margin:6px 0}.code-card p{font-size:.8rem;margin:6px 0}.card-code{font-size:1.6rem;letter-spacing:.08em}.code-qr{width:96px;height:96px}.code-card a{color:#111}.code-card small{color:#333}.code-card header{font-size:.75rem;letter-spacing:.15em}
+@page{size:A4;margin:10mm}@media print{html,body{background:white;color:black}main{margin:0;padding:0;max-width:none}.brand,nav,.no-print{display:none!important}.code-cards{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4mm}.code-card{height:88mm;padding:4mm;border-radius:2mm;page-break-inside:avoid;break-inside:avoid}.code-card:nth-child(6n){break-after:page}.code-card a{text-decoration:none}}
