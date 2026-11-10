@@ -2,7 +2,7 @@
 
 A local pilot for temporary access to selected websites using single-use weekly codes. The interface, installer messages and documentation are in English.
 
-**Version:** 0.1.3. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
+**Version:** 0.1.4. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
 
 ## Download and run from /root
 
@@ -72,7 +72,9 @@ bash install.sh resume
 bash install.sh update
 ```
 
-Run only the operation you need. `resume.sh` is a shortcut for resume. `update.sh` selects update when server state exists and a fresh install otherwise. Direct source scripts use the files you already downloaded; only `access-gate.sh` fetches a new snapshot on each run.
+Run only the operation you need. `resume.sh` is a shortcut for resume. `install.sh` and `resume.sh` use the downloaded files directly. In a Git clone, `update.sh` first fetches the latest `origin/main`, fast-forwards the clean local main branch and starts the newly downloaded updater and installer. It then selects update when server state exists and a fresh install otherwise.
+
+For an extracted archive or an explicit offline deployment, use `bash update.sh --local`; this skips Git synchronization and applies only the source already present. The separate `access-gate.sh` launcher still downloads a fresh archive on every run.
 
 For a Git checkout:
 
@@ -82,15 +84,16 @@ cd /root/Access-Gate
 bash update.sh
 ```
 
-Subsequent updates:
+Subsequent updates need only:
 
 ```bash
 cd /root/Access-Gate
-git pull --ff-only
 bash update.sh
 ```
 
-Check that the pull succeeded before running the updater. Never use `/opt/access-gate` as the source checkout: it is the managed runtime directory and is fully replaced during deployment.
+The updater refuses to install when Git fetch fails, files have local changes, untracked files exist, HEAD is detached, the checkout is not on main, or local history has diverged/unpublished commits. It does not discard, stash or force-reset local changes. If main is already current, it reapplies that version normally.
+
+When upgrading from version 0.1.3 or earlier, run `git pull --ff-only` once to obtain this automatic updater. After that, `bash update.sh` is sufficient. Never use `/opt/access-gate` as the source checkout: it is the managed runtime directory and is fully replaced during deployment.
 
 ## Current feature scope
 
@@ -197,6 +200,6 @@ bash -n access-gate.sh
 bash -n reset.sh
 ```
 
-There are 35 tests covering code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Live Squid, Android and FortiGate integration must still be verified on the target network.
+There are 47 tests covering code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Updater integration tests use temporary local Git repositories to cover fast-forward updates, new updater execution, offline failures, dirty checkouts and diverged history. Git must be installed to run those integration tests. Live Squid, Android and FortiGate integration must still be verified on the target network.
 
 References: [Squid SSL Bump](https://www.squid-cache.org/Doc/config/ssl_bump/), [external ACLs](https://www.squid-cache.org/Doc/config/external_acl_type/), [redirects](https://www.squid-cache.org/Doc/config/deny_info/), [Ubuntu squid-openssl](https://packages.ubuntu.com/noble/squid-openssl), [Flask security](https://flask.palletsprojects.com/en/stable/web-security/).

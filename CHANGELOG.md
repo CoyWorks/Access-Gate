@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.4
+
+- Make `update.sh` fetch and fast-forward the local main branch before applying the update.
+- Run the newly downloaded updater and installer after Git synchronization.
+- Stop before installation on network errors, local changes, detached branches or diverged/unpublished history.
+- Retain `update.sh --local` for extracted archives and explicit offline deployment.
+
 ## 0.1.3
 
 - Add an explicit full reset command for the dedicated VM, including saved installation backups.
