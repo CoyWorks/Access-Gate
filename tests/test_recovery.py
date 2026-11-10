@@ -51,6 +51,8 @@ class RecoveryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp,self.assertRaises(GateError):preflight(encrypt(json.dumps(bundle).encode(),PASSWORD),PASSWORD,tmp)
         self.assertEqual(self.database.read_bytes(),before);self.assertTrue(self.store.browser_grant('a'*64))
     def test_full_recovery_revokes_old_unused_used_and_newer_access(self):
+        schedule=self.store.create_schedule(dict(name='Saved schedule',recurrence='daily',clock='09:00'),PASSWORD)
+        run=self.store.run_schedule_now(schedule,'c'*32)
         archive=self.backup();new_batch,new_codes=self.store.create_batch(count=1)
         job=self.jobs.submit('preflight',passphrase=PASSWORD,archive=archive);self.worker.run_once()
         self.assertTrue(self.jobs.status(job)['confirm']);self.assertEqual(self.calls,[])
@@ -58,6 +60,8 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(self.jobs.status(restore)['state'],'complete')
         self.assertTrue(any('access_gate.readiness' in c for c in self.calls))
         self.assertIsNone(self.store.browser_grant('a'*64))
+        self.assertFalse(self.store.schedule_detail(schedule)['enabled'])
+        self.assertEqual(self.store.schedule_detail(schedule)['runs'][0]['status'],'invalidated')
         for code in self.codes+new_codes:
             with self.assertRaises(GateError):self.store.redeem(code,'10.40.22.41',browser_token='b'*64)
         with self.store.connect() as db:

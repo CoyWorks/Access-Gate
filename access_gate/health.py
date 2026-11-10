@@ -68,7 +68,7 @@ class Health:
             checks.append(self.item('Database','healthy','Application database is readable.'))
         except Exception:
             checks.append(self.item('Database','failed','Application database is unavailable.','Check portal service logs and data-directory permissions.'))
-        for name in ('access-gate','access-gate-gateway','nginx'):
+        for name in ('access-gate','access-gate-gateway','access-gate-maintenance','access-gate-scheduler','nginx'):
             try:
                 # is-active returns non-zero for inactive/failed; show gives the state without that ambiguity.
                 state=self.command(['systemctl','show',name+'.service','--property=ActiveState','--value'])

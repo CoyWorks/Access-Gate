@@ -57,7 +57,7 @@ export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core gunicorn openssl ca-certificates curl iproute2 util-linux
 if [[ $resume_install -eq 1 ]]; then
-    for unit in access-gate-gateway.service access-gate.service access-gate-keeper.service; do
+    for unit in access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
     done
     backup_dir=$(mktemp -d /root/access-gate-resume.XXXXXX)
@@ -206,6 +206,27 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 [Install]
 WantedBy=multi-user.target
 UNIT
+cat > /etc/systemd/system/access-gate-scheduler.service <<'UNIT'
+[Unit]
+Description=Access Gate recurring code batches
+Requires=access-gate.service
+After=access-gate.service
+PartOf=access-gate.service
+[Service]
+User=accessgate
+Group=accessgate
+WorkingDirectory=/opt/access-gate
+ExecStart=/usr/bin/python3 -m access_gate.scheduler
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/access-gate/data
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target
+UNIT
 /usr/bin/python3 - <<'WORKER'
 from access_gate.maintenance_worker import Worker
 Worker().setup()
@@ -228,7 +249,8 @@ UNIT
 nginx -t
 systemctl daemon-reload
 systemctl enable --now access-gate-maintenance.service
-systemctl enable nginx access-gate.service access-gate-gateway.service
+if [[ -z ${ACCESS_GATE_MAINTENANCE_JOB:-} ]]; then systemctl restart access-gate-maintenance.service; fi
+systemctl enable nginx access-gate.service access-gate-gateway.service access-gate-scheduler.service
 systemctl reset-failed access-gate-gateway.service
 # Nginx releases its former HTTPS listener before the new gateway binds port 443.
 systemctl restart nginx
@@ -238,7 +260,8 @@ if ! systemctl restart access-gate-gateway.service; then
     echo 'HTTPS gateway startup failed. Existing data and the pre-update backup are retained; correct the reported error and rerun update.sh.' >&2
     exit 1
 fi
-systemctl is-active access-gate.service nginx.service access-gate-gateway.service
+systemctl restart access-gate-scheduler.service
+systemctl is-active access-gate.service nginx.service access-gate-gateway.service access-gate-scheduler.service
 if ! /usr/bin/python3 -m access_gate.readiness; then
     echo 'Portal startup failed. Existing data and the pre-update backup remain available.' >&2
     echo 'Recent portal service logs:' >&2

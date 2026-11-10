@@ -57,3 +57,6 @@ Encrypted SQLite/CA/configuration backup, preflight and confirmed fail-closed re
 
 ### 0.11.0 — #15 delivered
 One-time printable/PDF exports with optional local QR codes, explicit redemption and text fallback. Profile labels remain a dependency of future #11; current cards describe the current global restricted-domain scope.
+
+### 0.12.0 — #16 delivered
+Daily/weekly schedules, explicit DST/catch-up rules and secure one-time portal collection are implemented. No external code delivery is enabled.

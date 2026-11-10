@@ -126,6 +126,11 @@ def create_app(config=None):
     @app.template_filter('localtime')
     def localtime(stamp): return dt.datetime.fromtimestamp(stamp,TZ).strftime('%d-%m-%Y %H:%M:%S') if stamp else '—'
 
+    @app.template_filter('zonetime')
+    def zonetime(stamp,zone):
+        from zoneinfo import ZoneInfo
+        return dt.datetime.fromtimestamp(stamp,ZoneInfo(zone)).strftime('%d-%m-%Y %H:%M:%S %Z') if stamp else '—'
+
     def admin_only(fn):
         @functools.wraps(fn)
         def wrapped(*args,**kwargs):
@@ -531,6 +536,46 @@ def create_app(config=None):
         response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 
+    @app.get('/admin/schedules')
+    @admin_only
+    def schedules():
+        return render_template('schedules.html',schedules=store.schedules_page(page_number()),csrf=csrf())
+
+    @app.route('/admin/schedules/new',methods=['GET','POST'])
+    @admin_only
+    def new_schedule():
+        error=None
+        if request.method=='POST':
+            try:
+                verify_maintenance_password()
+                password=request.form.get('export_password','')
+                if password!=request.form.get('confirm_export_password',''):raise GateError('Export passphrases do not match.')
+                schedule=store.create_schedule(request.form,password)
+                return redirect(url_for('schedule_detail',schedule_id=schedule),code=303)
+            except GateError as exc:error=str(exc)
+        return render_template('new_schedule.html',csrf=csrf(),values=request.form if request.method=='POST' else {},error=error),400 if error else 200
+
+    @app.route('/admin/schedules/<schedule_id>',methods=['GET','POST'])
+    @admin_only
+    def schedule_detail(schedule_id):
+        if request.method=='POST':
+            action=request.form.get('action','')
+            if action in ('pause','resume'):store.change_schedule(schedule_id,action=='resume',request.form.get('version',''))
+            elif action=='run':store.run_schedule_now(schedule_id,request.form.get('request_id',''))
+            else:raise GateError('Unknown schedule action.')
+            return redirect(url_for('schedule_detail',schedule_id=schedule_id),code=303)
+        return render_template('schedule_detail.html',schedule=store.schedule_detail(schedule_id),csrf=csrf(),request_id=secrets.token_hex(16))
+
+    @app.post('/admin/schedules/<schedule_id>/collect/<run_id>')
+    @admin_only
+    def collect_schedule(schedule_id,run_id):
+        verify_maintenance_password()
+        from .exports import options
+        details=store.schedule_detail(schedule_id)
+        kind,qr=options(request.form.get('export','text'),request.form.get('qr')=='1',details['count'])
+        batch,codes=store.collect_schedule_run(schedule_id,run_id,request.form.get('export_password',''))
+        return code_output(batch,codes,kind,qr)
+
     @app.get('/admin/batches/new')
     @admin_only
     def new_batch():
@@ -550,6 +595,9 @@ def create_app(config=None):
                 access_unit=request.form.get('access_unit','minutes'))
         except GateError as exc:
             return render_template('new_batch.html',csrf=csrf(),values=request.form,error=str(exc)),400
+        return code_output(batch_id,codes,export_kind,include_qr)
+
+    def code_output(batch_id,codes,export_kind='text',include_qr=False):
         details=store.batch_detail(batch_id)
         try:
             if export_kind=='pdf':

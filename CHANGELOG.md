@@ -1,3 +1,9 @@
+# 0.12.0
+
+- Add daily/weekly scheduled code batches, DST-aware previews, pause/resume and idempotent manual runs (#16).
+- Encrypt scheduled output with a public key and require a separate passphrase for one-time portal collection.
+- Add schema 9 and an unprivileged scheduler; restore disables schedules and invalidates outstanding output.
+
 # 0.11.0
 
 - Add one-time printable A4/PDF code cards and locally generated optional QR prefill (#15).

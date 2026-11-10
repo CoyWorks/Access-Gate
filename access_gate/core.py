@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo('Europe/Amsterdam')
 ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
 CODE_LENGTH = 8
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 STATUSES = ('unused', 'redeemed', 'revoked', 'expired', 'future')
 STATUS_SQL = "CASE WHEN c.revoked=1 THEN 'revoked' WHEN c.used IS NOT NULL THEN 'redeemed' WHEN b.ends<=:now THEN 'expired' WHEN b.starts>:now THEN 'future' ELSE 'unused' END"
 
@@ -54,9 +54,10 @@ from .dns_export import DNSExports
 from .administration import Administration
 from .exclusions import Exclusions
 from .operations import Operations
+from .scheduling import Scheduling
 
 
-class Store(BrowserSessions, DNSExports, Administration, Exclusions, Operations):
+class Store(BrowserSessions, DNSExports, Administration, Exclusions, Operations, Scheduling):
     def __init__(self, path, pepper):
         self.path, self.pepper = str(path), pepper.encode()
 
@@ -119,35 +120,40 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions, Operations)
             self.initialize_administration(db)
             self.initialize_exclusions(db)
             self.initialize_operations(db)
-            db.execute('PRAGMA user_version=8')
+            self.initialize_schedules(db)
+            db.execute('PRAGMA user_version=9')
             db.commit()
 
     def digest(self, code):
         raw = code.strip().upper().replace('-', '').replace(' ', '')
         return hmac.new(self.pepper, raw.encode(), hashlib.sha256).hexdigest()
 
-    def _make_batch(self, start, end, access, count, name, mode, now, week):
+    def _insert_batch(self,db,start,end,access,count,name,mode,now,week):
         count = positive_int(count, 'Number of codes', 1000)
         if not isinstance(name,str) or len(name.strip()) > 80 or any(ord(c)<32 for c in name):
             raise GateError('Batch names must be at most 80 characters without control characters.')
         name = name.strip() or dt.datetime.fromtimestamp(now,TZ).strftime('Batch %Y-%m-%d %H:%M')
         batch, raw_codes = secrets.token_hex(8), []
+        db.execute('''INSERT INTO batches(id,week,starts,ends,minutes,created,name,access_seconds,validity_seconds,timing_mode)
+                      VALUES(?,?,?,?,?,?,?,?,?,?)''',
+                   (batch,week,start,end,access//60,now,name,access,int(end-start),mode))
+        for _ in range(count):
+            for attempt in range(10):
+                raw = ''.join(secrets.choice(ALPHABET) for _ in range(CODE_LENGTH))
+                if not db.execute('SELECT 1 FROM codes WHERE digest=?',(self.digest(raw),)).fetchone(): break
+            else: raise GateError('Could not generate a unique code. Please try again.')
+            db.execute('INSERT INTO codes(id,batch,digest,hint) VALUES(?,?,?,?)',
+                       (secrets.token_hex(8),batch,self.digest(raw),raw[-4:]))
+            raw_codes.append('-'.join(raw[i:i+4] for i in range(0,CODE_LENGTH,4)))
+        self._event(db,'batch.created',batch_id=batch,details=dict(count=count),now=now)
+        return batch,raw_codes
+
+    def _make_batch(self,start,end,access,count,name,mode,now,week):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            db.execute('''INSERT INTO batches(id,week,starts,ends,minutes,created,name,access_seconds,validity_seconds,timing_mode)
-                          VALUES(?,?,?,?,?,?,?,?,?,?)''',
-                       (batch,week,start,end,access//60,now,name,access,int(end-start),mode))
-            for _ in range(count):
-                for attempt in range(10):
-                    raw = ''.join(secrets.choice(ALPHABET) for _ in range(CODE_LENGTH))
-                    if not db.execute('SELECT 1 FROM codes WHERE digest=?',(self.digest(raw),)).fetchone(): break
-                else: raise GateError('Could not generate a unique code. Please try again.')
-                db.execute('INSERT INTO codes(id,batch,digest,hint) VALUES(?,?,?,?)',
-                           (secrets.token_hex(8),batch,self.digest(raw),raw[-4:]))
-                raw_codes.append('-'.join(raw[i:i+4] for i in range(0,CODE_LENGTH,4)))
-            self._event(db,'batch.created',batch_id=batch,details=dict(count=count),now=now)
+            result=self._insert_batch(db,start,end,access,count,name,mode,now,week)
             db.commit()
-        return batch, raw_codes
+            return result
 
     def create_batch(self, name='', count=10, validity_value=7, validity_unit='days', access_value=15, access_unit='minutes', now=None):
         now = time.time() if now is None else now
