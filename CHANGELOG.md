@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.1
+
+- Add optional administrator-only DNS domains management for a custom Pi-hole list: bulk add, enable/disable, delete, per-entry match scope and live config preview.
+- Default to base domain plus all subdomains, including deeper labels. Accept either example.com or *.example.com in this mode, and normalize case/IDNs and duplicates.
+- Export enabled entries to a dedicated 99-access-gate.conf, always targeting 10.40.22.5. Subdomain rules use address= plus local= to prevent non-A lookups from escaping upstream through that rule. Exact entries use host-record=.
+- Offer a hosts-format alternative only when all enabled rules use exact hostnames; never silently lose wildcard coverage in an export.
+- Add schema version 4 transactionally while preserving existing codes, batches, credentials, browser grants and archived legacy settings. DNS list changes do not change authorization state.
+- Document Pi-hole 5/6 local-configuration import, cache/record checks, rollback and the distinction from adlists, HTTPS and actual timed website enforcement. No automatic Pi-hole or firewall changes are applied.
+
 ## 0.4.0
 
 - Make the default app a standalone code portal with automatic anonymous browser sessions. Remove mandatory VPN users, device registration and domain management screens.

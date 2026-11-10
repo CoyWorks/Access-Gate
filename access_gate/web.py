@@ -13,6 +13,7 @@ from flask import Flask,abort,redirect,render_template,request,session,flash,jso
 from werkzeug.security import check_password_hash
 from .core import Store,GateError,TZ,STATUSES
 from .browser import TOKEN
+from .dns_export import TARGET_IP
 
 BROWSER_COOKIE='__Host-accessgate-browser'
 SITE_COOKIE='__Host-accessgate-site'
@@ -162,6 +163,44 @@ def create_app(config=None):
     def batches():
         return render_template('batches.html',batches=store.list_batches(page=page_number()),
                                csrf=csrf(),now=time.time())
+
+    @app.route('/admin/dns-domains', methods=['GET', 'POST'])
+    @admin_only
+    def dns_domains():
+        error = None
+        value = ''
+        scope = request.form.get('scope', 'subdomains')
+        if request.method == 'POST':
+            value = request.form.get('domains', '')
+            try:
+                added, existing = store.add_dns_domains(value, scope)
+            except GateError as exc:
+                error = str(exc)
+            else:
+                flash(f'Added {added} hostnames; {existing} already listed. Download and reapply the export in Pi-hole to use these changes.', 'success')
+                return redirect(url_for('dns_domains'))
+        rows = store.list_dns_domains()
+        return render_template('dns_domains.html', domains=rows, target_ip=TARGET_IP,
+                               enabled_count=sum(r['enabled'] for r in rows),
+                               wildcard_count=sum(r['enabled'] and r['include_subdomains'] for r in rows),
+                               preview=store.export_dns_domains('dnsmasq'), value=value, scope=scope,
+                               error=error, csrf=csrf()), 400 if error else 200
+
+    @app.post('/admin/dns-domains/change')
+    @admin_only
+    def change_dns_domain():
+        store.change_dns_domain(request.form.get('domain', ''), request.form.get('action', ''))
+        flash('Domain list updated. Download and reapply the export in Pi-hole to use this change.', 'success')
+        return redirect(url_for('dns_domains'))
+
+    @app.get('/admin/dns-domains/export/<kind>')
+    @admin_only
+    def export_dns_domains(kind):
+        if kind not in ('hosts', 'dnsmasq'): abort(404)
+        filename = 'access-gate.hosts' if kind == 'hosts' else '99-access-gate.conf'
+        response = app.response_class(store.export_dns_domains(kind), mimetype='text/plain')
+        response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
 
     @app.get('/admin/batches/new')
     @admin_only

@@ -1,6 +1,6 @@
 # Access Gate
 
-**Version 0.4.0.** A small English-language code portal for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users, devices or restricted domains need to be registered in the app.
+**Version 0.4.1.** A small English-language code portal for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. An optional **DNS domains** screen builds your own Pi-hole redirect list.
 
 Select domains and send users to the portal through your external FortiGate, Pi-hole or proxy setup. Access Gate records and checks the browser's access deadline. The external gateway is responsible for applying that authorization to actual website requests. See [Integration](docs/INTEGRATION.md) for the supplied private API and optional Nginx gateway example.
 
@@ -52,7 +52,7 @@ The final check waits up to 30 seconds for an actual verified HTTPS HTTP 200 res
 
 ### Upgrading from 0.3.x or earlier
 
-Schema version 3 retains existing batches, code validity, extension history and archived settings. Old IP-only/VPN-bound grants are invalidated because they cannot safely be assigned to an anonymous browser. Unused codes remain usable; consumed codes stay consumed. New browser grants keep their original deadline across ordinary restarts and subsequent updates.
+Schema version 4 retains existing batches, code validity, extension history and archived settings, and adds the optional DNS export list. The browser migration introduced in schema 3 invalidates old IP-only/VPN-bound grants because they cannot safely be assigned to an anonymous browser. Unused codes remain usable; consumed codes stay consumed. New browser grants keep their original deadline across ordinary restarts and subsequent updates.
 
 The upgrade retires only the known Access Gate Squid/keeper integration: it restores the saved original Squid configuration, removes its known AppArmor addition and removes the obsolete worker/network units. Existing packages, historical domain/device records and root-only reader files are retained; the new application does not use them. Unrelated Squid settings are not rewritten. The new runtime has no privileged keeper, live FortiGate connector, proxy ACL files or mandatory user/domain registration.
 
@@ -84,7 +84,17 @@ Times are displayed in Europe/Amsterdam. The server's persisted deadline is auth
 
 ## External redirects and website access
 
-A redirect reaches the code portal. A complete website gate also needs an enforcement component that checks the resulting authorization. The private integration API and an optional Nginx example support that separation without introducing users or a second domain list into Access Gate.
+A redirect reaches the code portal. A complete website gate also needs an enforcement component that checks the resulting authorization. The private integration API and an optional Nginx example support that separation without user registration. The optional DNS export below helps maintain your Pi-hole list; it does not activate website enforcement.
+
+### Build your Pi-hole domain list
+
+In administration, open **DNS domains** and paste one domain per line. **Domain + all subdomains** is selected by default: `example.com` or `*.example.com` covers the base domain, `www.example.com` and deeper names such as `a.b.example.com`. Choose **Exact hostname only** when needed. Every enabled record points to the fixed target `10.40.22.5`.
+
+You can enable/disable, delete or change the match scope of each entry. Adding duplicates keeps their current state/scope. Up to 5,000 entries are stored in SQLite and survive updates/restarts; historical 0.3 rules are not silently reactivated. Code management and browser grants remain independent of this list.
+
+**Download Pi-hole config** produces `99-access-gate.conf` for local dnsmasq configuration, including wildcard coverage. A hosts-file download is available only when all enabled entries are exact matches; hosts files cannot express wildcards. Import this as local DNS configuration, **not a Pi-hole adlist**. Changes are not pushed automatically: download and replace the managed file in Pi-hole after editing the list.
+
+Follow [Pi-hole import, verification and rollback](docs/PIHOLE.md), including the Pi-hole 6 setting that enables `/etc/dnsmasq.d/`.
 
 Pi-hole changes DNS answers; a DNS record alone neither changes the browser's HTTPS hostname nor creates a trusted certificate for that website. HTTPS interception/forwarding, the selected domains, original-site certificates and bypass prevention remain part of the chosen external gateway configuration. Access Gate's portal certificate covers the portal, not every external website.
 
@@ -163,4 +173,4 @@ node --check static/gate.js
 
 Node is only needed for the optional JavaScript syntax check.
 
-Tests cover code/batch behavior, migration from older schemas, independent browsers sharing an IP, unchanged deadlines across network changes/restarts, CSRF/admin controls, gateway origin/nonce binding, handoff replay/concurrency, revocation/extension/expiry, legacy retirement, readiness, complete deployment, reset and Git updater behavior. The gateway browser flow is tested through HTTP requests to the Flask app. Real Nginx/gateway TLS, external firewall/DNS rules and device/browser behavior still need target-network verification.
+Tests cover DNS export validation/match scope, atomic bulk additions, migration from older schemas, code/batch behavior, independent browsers sharing an IP, unchanged deadlines across network changes/restarts, CSRF/admin controls, gateway origin/nonce binding, handoff replay/concurrency, revocation/extension/expiry, legacy retirement, readiness, complete deployment, reset and Git updater behavior. The gateway browser flow is tested through HTTP requests to the Flask app. Real Nginx/gateway TLS, external firewall/DNS rules and device/browser behavior still need target-network verification.

@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo('Europe/Amsterdam')
 ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 STATUSES = ('unused', 'redeemed', 'revoked', 'expired', 'future')
 STATUS_SQL = "CASE WHEN c.revoked=1 THEN 'revoked' WHEN c.used IS NOT NULL THEN 'redeemed' WHEN b.ends<=:now THEN 'expired' WHEN b.starts>:now THEN 'future' ELSE 'unused' END"
 
@@ -49,9 +49,10 @@ def status_of(code, now):
 
 
 from .browser import BrowserSessions
+from .dns_export import DNSExports
 
 
-class Store(BrowserSessions):
+class Store(BrowserSessions, DNSExports):
     def __init__(self, path, pepper):
         self.path, self.pepper = str(path), pepper.encode()
 
@@ -110,6 +111,8 @@ class Store(BrowserSessions):
                 ip TEXT NOT NULL, seconds INTEGER NOT NULL CHECK(seconds>0), previous_expires REAL NOT NULL,
                 new_expires REAL NOT NULL, created REAL NOT NULL, actor TEXT NOT NULL)''')
             self.initialize_browsers(db,version)
+            self.initialize_dns_exports(db)
+            db.execute('PRAGMA user_version=4')
             db.commit()
 
     def digest(self, code):

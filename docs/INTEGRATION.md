@@ -1,6 +1,6 @@
 # External redirect and authorization integration
 
-Access Gate 0.4 is a basic code portal and authorization backend. There are no registered VPN users or managed website/domain lists in the app. Your external FortiGate, Pi-hole or proxy setup selects which sites reach the gateway.
+Access Gate 0.4 is a basic code portal and authorization backend without registered VPN users. Since 0.4.1 the optional **DNS domains** screen can build and export your own Pi-hole list, with base-domain/subdomain rules pointing to `10.40.22.5`. See [Pi-hole setup](PIHOLE.md). Your external FortiGate, Pi-hole or proxy configuration still applies the selected DNS/routing rules and website authorization; the app does not push changes automatically.
 
 ## Redirect versus authorization
 

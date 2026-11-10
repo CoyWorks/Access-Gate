@@ -1,0 +1,26 @@
+{% extends 'base.html' %}{% block content %}
+<div class="page-heading"><div><p class="eyebrow">Administration</p><h1>DNS domains</h1></div><span class="badge">Target: {{ target_ip }}</span></div>
+<p>Build your Pi-hole hostname list here. Each enabled hostname points to <strong>{{ target_ip }}</strong>. Changes take effect after you download and apply a new export in Pi-hole.</p>
+<div class="form-grid">
+<section><h2>Add hostnames</h2>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="{{ url_for('dns_domains') }}">
+<input type="hidden" name="csrf" value="{{ csrf }}">
+<label for="domains">One hostname per line</label>
+<textarea id="domains" name="domains" rows="8" maxlength="12000" placeholder="example.com&#10;another-example.org" aria-describedby="domain-help" required>{{ value }}</textarea>
+<small id="domain-help">No https://, paths or ports. With all subdomains selected, example.com (or *.example.com) covers example.com, www.example.com and a.b.example.com. Duplicates keep their existing state and scope.</small>
+<label for="scope">Match scope</label><select id="scope" name="scope"><option value="subdomains"{% if scope == 'subdomains' %} selected{% endif %}>Domain + all subdomains</option><option value="exact"{% if scope == 'exact' %} selected{% endif %}>Exact hostname only</option></select>
+<p><button>Add hostnames</button></p></form></section>
+<section><h2>Export for Pi-hole</h2><p>{{ enabled_count }} enabled of {{ domains|length }} hostnames.</p>
+<p><a class="button" href="{{ url_for('export_dns_domains', kind='dnsmasq') }}">Download Pi-hole config</a></p>
+{% if not wildcard_count %}<p><a class="button secondary" href="{{ url_for('export_dns_domains', kind='hosts') }}">Download hosts list</a></p>{% else %}<p>A hosts file cannot express wildcard rules. Use the Pi-hole config to include all subdomains.</p>{% endif %}
+<p>The config belongs in a dedicated <code>/etc/dnsmasq.d/99-access-gate.conf</code> file. Pi-hole 6 needs loading of that directory enabled. Each rule retains its selected match scope.</p>
+<p>Use local DNS configuration, not Pi-hole's adlists: adlists do not preserve a custom destination IP.</p>
+<p class="muted">These are IPv4 DNS mappings. HTTPS certificates, website forwarding and timed access still require the gateway setup.</p>
+</section></div>
+<section><h2>Hostnames</h2><div class="scroll"><table><thead><tr><th>Hostname</th><th>Match scope</th><th>Target</th><th>Export state</th><th>Actions</th></tr></thead><tbody>
+{% for d in domains %}<tr><td>{{ d.domain }}</td><td>{{ 'Domain + all subdomains' if d.include_subdomains else 'Exact hostname only' }}</td><td>{{ target_ip }}</td><td><span class="badge">{{ 'Enabled' if d.enabled else 'Disabled' }}</span></td><td><form method="post" action="{{ url_for('change_dns_domain') }}" class="domain-actions"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="domain" value="{{ d.domain }}"><button class="secondary" name="action" value="{{ 'disable' if d.enabled else 'enable' }}">{{ 'Disable' if d.enabled else 'Enable' }}</button><button class="secondary" name="action" value="{{ 'exact' if d.include_subdomains else 'subdomains' }}">{{ 'Use exact match' if d.include_subdomains else 'Include subdomains' }}</button><button class="secondary danger" name="action" value="delete">Delete</button></form></td></tr>
+{% else %}<tr><td colspan="5">No hostnames yet. Paste your first list above.</td></tr>{% endfor %}
+</tbody></table></div></section>
+<section><h2>Pi-hole config preview</h2><pre class="dns-preview">{{ preview }}</pre></section>
+{% endblock %}

@@ -1,0 +1,107 @@
+# Pi-hole domain list
+
+The optional **DNS domains** screen creates your own list of domains pointing to `10.40.22.5`. This list is stored in the Access Gate database and preserved during updates. It is a DNS configuration export; the portal does not connect to or modify Pi-hole automatically.
+
+## Create and download
+
+1. Update the portal normally: `bash /root/Access-Gate/update.sh`.
+2. Sign in to `/admin` and open **DNS domains**.
+3. Paste one domain per line. Leave **Domain + all subdomains** selected to cover an entire domain, or choose **Exact hostname only**. Blank lines and whole-line `#` comments are ignored.
+4. Add the entries, review the target/match scope and preview, then select **Download Pi-hole config**.
+5. Copy `99-access-gate.conf` to the Pi-hole server. Apply the new file there after each list change; the previous downloaded file is a snapshot.
+
+`example.com` and `*.example.com` are equivalent in subdomain mode: both cover the base name and every subdomain level. The match respects DNS label boundaries, so `unrelatedexample.com` is not included. Exact mode accepts a hostname without `*.`. Duplicates retain their existing enabled state and match scope. Change that scope explicitly in the table when needed.
+
+Example export:
+
+```ini
+# Domain + all subdomains
+address=/example.com/10.40.22.5
+local=/example.com/
+
+# Exact hostname only
+host-record=single.example.org,10.40.22.5
+```
+
+The `local=` line is intentional. In modern dnsmasq, an IPv4-only `address=` rule alone can still forward other query types upstream. Combining the two makes this wildcard scope local, so an upstream AAAA or HTTPS/SVCB answer does not escape that rule. It also suppresses upstream MX/TXT and other record types for that scope. The export does not create an IPv6 destination.
+
+A hosts file cannot express wildcard behavior. Its alternative download is therefore available only when every enabled entry is an exact match. Do not add the download as a Pi-hole **adlist**: gravity filtering does not retain a custom destination IP. Use local DNS configuration instead. The main config export supports mixed exact/subdomain rules without losing coverage.
+
+## Apply on Pi-hole
+
+Use a dedicated Access Gate file so unrelated local DNS configuration is retained. Do not replace `/etc/hosts`, `/etc/pihole/custom.list`, the generated `/etc/pihole/dnsmasq.conf`, or Pi-hole's whole configuration with this export.
+
+For the existing DNS server, a copy from the machine holding the download might be:
+
+```bash
+scp 99-access-gate.conf root@10.40.22.10:/tmp/99-access-gate.conf
+```
+
+The following commands run **on Pi-hole**, not on the portal server.
+
+### Pi-hole 6
+
+Pi-hole 6 does not load `/etc/dnsmasq.d/` by default. Check and record the current setting:
+
+```bash
+sudo pihole-FTL --config misc.etc_dnsmasq_d
+```
+
+Review any other files in that directory before enabling it: this setting loads those as well. If it is not already enabled:
+
+```bash
+sudo pihole-FTL --config misc.etc_dnsmasq_d true
+```
+
+For a container managed by Docker Compose, persist the setting using `FTLCONF_misc_etc_dnsmasq_d: 'true'` and mount the dedicated config file/directory at `/etc/dnsmasq.d/`. Use the container's normal configuration/recreation workflow; host-only changes outside its mounted configuration will not survive recreation.
+
+### Pi-hole 5
+
+The standard Pi-hole 5 setup already reads `/etc/dnsmasq.d/`. Do not run the Pi-hole 6 configuration command on version 5. Use the same dedicated file and verification below.
+
+### Install the file and verify
+
+If `/etc/dnsmasq.d/99-access-gate.conf` already exists, save a copy **outside** `/etc/dnsmasq.d/` before replacing it, for example under `/root/`. Also retain the previous value of the Pi-hole 6 directory-loading setting.
+
+```bash
+sudo install -d -m 0755 /etc/dnsmasq.d
+sudo install -m 0644 /tmp/99-access-gate.conf /etc/dnsmasq.d/99-access-gate.conf
+sudo pihole-FTL dnsmasq-test
+```
+
+Proceed only when the syntax test succeeds. If it fails, restore the previous dedicated file (or remove the new file if this was the first import), correct the reported error and test again before restarting. Do not leave a failing candidate in the directory for a future service reload.
+
+```bash
+sudo systemctl restart pihole-FTL
+sudo systemctl is-active pihole-FTL
+```
+
+In a container, run the syntax check inside the container and use its normal restart mechanism.
+
+For a listed domain such as `example.com`, test against the actual DNS server:
+
+```bash
+dig @10.40.22.10 example.com A +short
+dig @10.40.22.10 www.example.com A +short
+dig @10.40.22.10 a.b.example.com A +short
+dig @10.40.22.10 example.com AAAA
+dig @10.40.22.10 a.b.example.com HTTPS
+```
+
+The first three should return `10.40.22.5` for a subdomain rule. The last two should not return a public IPv6 address or upstream HTTPS record for that scope. Also test an unrelated domain, and test that an exact-only rule leaves its subdomains unaffected. Clear old client/browser DNS caches or wait for their cached answers to expire; a configuration import cannot revoke cached public answers already held by clients.
+
+Pi-hole Local DNS/hosts entries and DHCP leases can override `address=` for individual names; more-specific server/forwarding rules can also change the result. Resolve conflicting entries when the actual query result differs. Disabling or deleting a child entry does not make an exception to an enabled parent subdomain rule.
+
+## Update or remove
+
+After an edit in Access Gate, download and replace the dedicated Pi-hole file, then repeat the syntax check and restart. Disabling a row only affects the next export; it does not change a previously installed copy. Keep one maintained copy rather than accumulating multiple exported files in the loaded directory.
+
+To undo an import, restore the saved previous dedicated file, or remove **only** `/etc/dnsmasq.d/99-access-gate.conf` for a first import. Restore the previous Pi-hole 6 directory-loading setting if it was changed for this setup, run the syntax check and restart. Preserve unrelated local DNS entries and other custom configuration.
+
+## Website behavior
+
+DNS now points selected names at the gateway. The browser still requests the original site's HTTPS hostname. Trusted site certificates, forwarding to the true upstream, code-based authorization and open-stream expiry remain part of the external gateway setup in [INTEGRATION.md](INTEGRATION.md). DNS rewrites alone do not turn a portal code into website access. Keep these DNS mappings stable during sessions; DNS TTLs are not the access timer.
+
+This source release has automated coverage for export construction, validation, persistence, browser-grant preservation and administration controls. Pi-hole daemon/query behavior and real-device access still require the checks above on the target network.
+
+References: [Pi-hole configuration](https://docs.pi-hole.net/ftldns/configfile/), [Pi-hole FAQ/local DNS sources](https://docs.pi-hole.net/main/faq/), [dnsmasq address/local/host-record semantics](https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html).
