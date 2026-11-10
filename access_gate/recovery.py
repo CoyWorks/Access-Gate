@@ -1,4 +1,5 @@
 """Authenticated, bounded recovery bundles. Never extract an uploaded tar/zip."""
+from contextlib import contextmanager
 import base64
 import json
 from pathlib import Path
@@ -39,16 +40,38 @@ def decrypt(data,password):
     except Exception:raise GateError('The backup passphrase is incorrect or the archive is damaged.') from None
 
 
+@contextmanager
+def database_account(root):
+    # The root worker reads SQLite as the portal user, so database-path races cannot
+    # turn a backup job into arbitrary root-file access or root-owned WAL files.
+    import os
+    if Path(root)!=Path('/') or os.geteuid()!=0:
+        yield
+        return
+    import pwd
+    user=pwd.getpwnam('accessgate');previous_gid=os.getegid();groups=os.getgroups()
+    try:
+        os.setgroups([]);os.setegid(user.pw_gid);os.seteuid(user.pw_uid)
+        yield
+    finally:
+        os.seteuid(0);os.setegid(previous_gid);os.setgroups(groups)
+
+
 def snapshot(root,version):
     root=Path(root);base=root/'etc/access-gate'
     config=validate(json.loads(read_regular(base/'config.json',65536)))
     if config['database']!=DATABASE:raise GateError('Only the standard dedicated-server database path is supported.')
     files={name:base64.b64encode(read_regular(base/name,1024*1024)).decode() for name in STATE_FILES}
     source=root/DATABASE.lstrip('/')
-    read_regular(source,MAX_ARCHIVE) # Reject symlinks before SQLite opens the root-owned fixed path.
     with tempfile.TemporaryDirectory() as tmp:
+        import os
+        if root==Path('/') and os.geteuid()==0:
+            import pwd
+            user=pwd.getpwnam('accessgate');os.chown(tmp,user.pw_uid,user.pw_gid)
         target=Path(tmp)/'snapshot.sqlite3'
-        with sqlite3.connect(source) as db,sqlite3.connect(target) as saved:db.backup(saved)
+        with database_account(root):
+            read_regular(source,MAX_ARCHIVE)
+            with sqlite3.connect(source) as db,sqlite3.connect(target) as saved:db.backup(saved)
         files['database']=base64.b64encode(read_regular(target,MAX_ARCHIVE)).decode()
     return json.dumps(dict(format=1,schema=SCHEMA_VERSION,version=version,created=time.time(),files=files),separators=(',',':')).encode()
 

@@ -1,3 +1,9 @@
+# 0.13.0
+
+- Add reviewed Git checks and confirmed admin-portal updates with persistent progress and post-deployment identity/readiness checks (#17).
+- Share a single maintenance lock with CLI installation, retain private logs/snapshots and reject dirty/diverged/downgrade/stale-source updates.
+- Record the actual installed clean-source commit; reload the root worker after updates and keep SQLite backup I/O under the portal account.
+
 # 0.12.0
 
 - Add daily/weekly scheduled code batches, DST-aware previews, pause/resume and idempotent manual runs (#16).

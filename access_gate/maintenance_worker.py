@@ -10,7 +10,7 @@ import tempfile
 import time
 from .core import GateError,Store
 from .maintenance import Jobs,JOB_ID,MAX_ARCHIVE,read_regular,write_private
-from .recovery import STATE_FILES,DATABASE,snapshot,encrypt,preflight,invalidate
+from .recovery import STATE_FILES,DATABASE,snapshot,encrypt,preflight,invalidate,database_account
 from .settings import atomic_write
 
 
@@ -88,13 +88,31 @@ class Worker:
         (self.private/(preview+'.json')).unlink(missing_ok=True);(self.private/(preview+'.archive')).unlink(missing_ok=True)
         return dict(message='Restore completed and services passed readiness. Sign in with the password from the backup. All restored codes and sessions are revoked.',summary=summary)
 
+    def audit_update(self,event):
+        try:
+            config=json.loads((self.root/'etc/access-gate/config.json').read_text())
+            with database_account(self.root):Store(self.root/DATABASE.lstrip('/'),config['pepper']).audit(event,actor='System')
+        except Exception:
+            # A completed deployment is not turned into a failed deployment by optional audit delivery.
+            pass
+
     def perform(self,job_id,record):
         action=record['action']
+        if action=='update-check':
+            if set(record)-{'id','action','created'}:raise GateError('Unexpected update-check fields.')
+            from .updates import Updates
+            result=Updates(self.root).check(job_id);self.audit_update('update.checked');return result
+        if action=='update':
+            if set(record)-{'id','action','created','preview'}:raise GateError('Unexpected update fields.')
+            from .updates import Updates
+            result=Updates(self.root).apply(job_id,record.get('preview'),lambda message:self.result(job_id,action='update',state='running',message=message))
+            self.audit_update('update.completed');return result
         if action=='backup':
             if set(record)-{'id','action','created','passphrase'}:raise GateError('Unexpected backup fields.')
             encrypted=encrypt(snapshot(self.root,self.installed_version()),record.get('passphrase'))
             write_private(self.jobs/'downloads'/(job_id+'.agbackup'),encrypted,0o640,self.gid)
-            Store(self.root/DATABASE.lstrip('/'),json.loads((self.root/'etc/access-gate/config.json').read_text())['pepper']).audit('recovery.backup',actor='System')
+            pepper=json.loads((self.root/'etc/access-gate/config.json').read_text())['pepper']
+            with database_account(self.root):Store(self.root/DATABASE.lstrip('/'),pepper).audit('recovery.backup',actor='System')
             return dict(message='Encrypted backup ready. Download within seven days.',download=True)
         if action=='preflight':
             if set(record)-{'id','action','created','passphrase'}:raise GateError('Unexpected preflight fields.')
@@ -116,25 +134,32 @@ class Worker:
             # Recover a crash marker without replaying a potentially applied restore.
             for marker in self.private.glob('*.running'):
                 job_id=marker.stem
-                if JOB_ID.fullmatch(job_id):self.result(job_id,action='maintenance',state='failed',message='Worker interrupted. Operation was not replayed. Check services before retrying.')
+                if JOB_ID.fullmatch(job_id):
+                    try:action=json.loads(read_regular(marker,1024)).get('action','maintenance')
+                    except (ValueError,OSError):action='maintenance'
+                    self.result(job_id,action=action,state='failed',message='Worker interrupted. Operation was not replayed. Check services before retrying.')
                 marker.unlink()
             for source in sorted((self.jobs/'inbox').glob('*.json'))[:100]:
                 job_id=source.stem
                 if not JOB_ID.fullmatch(job_id):continue
-                marker=self.private/(job_id+'.running')
+                marker=self.private/(job_id+'.running');action='maintenance'
                 try:
-                    data=read_regular(source,8192);source.unlink()
+                    data=read_regular(source,8192)
                     if (self.jobs/'results'/(job_id+'.json')).exists():continue
                     record=json.loads(data)
                     if record.get('id')!=job_id or not isinstance(record.get('created'),(int,float)) or not 0<=time.time()-record['created']<=3600:raise GateError('Invalid or stale maintenance request.')
-                    write_private(marker,b'running')
+                    action=record.get('action','maintenance')
+                    if action not in ('backup','preflight','restore','update-check','update'):action='maintenance'
+                    write_private(marker,json.dumps(dict(action=action)).encode())
+                    source.unlink()
                     self.result(job_id,action=record.get('action','maintenance'),state='running',message='Maintenance in progress.')
                     result=self.perform(job_id,record)
                     self.result(job_id,action=record['action'],state='complete',**result)
                 except Exception as exc:
                     # Never serialize arbitrary exceptions, config, archive contents or passphrases.
                     message=str(exc) if isinstance(exc,GateError) else 'Maintenance failed validation. No secrets were included in this result.'
-                    self.result(job_id,action='maintenance',state='failed',message=message[:500])
+                    if action in ('update','update-check'):self.audit_update('update.failed')
+                    self.result(job_id,action=action,state='failed',message=message[:500])
                 finally:
                     marker.unlink(missing_ok=True);source.unlink(missing_ok=True)
                     (self.jobs/'inbox'/(job_id+'.archive')).unlink(missing_ok=True)
@@ -144,14 +169,20 @@ class Worker:
         now=time.time()
         for directory,seconds in ((self.jobs/'downloads',7*86400),(self.jobs/'results',30*86400),(self.jobs/'inbox',3600),(self.private,900)):
             for path in directory.iterdir():
-                if path.is_file() and not path.is_symlink() and path.suffix not in ('.lock','.rollback') and now-path.stat().st_mtime>seconds:path.unlink(missing_ok=True)
+                if path.is_file() and not path.is_symlink() and path.suffix not in ('.lock','.rollback','.log') and now-path.stat().st_mtime>seconds:path.unlink(missing_ok=True)
 
 
 def main():
     if os.geteuid()!=0:raise SystemExit('Run the maintenance worker as root.')
     worker=Worker()
     while True:
-        worker.run_once();time.sleep(2)
+        before=(worker.root/'etc/access-gate/deployment.json').read_bytes() if (worker.root/'etc/access-gate/deployment.json').exists() else b''
+        worker.run_once()
+        after=(worker.root/'etc/access-gate/deployment.json').read_bytes() if (worker.root/'etc/access-gate/deployment.json').exists() else b''
+        if before!=after:
+            os.chdir('/opt/access-gate')
+            os.execv('/usr/bin/python3',['/usr/bin/python3','-m','access_gate.maintenance_worker'])
+        time.sleep(2)
 
 
 if __name__=='__main__':main()

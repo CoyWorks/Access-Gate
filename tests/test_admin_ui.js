@@ -8,17 +8,22 @@ class Element {
 }
 async function scenario(ids,answer,fragment){
   const elements=Object.fromEntries(ids.map(id=>[id,new Element()])),intervals=[],navigations=[];
+  if(elements['maintenance-progress'])Object.assign(elements['maintenance-progress'].dataset,{job:'a'.repeat(32),state:'running'});
   if(elements['request-decision'])elements['request-decision'].dataset.requestId='a'.repeat(32);
   if(elements['sessions-panel'])Object.assign(elements['sessions-panel'].dataset,{state:'active',page:'1'});
   const document={getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),querySelectorAll:()=>[]};
   let fail=false;
   const cleared=[];
-  const context={document,Intl,Date,URL,URLSearchParams,AbortSignal,fetch:async()=>{if(fail)throw Error();return {ok:true,json:async()=>answer};},setInterval:fn=>intervals.push(fn),window:{history:{replaceState:(_state,_title,url)=>cleared.push(url)},location:{hash:fragment||'',pathname:'/',search:'',href:'https://portal.example/request-access',origin:'https://portal.example',replace:url=>navigations.push(url)}}};
+  const context={document,Intl,Date,URL,URLSearchParams,AbortSignal,fetch:async()=>{if(fail)throw Error();return {ok:true,json:async()=>answer};},setInterval:fn=>intervals.push(fn),window:{history:{replaceState:(_state,_title,url)=>cleared.push(url)},location:{hash:fragment||'',pathname:'/',search:'',href:'https://portal.example/request-access',origin:'https://portal.example',replace:url=>navigations.push(url),reload:()=>navigations.push('reload')}}};
   vm.runInNewContext(fs.readFileSync('static/gate.js','utf8'),context);
   await new Promise(resolve=>setImmediate(resolve));
   return {elements,intervals,navigations,cleared,fail:()=>{fail=true;}};
 }
 (async()=>{
+ const progress=await scenario(['maintenance-progress','maintenance-state','maintenance-message','maintenance-connection'],{action:'update',state:'running',message:'<script>safe text</script>'});
+ assert.equal(progress.elements['maintenance-message'].textContent,'<script>safe text</script>');
+ progress.fail();await progress.intervals[0]();assert.match(progress.elements['maintenance-connection'].textContent,/continues independently/);
+ const done=await scenario(['maintenance-progress','maintenance-state','maintenance-message','maintenance-connection'],{action:'update',state:'complete',message:'Done'});assert.deepEqual(done.navigations,['reload']);
  const qr=await scenario(['code'],{},'#code=ABCD-2345');
  assert.equal(qr.elements.code.value,'ABCD-2345');assert.deepEqual(qr.cleared,['/']);assert.equal(qr.navigations.length,0);
  const invalidQR=await scenario(['code'],{},'#code=<script>');assert.equal(invalidQR.elements.code.value,undefined);

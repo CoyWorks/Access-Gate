@@ -151,3 +151,21 @@ if(codeInput && window.location.hash && /^#code=[23456789ABCDEFGHJKLMNPQRSTUVWXY
 }
 const printCards=document.getElementById('print-cards');
 if(printCards)printCards.addEventListener('click',()=>window.print());
+
+const maintenance=document.getElementById('maintenance-progress');
+if(maintenance && ['queued','running'].includes(maintenance.dataset.state)){
+  let busy=false;
+  const refresh=async()=>{
+    if(busy)return;busy=true;
+    try{
+      const response=await fetch('/admin/api/maintenance/'+encodeURIComponent(maintenance.dataset.job),{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw Error();const state=await response.json();
+      document.getElementById('maintenance-state').textContent=state.action+' — '+state.state;
+      document.getElementById('maintenance-message').textContent=state.message;
+      document.getElementById('maintenance-connection').textContent='Connected. Last checked '+new Date().toLocaleTimeString()+'.';
+      if(['complete','failed'].includes(state.state))window.location.reload();
+    }catch(_){document.getElementById('maintenance-connection').textContent='Portal unavailable or sign-in required. This job continues independently; retrying status after restart.';}
+    finally{busy=false;}
+  };
+  refresh();setInterval(refresh,3000);
+}

@@ -9,7 +9,7 @@ Open **Backup & restore** in administration. Run `bash update.sh` once to instal
 3. Create the encrypted backup, refresh the job page and download the `.agbackup` file.
 4. Store the archive and passphrase separately. A forgotten passphrase cannot be recovered.
 
-The worker uses SQLite's backup API, including committed WAL contents. The authenticated AES-256-GCM archive uses scrypt with a random salt. It contains database state, configuration/pepper, the retained root CA and issuing/portal certificate keys. No unencrypted private-key archive is downloadable. The root worker serializes jobs; the web application remains unprivileged.
+The worker uses SQLite's backup API, including committed WAL contents. The authenticated AES-256-GCM archive uses scrypt with a random salt. It contains database state, configuration/pepper, the retained root CA and issuing/portal certificate keys. No unencrypted private-key archive is downloadable. The root worker serializes jobs and performs live SQLite backup I/O under the portal account; the web application remains unprivileged.
 
 Backups are capped at 64 MiB and downloads expire after seven days. Job summaries remain for 30 days. These limits are explicit: this release is intended for the dedicated small-server installation. Root CLI configuration changes must not run concurrently with backup/restore. Copying an archive is not a source-code backup or a backup of external Pi-hole, firewall or device settings.
 
@@ -28,7 +28,7 @@ On replacement failure the worker attempts rollback with the same fail-closed re
 
 ## Privilege boundary
 
-`access-gate-maintenance.service` runs a fixed-action worker as root. It accepts only backup, preflight and confirmed restore jobs from a private inbox. The portal can write requests but cannot choose filesystem paths, shell commands, archive members or restore destinations. Inputs are bounded, archives are authenticated before parsing, uploaded tar/zip extraction is not used, and symlink files are refused. Secrets are removed from the inbox after processing; the decrypted preview passphrase is root-only and expires after 15 minutes. Job results contain summaries only. The application service remains `accessgate` with no sudo.
+`access-gate-maintenance.service` runs a fixed-action worker as root. It accepts only backup, preflight, confirmed restore and reviewed update jobs from a private inbox. The portal can write requests but cannot choose filesystem paths, shell commands, archive members or restore destinations. Inputs are bounded, archives are authenticated before parsing, uploaded tar/zip extraction is not used, and symlink files are refused. Secrets are removed from the inbox after processing; the decrypted preview passphrase is root-only and expires after 15 minutes. Job results contain summaries only. The application service remains `accessgate` with no sudo.
 
 ## Verified recovery exercise
 

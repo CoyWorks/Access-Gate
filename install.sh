@@ -2,6 +2,12 @@
 set -euo pipefail
 umask 027
 if [[ $EUID -ne 0 ]]; then echo 'Run this installer as root.' >&2; exit 1; fi
+# Share the worker's single-job lock. A worker-started installer inherits its lock.
+if [[ -z ${ACCESS_GATE_MAINTENANCE_JOB:-} ]]; then
+    install -d -m 0700 /var/lib/access-gate/maintenance
+    exec 9>/var/lib/access-gate/maintenance/worker.lock
+    if ! flock -n 9; then echo 'Another maintenance operation is running. Retry after it finishes.' >&2; exit 1; fi
+fi
 resume_install=0
 if [[ $# -gt 1 ]]; then echo 'Usage: bash install.sh [install|resume|update]' >&2; exit 1; fi
 case ${1:-install} in
@@ -17,7 +23,7 @@ bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if [[ $(readlink -f "$bundle_dir") == /opt/access-gate ]]; then
     echo 'Keep source files outside /opt/access-gate. Use /opt/access-gate-src for the Git checkout.' >&2; exit 1
 fi
-for required_item in access_gate access_gate/gateway.py access_gate/gateway_tls.py access_gate/gateway_setup.py templates static wsgi.py configure.py VERSION scripts/deploy_portal.py scripts/legacy_upgrade.py scripts/reset_install.py; do
+for required_item in access_gate access_gate/gateway.py access_gate/gateway_tls.py access_gate/gateway_setup.py templates static wsgi.py configure.py VERSION scripts/deploy_portal.py scripts/legacy_upgrade.py scripts/reset_install.py scripts/record_deployment.py; do
     if [[ ! -e "$bundle_dir/$required_item" ]]; then
         echo "Missing source item: $required_item. Extract the complete repository archive first." >&2; exit 1
     fi
@@ -55,7 +61,7 @@ fi
 /usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" check
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core gunicorn openssl ca-certificates curl iproute2 util-linux
+apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
 if [[ $resume_install -eq 1 ]]; then
     for unit in access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
@@ -272,6 +278,7 @@ if ! /usr/bin/python3 -m access_gate.readiness; then
     echo 'Correct the reported backend/proxy error, then rerun update.sh. Do not reset the installation.' >&2
     exit 1
 fi
+/usr/bin/python3 "$bundle_dir/scripts/record_deployment.py" "$bundle_dir"
 printf '\nInstallation complete. CA certificate: http://10.40.22.5/ca.crt\n'
 printf 'Completed mode: %s; version: %s\n' "$install_mode" "$(cat /opt/access-gate/VERSION)"
 if [[ $resume_install -eq 1 ]]; then

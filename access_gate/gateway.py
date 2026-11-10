@@ -263,7 +263,7 @@ class Gateway(GatewayActivity):
         headers['Host'] = request.headers['Host']; headers['X-Real-IP'] = address
         async with self.local.request(request.method, self.api_url + request.raw_path, headers=headers,
                 data=request.content.iter_chunked(65536) if request.can_read_body else None,
-                timeout=aiohttp.ClientTimeout(total=45, connect=2, sock_read=45),
+                timeout=aiohttp.ClientTimeout(total=180 if request.path=='/admin/recovery' else 45, connect=2, sock_read=45),
                 allow_redirects=False) as response:
             result = web.StreamResponse(status=response.status, headers=safe_headers(response.headers))
             request[STARTED] = True

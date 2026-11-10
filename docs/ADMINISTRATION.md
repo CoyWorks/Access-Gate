@@ -54,3 +54,5 @@ The 0.6 release passes 217 Python tests, including actual local HTTPS gateway/st
 Version 0.8 adds Requests, Activity, code-detail history, batch removal and the portal CA link. See [OPERATIONS.md](OPERATIONS.md). Activity delivery/drop status supplements the existing health checks.
 
 Version 0.9 adds timed Approve / Deny to Requests, with direct browser sessions and automatic visitor continuation. See OPERATIONS.md for decision/extension semantics.
+
+Version 0.10 adds [encrypted backup/restore](RECOVERY.md); 0.11 adds [print/PDF/QR exports](EXPORTS.md); 0.12 adds [recurring schedules](SCHEDULES.md); 0.13 adds [reviewed portal updates](UPDATES.md). System status now also includes the maintenance and scheduler services. Both web/gateway services remain unprivileged; privileged operations run through the fixed-action root maintenance worker.

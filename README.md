@@ -1,6 +1,6 @@
 # Access Gate
 
-**Version 0.9.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+**Version 0.13.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
 Keep selected DNS names pointed at `10.40.22.5` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
 
@@ -18,7 +18,7 @@ cd /root/Access-Gate
 bash install.sh
 ```
 
-Use a dedicated server. The installer creates the portal certificate/CA, admin password and database, configures Nginx for HTTP, and installs separate unprivileged portal and HTTPS gateway services. A dedicated intermediate CA signs on-demand site certificates; neither service receives the root CA private key. Current deployment addresses remain explicit in the installer; it is not a general-purpose installer for arbitrary networks.
+Use a dedicated server. The installer creates the portal certificate/CA, admin password and database, configures Nginx for HTTP, and installs separate unprivileged portal, HTTPS gateway and scheduler services. A fixed-action root maintenance worker handles encrypted recovery and reviewed updates. A dedicated intermediate CA signs on-demand site certificates; neither service receives the root CA private key. Current deployment addresses remain explicit in the installer; it is not a general-purpose installer for arbitrary networks.
 
 The initial admin URL/password is saved locally:
 
@@ -206,7 +206,7 @@ The configured portal URL must have matching DNS and certificate coverage. Apply
 | `/var/lib/access-gate/data/` | SQLite database and WAL files |
 | `/root/access-gate-initial-login.txt` | Initial administrator credentials |
 
-For a consistent manual backup, stop `access-gate`, copy the complete configuration/data directories, then restart it. No keeper service is required.
+Use **Backup & restore** for a consistent encrypted database/configuration/CA archive. See [RECOVERY.md](docs/RECOVERY.md) for validation, restore invalidation and root recovery; source-code archives are not server-state backups.
 
 ## Full reset
 
@@ -239,3 +239,5 @@ Administration now provides encrypted backups and validated restore jobs. Restor
 Code generation also supports [printable/PDF cards and QR prefill](docs/EXPORTS.md).
 
 [Schedules](docs/SCHEDULES.md) generate recurring batches with encrypted one-time collection.
+
+[Updates from administration](docs/UPDATES.md) show the installed/available commit and apply a reviewed update with persistent progress. CLI `bash update.sh` remains available.

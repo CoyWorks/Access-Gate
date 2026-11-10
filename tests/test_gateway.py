@@ -234,6 +234,21 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         self.client = aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=LoopbackResolver(), ssl=self.client_context),
             timeout=aiohttp.ClientTimeout(total=5))
 
+    async def test_recovery_upload_streams_through_real_tls_gateway(self):
+        jobs=self.flask.extensions['jobs'];jobs.root=self.root/'jobs';(jobs.root/'inbox').mkdir(parents=True)
+        form=await self.get(path='/admin/login')
+        csrf=re.search(r'name="csrf" value="([^"]+)"',await form.text()).group(1)
+        response=await self.get(path='/admin/login',method='POST',data=dict(csrf=csrf,password='admin'))
+        self.assertEqual(response.status,302);await response.read()
+        form=await self.get(path='/admin/recovery')
+        csrf=re.search(r'name="csrf" value="([^"]+)"',await form.text()).group(1)
+        data=aiohttp.FormData();data.add_field('csrf',csrf);data.add_field('action','preflight');data.add_field('current_password','admin');data.add_field('passphrase','test-passphrase-1234')
+        data.add_field('archive',b'x'*32768,filename='backup.agbackup',content_type='application/octet-stream')
+        response=await self.get(path='/admin/recovery',method='POST',data=data)
+        self.assertEqual(response.status,303);await response.read()
+        self.assertEqual(len(list((jobs.root/'inbox').glob('*.archive'))),1)
+        self.assertEqual(next((jobs.root/'inbox').glob('*.archive')).stat().st_size,32768)
+
     async def asyncTearDown(self):
         await self.client.close(); await self.runner.cleanup(); await self.origin_runner.cleanup()
         await asyncio.to_thread(self.wsgi.shutdown); self.wsgi.server_close(); self.thread.join(timeout=2)

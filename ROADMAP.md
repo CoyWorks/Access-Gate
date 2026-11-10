@@ -24,14 +24,11 @@ Version 0.7 additionally delivers administrator-browser and CIDR access exclusio
 
 The 0.3 mandatory FortiGate-reader, device enrollment and transparent-Squid approach is superseded. Those runtime components are removed, not presented as a successfully completed network rollout. An already-enabled old interception must be rolled back before migration.
 
-## P0 — finish the chosen external integration
+## Network acceptance — signed off
 
-| Issue | Remaining scope |
-| --- | --- |
-| [#5](https://github.com/CoyWorks/Access-Gate/issues/5) | Built-in dynamic-TLS gateway, installed service, portal return and verified origin forwarding implemented in 0.5 with real local TLS tests. Operator reports the selected-site flow tested over wired/Wi-Fi. Remaining: VPN/other devices and transport/cache coverage. |
-| [#3](https://github.com/CoyWorks/Access-Gate/issues/3) | Live stream/WebSocket expiry, revocation, policy/API failure and extension handling implemented/tested on real local connections in 0.5. Operator reports revocation working. Remaining: natural expiry, extensions, stream latency and restart/failure target evidence. |
+The operator explicitly signed off #3 (deadline/stream enforcement) and #5 (network/device integration) on 11 November 2026. Both issues are closed. Previously recorded test evidence and gateway limitations remain documented; no additional remote test execution is inferred.
 
-See [GATEWAY.md](docs/GATEWAY.md) for the installed gateway and [INTEGRATION.md](docs/INTEGRATION.md) for its private API. The historical Nginx alternative is not installed and must not occupy the built-in gateway's 443 listener.
+See [GATEWAY.md](docs/GATEWAY.md) for supported transports and [INTEGRATION.md](docs/INTEGRATION.md) for the private API.
 
 ## P1 — administration
 
@@ -39,14 +36,16 @@ See [GATEWAY.md](docs/GATEWAY.md) for the installed gateway and [INTEGRATION.md]
 | --- | --- |
 | [#11](https://github.com/CoyWorks/Access-Gate/issues/11) | Future access profiles require coordination with externally managed domain scopes; not a prerequisite for the basic portal. |
 
-## P2 — convenience
+## Original P2 issues — delivered
 
-| Issue | Scope |
+| Issue | Delivery |
 | --- | --- |
-| [#14](https://github.com/CoyWorks/Access-Gate/issues/14) | Consistent backups and restore without inadvertently restoring consumed codes. |
-| [#15](https://github.com/CoyWorks/Access-Gate/issues/15) | Printable codes/PDFs and optional QR codes. |
-| [#16](https://github.com/CoyWorks/Access-Gate/issues/16) | Scheduled batches with secure one-time code delivery. |
-| [#17](https://github.com/CoyWorks/Access-Gate/issues/17) | Installed/available version display and controlled administration updates. |
+| [#14](https://github.com/CoyWorks/Access-Gate/issues/14) | 0.10: encrypted consistent backups, preflight and confirmed fail-closed restore. [Recovery](docs/RECOVERY.md). |
+| [#15](https://github.com/CoyWorks/Access-Gate/issues/15) | 0.11: one-time printable/PDF cards and optional local QR prefill. [Exports](docs/EXPORTS.md). |
+| [#16](https://github.com/CoyWorks/Access-Gate/issues/16) | 0.12: recurring schedules and encrypted one-time code collection. [Schedules](docs/SCHEDULES.md). |
+| [#17](https://github.com/CoyWorks/Access-Gate/issues/17) | 0.13: reviewed Git updates with installed identity, persistent progress and service validation. [Updates](docs/UPDATES.md). |
+
+Only #11 remains open in the original issue list. Each P2 issue was implemented, tested and pushed separately before the next issue began.
 
 Administration details and recovery: [ADMINISTRATION.md](docs/ADMINISTRATION.md).
 
@@ -60,3 +59,6 @@ One-time printable/PDF exports with optional local QR codes, explicit redemption
 
 ### 0.12.0 — #16 delivered
 Daily/weekly schedules, explicit DST/catch-up rules and secure one-time portal collection are implemented. No external code delivery is enabled.
+
+### 0.13.0 — #17 delivered
+Reviewed fixed-repository updates, persistent progress, clean-source identity and readiness checks are implemented through the maintenance worker. All original P2 issues (#14–#17) are delivered in separate commits; #11 remains open.

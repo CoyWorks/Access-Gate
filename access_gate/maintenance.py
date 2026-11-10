@@ -40,7 +40,7 @@ class Jobs:
         self.root=Path(root)
 
     def submit(self,action,**values):
-        if action not in ('backup','preflight','restore'):raise GateError('Unknown maintenance action.')
+        if action not in ('backup','preflight','restore','update-check','update'):raise GateError('Unknown maintenance action.')
         if not (self.root/'inbox').is_dir():raise GateError('Maintenance worker is not installed. Run the normal updater first.')
         job_id=secrets.token_hex(16)
         # No overwriting another job, no client-supplied file names or paths.

@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode,urlsplit
 
-from flask import Flask,abort,redirect,render_template,request,session,flash,jsonify,url_for,g,send_file
+from flask import Flask,Request,abort,redirect,render_template,request,session,flash,jsonify,url_for,g,send_file
 from werkzeug.security import check_password_hash,generate_password_hash
 from .core import Store,GateError,TZ,STATUSES
 from .browser import TOKEN
@@ -30,10 +30,17 @@ PUBLIC_CA=Path('/var/lib/access-gate/public/ca.crt')
 DNS_FEED_PATHS = frozenset(('/domains.txt', '/pihole.conf'))
 
 
+class PortalRequest(Request):
+    @property
+    def max_content_length(self):
+        return MAX_ARCHIVE+16384 if self.path=='/admin/recovery' else 16384
+
+
 def create_app(config=None):
     if config is None:
         config=json.loads(Path(os.environ.get('ACCESS_GATE_CONFIG','/etc/access-gate/config.json')).read_text())
     app=Flask(__name__,template_folder='../templates',static_folder='../static')
+    app.request_class=PortalRequest
     app.config.update(SECRET_KEY=config['secret'],SESSION_COOKIE_SECURE=True,
                       SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax',
                       PERMANENT_SESSION_LIFETIME=dt.timedelta(days=7),MAX_CONTENT_LENGTH=MAX_ARCHIVE+16384)
@@ -385,6 +392,24 @@ def create_app(config=None):
     def verify_maintenance_password():
         if not store.attempt('admin-maintenance:'+client_ip(),5):raise GateError('Too many attempts. Please wait 15 minutes.')
         if not check_password_hash(g.admin_security['password_hash'],request.form.get('current_password','')):raise GateError('Current password is incorrect.')
+
+    @app.route('/admin/updates',methods=['GET','POST'])
+    @admin_only
+    def updates():
+        from .updates import installed
+        if request.method=='POST':
+            action=request.form.get('action','')
+            if action=='check':
+                job=jobs.submit('update-check');store.audit('update.requested',details=dict(reason='check'))
+            elif action=='update':
+                verify_maintenance_password()
+                if request.form.get('confirm')!='UPDATE':raise GateError('Type UPDATE to confirm the brief service interruption.')
+                preview=jobs.status(request.form.get('preview',''))
+                if preview.get('action')!='update-check' or preview.get('state')!='complete' or not preview.get('update_confirm'):raise GateError('Check for updates and review the available commit first.')
+                job=jobs.submit('update',preview=preview['id']);store.audit('update.requested',details=dict(reason='install'))
+            else:raise GateError('Invalid update action.')
+            return redirect(url_for('maintenance_job',job_id=job),code=303)
+        return render_template('updates.html',installed=installed(),jobs=[j for j in jobs.recent() if j['action'] in ('update-check','update')],csrf=csrf())
 
     @app.route('/admin/recovery',methods=['GET','POST'])
     @admin_only
