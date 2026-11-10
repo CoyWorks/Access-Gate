@@ -10,15 +10,18 @@ These two items are at the top of P1 for the next portal iteration.
 
 - Choose how many codes to generate.
 - Configure the code validity period in hours or days.
-- Configure access duration per activation in minutes or hours.
+- Configure access duration for the single activation in minutes or hours.
+- Every code remains strictly single-use. Redemption consumes the code permanently; the user cannot reactivate it.
+- After activation, an administrator may extend the resulting access session by a chosen number of minutes or hours.
+- An extension changes the session end time; it never resets the code to unused or permits another redemption.
+- Expose an **Extend access** action to administrators and record the added duration and updated end time.
 - Keep validity and access duration as separate settings: validity controls whether a code may be activated; access duration controls the resulting session.
-- Example: generate 10 codes, valid for 7 days, with 30 minutes of access per activation.
+- Example: generate 10 codes, valid for 7 days, with one activation per code giving 30 minutes of access. An administrator can subsequently add, for example, 1 hour to an activated session.
 - Replace the fixed calendar-week and 15-minute restrictions with configurable values; existing weekly codes must retain their original behavior during migration.
 - Validate quantities and duration values and show the validity and access duration clearly in administration.
 - Keep activation, consumption and expiry enforcement server-side.
 
 Decisions to confirm before implementation:
-- Can one code be activated repeatedly within its validity period, or does each code remain single-use?
 - Does the validity countdown start on generation, a chosen start time or first activation?
 - How should an activation near the validity deadline behave: full configured session duration or a session capped by that deadline?
 
@@ -44,10 +47,10 @@ Decisions to confirm before implementation:
 
 | Order | Feature | Scope |
 | --- | --- | --- |
-| 1 | Flexible code batches | Configurable code count, validity in hours/days, and access per activation in minutes/hours; see requested-next details above. |
+| 1 | Flexible code batches | Configurable code count, validity in hours/days, single-use access in minutes/hours, and admin-only extension after activation; see requested-next details above. |
 | 2 | Clear revoked | Dedicated cleanup action for revoked entries, preserving revocation and grant integrity. |
 | 3 | Batch overview and controls | Name batches, show unused/redeemed/expired/revoked counts and revoke whole batches. |
-| 4 | Active sessions | Live device/session overview, remaining time, terminate access and deliberate extensions. |
+| 4 | Active sessions | Live device/session overview, remaining time, terminate access and admin-only extensions in minutes/hours without reusing the code. |
 | 5 | Access profiles | Separate restricted-domain lists and associate code batches with a profile. |
 | 6 | Activity log | Record activation, expiry and administrator changes with configurable retention. |
 | 7 | System status | Portal/proxy/keeper health, clock synchronization, certificate expiry and useful errors. |
