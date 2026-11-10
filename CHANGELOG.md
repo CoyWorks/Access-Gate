@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0
+
+- Add Restricted domains administration with case/IDN normalization, exact/subdomain modes, descriptions, search and enable/delete controls. Import existing rules once through schema version 2.
+- Apply queued policies through the root worker with candidate validation, atomic ACL replacement, rollback, applied revisions and visible errors. Keep Flask unprivileged; grant deadlines are retained during domain updates.
+- Add registered VPN accounts/device labels and a fresh, read-only FortiGate IKE query connector. Bind grants to verified accounts and session evidence; deny ambiguous, reassigned, disabled or unavailable identities.
+- Track authorized restricted TCP tuples and close those on expiry/revocation. Add worker heartbeats, clock checks, watchdog/abnormal-stop cleanup and an opt-in real-stream test.
+- Reject ECH/GREASE, missing SNI and malformed ClientHello data before SSL splice; preserve non-decrypted ordinary TLS with visible SNI.
+- Add scoped, reversible nftables interception plus additive FortiGate plan/rollback generation. Keep interception disabled until explicit activation and verified prerequisites.
+- Document Android-first activation, transport support limits, packet evidence, target-only tests and rollback in `docs/ACTIVATION.md`.
+- Validate with 121 passing automated tests plus one target-only real-socket test skipped by default; Python/shell/JavaScript syntax checks pass.
+- Issue #1 is implemented. Issues #2, #3 and #5 include the enforcement implementation but remain open for actual FortiGate/Squid/kernel/Android acceptance; no remote firewall changes or live device tests are claimed.
+
 ## 0.2.0
 
 - Implement [#6](https://github.com/CoyWorks/Access-Gate/issues/6): named single-use batches with independently configurable code validity (hours/days) and access duration (minutes/hours), validation, generation summary and metadata in text exports.

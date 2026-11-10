@@ -2,7 +2,13 @@
 
 A local pilot for temporary access to selected websites using configurable single-use codes. The interface, installer messages and documentation are in English.
 
-**Version:** 0.2.0. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
+**Version:** 0.3.0. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
+
+## Enable the working VPN path
+
+Version 0.3.0 adds domain administration, a live FortiGate identity connector, targeted restricted-connection expiry, strict visible-SNI checks and a scoped Linux/FortiGate interception toolkit. Follow **[docs/ACTIVATION.md](docs/ACTIVATION.md)** after updating. It includes reader-key setup, exact prerequisites, additive firewall plan generation, Android acceptance tests and matching rollback.
+
+An update installs these components but does not activate traffic interception or remotely change the FortiGate. Real firewall output/permissions, Squid/kernel behavior and the Android browser path still need target-network verification. ECH/GREASE, pinned apps, external IPv6 and alternative website ports have explicit support boundaries in the guide. Start with one Android device and a unique VPN account.
 
 ## Download and run from /root
 
@@ -60,11 +66,15 @@ Deployment settings, restricted domains, code records, the admin password, HMAC 
 
 Services restart during update. In this pilot, restarting the keeper invalidates active grants; used codes remain used and unused codes retain their original validity window. Previously loaded browser content cannot be removed remotely. If a later configuration or service check fails, the installer stops and shows the error; backups remain available, but a complete automatic service/configuration rollback is not implemented.
 
-## Updating existing code data to 0.2.0
+## Updating existing data
 
-Run the normal updater; a reset is unnecessary. Installation/resume/update automatically run the transactional, versioned SQLite migration before starting services. The migration is repeatable, preserves code digests, consumption/revocation state and original weekly activation windows, and gives older batches a `Week starting YYYY-MM-DD` name. Existing weekly codes retain their 15-minute access duration. Newly created batches use the configurable form.
+Run the normal updater; a reset is unnecessary. Installation/resume/update automatically run transactional, versioned SQLite migrations before starting services. Schema version 2 preserves all code batches, HMAC digests, consumption/revocation flags and extension events, adds VPN account/session bindings, and imports the legacy domain list once. Older weekly batches retain their original window and 15-minute access duration.
 
-The installer makes its normal pre-update database/configuration backup. Keeper startup still invalidates active grants as described above, so plan updates between access sessions. If you roll back after migration, restore the matching previous application **and its database backup**; running old code against the upgraded schema is unsupported. Restoring data may restore consumed codes: revoke affected codes before allowing use again.
+After migration, use **Restricted domains** for rule changes. The worker validates and applies them atomically, shows requested/applied revisions and errors, and rolls back to the previous policy on failure. It runs outside the unprivileged web process. Applying rules reconnects proxy sockets, including already-spliced tunnels, without silently revoking other grant deadlines.
+
+Existing installations default to live VPN identity enforcement after this upgrade. Until the reader and a distinct VPN account are registered, restricted VPN access stays locked; the local portal remains available. Interception remains an explicit, separate activation. The installer retains existing network activation state if you already enabled it through the toolkit.
+
+The installer makes its normal pre-update database/configuration backup. Keeper startup invalidates active grants, so plan updates between access sessions. Rollback requires the matching previous application **and its database backup**; old code against an upgraded schema is unsupported. Restoring data may restore consumed codes: revoke affected codes before allowing use again.
 
 ## Direct source and Git workflows
 
@@ -114,11 +124,13 @@ When upgrading from version 0.1.3 or earlier, run `git pull --ff-only` once to o
 - **Extend access** adds whole minutes or hours to the current deadline of still-active, non-revoked access. Expired access cannot be reopened. Each extension allows up to 7 days and the resulting remaining window cannot exceed 365 days. Repeating the same submitted operation adds time only once.
 - See the latest 20 extension events, including added time, old/new deadlines and the administrator's source IP. The portal countdown refreshes the persisted deadline every five seconds. There is currently one shared administrator account; individual accounts and a full activity log remain planned.
 - Use selective Squid HTTPS inspection for restricted domains; other domains pass through without HTTPS decryption.
-- On expiry, close that client's proxy TCP connections. Ordinary websites on the same device may briefly reconnect too.
+- On expiry, close the tracked restricted proxy TCP connections. Coalescing or tuple reuse may require another connection to reconnect too; see the documented limits.
 
-**Pilot limitation:** grants currently use the source IP, not a verified VPN device identity. Do not activate the entire dynamic VPN pool: a reused address could inherit another client's remaining access. Reliable VPN account/address assignment or live session identification must be connected and tested first. Portal cookies cannot identify requests to unrelated websites.
+**VPN identity:** each registered account is verified against live FortiGate IKE evidence, including the assigned address and observed session identifier. Missing, ambiguous or unavailable evidence denies restricted access. A changed binding invalidates the old grant rather than renewing it or passing it to the next IP holder. Register and label/disable users through **Devices & users**. Existing manual addresses alone are not identity proof. The conservative connector may also invalidate access on IKE rekey; see the activation guide.
 
-This package configures the local portal and an explicit proxy test. It does **not** modify FortiGate routes, Pi-hole settings or Linux interception rules. Automatic VPN traffic interception, QUIC/HTTP3, IPv6 and ECH handling remain integration steps after the local proxy test passes. Apps with certificate pinning may reject interception.
+**Enforcement:** proxy permissions use the persisted deadline. Restricted connections are tracked by their client/listener TCP tuple and closed by the worker; unrelated independent browsing is not revoked. Heartbeat/time synchronization and systemd watchdog checks fail closed for restricted access. Real closure timing and tuple/coalescing limitations are documented in the guide. Already downloaded browser content cannot be removed remotely.
+
+**Interception:** the opt-in toolkit installs only the owned `inet access_gate` nftables table and generates a separate FortiGate change/rollback scoped to `NATIVE-VPN`. The original destination and source identity are preserved. Existing IKE, OCI tunnels and Pi-hole configuration are retained. No source-code test proves Android routing, CA trust or IPv6 lockdown; complete the target-network acceptance table before broader rollout.
 
 ## Server checks
 
@@ -155,41 +167,30 @@ Nginx permits portal clients from `10.40.0.0/16`; Gunicorn listens only on loopb
 
 ## Domain list and local proxy test
 
-`/etc/access-gate/domains.txt` has one domain per line. An entry covers the main domain and its subdomains. Do not include schemes, URL paths, ports or wildcard characters. Keep the portal domain outside the list.
+Use **Restricted domains** to add, edit, disable or delete domain rules, including descriptions and exact-domain versus subdomain behavior. Case and IDNs are normalized. Schemes, paths, ports, wildcards and portal-trapping rules are rejected. Search rules and refresh the applied revision after changes. `domains.txt` is retained only as the one-time upgrade import source.
 
-```bash
-printf 'example.org\n' > /etc/access-gate/domains.txt
-cd /opt/access-gate
-python3 configure.py
-```
-
-The command validates the list, reloads Squid and invalidates active grants. An empty list restricts no real domains.
-
-On the VM:
+For an initial explicit-proxy check on the VM, add `example.org` in the portal and wait until Applied:
 
 ```bash
 curl --noproxy '' --proxy http://10.40.22.5:3128 --cacert /etc/access-gate/ca/root.crt -I https://example.org/
 ```
 
-After CONNECT, expect a `302` redirect to `https://10.40.22.5/`. Do not use `-k`: certificate trust is part of the test. Share the result before routing Android traffic automatically.
+After CONNECT, expect a `302` redirect to `https://10.40.22.5/`. Keep certificate verification enabled. Configure live VPN identity and follow [the activation guide](docs/ACTIVATION.md) before routing device traffic.
 
-Squid uses 3128 for explicit tests; 3129/3130 are reserved for later transparent HTTP/HTTPS interception. Only configured pilot addresses may use the proxy; initially these are localhost and the VM itself. Content caching and access logs are disabled.
+Squid uses 3128 for explicit tests and 3129/3130 for opt-in transparent HTTP/HTTPS interception. Only configured pilot addresses may use the proxy; initially these are localhost and the VM itself. Content caching and access logs are disabled.
 
-Determine Android's current VPN address before registering it. If it is still `10.40.135.11`:
-
-```bash
-cd /opt/access-gate
-python3 configure.py --pilot-ip 10.40.135.11
-```
-
-The command replaces previous VPN pilot addresses and invalidates existing grants. A scoped FortiGate policy is still needed for NATIVE-VPN → vlan22 → 10.40.22.5. For later transparent interception, preserve the original destination and VPN source address and apply the local interception redirect on the proxy VM. FortiGate DNAT alone to 3130 is insufficient for Squid's original-destination checks.
+The default installation permits localhost and the VM itself for explicit checks. `configure.py --identity-check` verifies the reader. `configure.py --enable-vpn-enforcement` admits the VPN subnet while requiring verified identities. Legacy `--pilot-ip` remains a narrow address selector and does not establish device identity. Neither operation changes the FortiGate.
 
 ## Runtime paths
 
 | Path | Purpose |
 | --- | --- |
 | `/opt/access-gate` | Managed application, templates and static assets |
-| `/etc/access-gate/domains.txt` | Restricted domains |
+| `/etc/access-gate/domains.txt` | One-time legacy domain import |
+| SQLite domain/device/policy tables | Persistent managed rules, bindings and apply status |
+| `/etc/access-gate/fortigate.json` and `ssh/` | Root-only reader configuration, private key and pinned host key |
+| `/etc/access-gate/network.json` | Explicit local interception activation state |
+| `/run/access-gate/control.sock` | Fixed-operation local identity interface |
 | `/etc/access-gate/config.json` | Session secret, code pepper, admin hash and pilot clients |
 | `/etc/access-gate/ca/root.key` | Private CA key |
 | `/var/lib/access-gate/data` | SQLite database and WAL files |
@@ -211,6 +212,6 @@ bash -n reset.sh
 node --check static/gate.js
 ```
 
-There are 83 tests covering code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Updater integration tests use temporary local Git repositories to cover fast-forward updates, new updater execution, offline failures, dirty checkouts and diverged history. Git must be installed to run those integration tests. Code-management tests additionally cover legacy migration/rollback, independent durations, malformed forms, scoped archival, batch counts/pagination, extension idempotency, expiry under writer-lock contention and concurrent revocation/redemption/keeper actions. HTTP tests render and submit the administration flows. Live browser, Squid, Android and FortiGate integration must still be verified on the target network.
+The suite currently runs 122 tests (121 pass; the target-only real-socket test is skipped without opt-in). It covers code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Updater integration tests use temporary local Git repositories to cover fast-forward updates, new updater execution, offline failures, dirty checkouts and diverged history. Git must be installed to run those integration tests. Code-management tests additionally cover legacy migration/rollback, independent durations, malformed forms, scoped archival, batch counts/pagination, extension idempotency, expiry under writer-lock contention and concurrent revocation/redemption/keeper actions. HTTP tests render and submit the administration flows. New tests also cover domain normalization/matching, policy rollback, applied-revision races, account/address reuse, verified-session changes, identity failures, heartbeat expiry, targeted connection cleanup, TLS SNI/ECH parsing, scoped network rendering and schema-1 upgrades. The real socket-destruction test is opt-in and requires root/CAP_NET_ADMIN on the target VM; see the guide. Live browser, Squid, Android and FortiGate integration still requires target-network verification.
 
 References: [Squid SSL Bump](https://www.squid-cache.org/Doc/config/ssl_bump/), [external ACLs](https://www.squid-cache.org/Doc/config/external_acl_type/), [redirects](https://www.squid-cache.org/Doc/config/deny_info/), [Ubuntu squid-openssl](https://packages.ubuntu.com/noble/squid-openssl), [Flask security](https://flask.palletsprojects.com/en/stable/web-security/).

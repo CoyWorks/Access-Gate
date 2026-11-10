@@ -12,6 +12,8 @@ from urllib.parse import urlsplit, urlunsplit
 from flask import Flask, abort, redirect, render_template, request, session, flash, jsonify, url_for
 from werkzeug.security import check_password_hash
 from .core import Store, GateError, TZ, STATUSES, domains, matches
+from .operations import rule_matches
+from .identity import lookup,IdentityUnavailable
 
 
 def create_app(config=None):
@@ -46,11 +48,26 @@ def create_app(config=None):
             host = (url.hostname or '').encode('idna').decode('ascii').lower()
             if url.scheme not in ('http', 'https') or url.username or url.password or url.port not in (None,80,443):
                 return None
-            if not matches(host, domains(config['domains'])):
+            rules=store.applied_rules()
+            restricted=rule_matches(host,rules) if store.policy_status()['applied']>=0 else matches(host,domains(config['domains']))
+            if not restricted:
                 return None
             return urlunsplit((url.scheme, url.netloc, '/', '', ''))
         except (ValueError, UnicodeError, OSError):
             return None
+
+    def verified_identity(ip):
+        if config.get('require_identity',False) and ipaddress.ip_address(ip) in ipaddress.ip_network('10.40.135.0/24'):
+            try: return lookup(ip,config.get('control_socket','/run/access-gate/control.sock'))
+            except IdentityUnavailable as exc: raise GateError(str(exc))
+        return None
+
+    def current_grant(ip,connection=None):
+        if not eligible(ip): return None
+        try:
+            identity=verified_identity(ip)
+            return store.authorize(ip,identity,connection,config.get('enforcement',False))
+        except (GateError,OSError,ValueError): return None
 
     @app.before_request
     def guard():
@@ -92,7 +109,8 @@ def create_app(config=None):
                 error = 'Too many attempts. Please wait 15 minutes.'
             else:
                 try:
-                    store.redeem(request.form.get('code',''), ip)
+                    identity=verified_identity(ip)
+                    store.redeem(request.form.get('code',''), ip,identity=identity,enforce=config.get('enforcement',False))
                 except GateError as exc:
                     error = str(exc)
                 else:
@@ -100,7 +118,7 @@ def create_app(config=None):
                         return redirect(target, code=303)
                     return redirect('/')
         return render_template('index.html', ip=ip, target=target, error=error,
-                               grant=store.grant(ip), csrf=csrf(), eligible=eligible(ip))
+                               grant=current_grant(ip), csrf=csrf(), eligible=eligible(ip))
 
     @app.route('/admin/login', methods=['GET','POST'])
     def login():
@@ -149,7 +167,7 @@ def create_app(config=None):
     @app.get('/status')
     def access_status():
         ip = client_ip()
-        grant = store.grant(ip) if eligible(ip) else None
+        grant = current_grant(ip)
         return jsonify(active=bool(grant),expires=grant['expires'] if grant else None,server_time=time.time())
 
     @app.get('/admin')
@@ -157,7 +175,7 @@ def create_app(config=None):
     def admin():
         return render_template('admin.html',**list_context(),grants=store.list_grants(),
                                extensions=store.extension_history(),
-                               domains=domains(config['domains']),pilot=config['pilot_clients'])
+                               domains=([r['domain'] for r in store.applied_rules() if r['enabled']] if store.policy_status()['applied']>=0 else domains(config['domains'])),pilot=config['pilot_clients'])
 
     @app.get('/admin/batches')
     @admin_only
@@ -220,7 +238,7 @@ def create_app(config=None):
     @admin_only
     def extend_access(session_id):
         grant = next((g for g in store.list_grants() if g['session_id']==session_id),None)
-        if not grant or not eligible(grant['ip']) or not store.grant(grant['ip']):
+        if not grant or not eligible(grant['ip']) or not current_grant(grant['ip']):
             raise GateError('Only active access for a registered pilot address can be extended.')
         if request.method=='POST':
             event = store.extend(session_id,request.form.get('value',''),request.form.get('unit',''),
@@ -228,6 +246,53 @@ def create_app(config=None):
             flash('Access extended. New end time: '+localtime(event['new_expires'])+'.','success')
             return back(None)
         return render_template('extend.html',grant=grant,request_id=secrets.token_hex(16),csrf=csrf())
+
+    @app.get('/admin/domains')
+    @admin_only
+    def restricted_domains():
+        rule_id=request.args.get('edit')
+        rules=store.domain_rules(request.args.get('q',''))
+        editing=next((r for r in store.domain_rules() if r['id']==rule_id),None)
+        state=store.policy_status()
+        return render_template('domains.html',rules=rules,editing=editing,state=state,
+                               healthy=state['healthy'] and 0<=time.monotonic()-state['heartbeat']<=3,
+                               search=request.args.get('q',''),applied_rules=store.applied_rules(),csrf=csrf())
+
+    @app.post('/admin/domains/save')
+    @admin_only
+    def save_domain():
+        store.save_domain(request.form.get('domain',''),request.form.get('subdomains')=='on',
+                          request.form.get('description',''),request.form.get('enabled')=='on',request.form.get('id') or None)
+        flash('Rule saved. Waiting for proxy validation and apply.','success')
+        return redirect(url_for('restricted_domains'))
+
+    @app.post('/admin/domains/delete')
+    @admin_only
+    def delete_domain():
+        store.delete_domain(request.form.get('id',''))
+        flash('Rule deleted. Waiting for proxy validation and apply.','success')
+        return redirect(url_for('restricted_domains'))
+
+    @app.post('/admin/domains/apply')
+    @admin_only
+    def retry_policy():
+        with store.connect() as db: db.execute("UPDATE policy_state SET desired=desired+1,error='' WHERE id=1")
+        flash('Policy apply requested. Refresh to see the result.','success')
+        return redirect(url_for('restricted_domains'))
+
+    @app.get('/admin/devices')
+    @admin_only
+    def devices():
+        return render_template('devices.html',devices=store.devices(),csrf=csrf(),now=time.time(),
+                               require_identity=config.get('require_identity',False))
+
+    @app.post('/admin/devices/save')
+    @admin_only
+    def save_device():
+        store.save_device(request.form.get('username',''),request.form.get('label',''),
+                          request.form.get('enabled')=='on',request.form.get('id') or None)
+        flash('VPN user registration saved. Disabled users lose restricted access.','success')
+        return redirect(url_for('devices'))
 
     @app.get('/internal/check')
     def check():
@@ -237,6 +302,9 @@ def create_app(config=None):
             ip = str(ipaddress.ip_address(request.args.get('ip','')))
         except ValueError:
             return 'ERR\n'
-        return 'OK\n' if eligible(ip) and store.grant(ip) else 'ERR\n'
+        connection=None
+        if config.get('enforcement',False):
+            connection={name:request.args.get(name,'') for name in ('client_port','local_ip','local_port')}
+        return 'OK\n' if current_grant(ip,connection) else 'ERR\n'
 
     return app

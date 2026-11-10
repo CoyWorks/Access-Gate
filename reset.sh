@@ -12,8 +12,12 @@ if [[ $1 == --dry-run ]]; then
 fi
 # Validate restoration and file scope before stopping any service.
 /usr/bin/python3 "$source_dir/scripts/reset_install.py" check
+if [[ -f /etc/access-gate/network.json ]]; then
+    cd /opt/access-gate
+    /usr/bin/python3 -m access_gate.network disable
+fi
 echo 'Resetting Access Gate on this dedicated VM. Installed dependency packages will remain.'
-for unit in access-gate.service access-gate-keeper.service squid.service nginx.service; do
+for unit in access-gate.service access-gate-keeper.service access-gate-network.service squid.service nginx.service; do
     if systemctl cat "$unit" >/dev/null 2>&1; then systemctl disable --now "$unit"; fi
 done
 /usr/bin/python3 "$source_dir/scripts/reset_install.py" purge

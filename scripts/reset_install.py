@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 import shutil
 
-APPARMOR_BLOCK = '''# Access Gate local pilot
+LEGACY_APPARMOR_BLOCK = '''# Access Gate local pilot
 /etc/access-gate/ r,
 /etc/access-gate/** r,
 /opt/access-gate/access_gate/acl_helper.py r,
@@ -14,9 +14,12 @@ APPARMOR_BLOCK = '''# Access Gate local pilot
 /var/lib/squid/ssl_db/ rw,
 /var/lib/squid/ssl_db/** rwk,
 '''
+APPARMOR_BLOCK = LEGACY_APPARMOR_BLOCK.replace('/opt/access-gate/access_gate/acl_helper.py r,', '/opt/access-gate/access_gate/acl_helper.py r,\n/opt/access-gate/access_gate/tls_helper.py r,')
+
 REMOVE = (
     'etc/systemd/system/access-gate.service',
     'etc/systemd/system/access-gate-keeper.service',
+    'etc/systemd/system/access-gate-network.service',
     'etc/nginx/sites-enabled/access-gate',
     'etc/nginx/sites-available/access-gate',
     'opt/access-gate', 'etc/access-gate', 'var/lib/access-gate',
@@ -45,7 +48,7 @@ def plan(root):
         raise ValueError('Original Squid backup is missing. Restore it before purging Access Gate.')
     if profile.exists():
         text = profile.read_text()
-        if '# Access Gate local pilot' in text and APPARMOR_BLOCK not in text:
+        if '# Access Gate local pilot' in text and APPARMOR_BLOCK not in text and LEGACY_APPARMOR_BLOCK not in text:
             raise ValueError('The Access Gate AppArmor block was customized. Remove that block manually first.')
     paths = [mapped(root,p) for p in REMOVE]
     for pattern in ('root/access-gate-resume.*','opt/.access-gate-previous-*','opt/.access-gate-stage-*'):
@@ -62,7 +65,7 @@ def purge(root):
         shutil.copy2(root/'etc/squid/squid.conf.before-access-gate',root/'etc/squid/squid.conf')
     if profile.exists():
         text = profile.read_text()
-        cleaned = text.replace(APPARMOR_BLOCK,'')
+        cleaned = text.replace(APPARMOR_BLOCK,'').replace(LEGACY_APPARMOR_BLOCK,'')
         if cleaned != text: profile.write_text(cleaned)
     for p in paths:
         if p.is_symlink() or p.is_file(): p.unlink()

@@ -4,7 +4,7 @@
 {% if grant %}<p>You have access to the restricted websites until <strong>{{ grant.expires|localtime }}</strong>.</p>
 <p id="access-countdown" data-expires="{{ grant.expires }}" aria-live="polite">Access is active.</p><p>The timer keeps running when you close this page or the website.</p>
 {% if target %}<a class="button" href="{{ target }}">Continue to website</a>{% endif %}
-<p><a href="/">Refresh status</a></p>
+<p><a href="/">Refresh status / enter another unused code after expiry</a></p>
 {% elif eligible %}<p>Enter an unused access code. The access duration is set by its batch.</p>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="return" value="{{ target or '' }}">
 <label for="code">Access code</label><input id="code" name="code" placeholder="XXXX-XXXX-XXXX" autocomplete="off" maxlength="32" required>

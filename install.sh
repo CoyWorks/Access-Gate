@@ -54,7 +54,7 @@ else
 fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y squid-openssl nginx python3-flask gunicorn openssl curl iproute2 nftables
+apt-get install -y squid-openssl nginx python3-flask gunicorn openssl curl iproute2 nftables openssh-client
 if [[ $resume_install -eq 1 ]]; then
     for unit in access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
@@ -129,7 +129,12 @@ import json
 from pathlib import Path
 from access_gate.core import Store
 c = json.loads(Path('/etc/access-gate/config.json').read_text())
-Store(c['database'],c['pepper']).initialize()
+store=Store(c['database'],c['pepper'])
+store.initialize()
+store.import_domains(c['domains'])
+c.setdefault('require_identity',True)
+c.setdefault('enforcement',True)
+Path('/etc/access-gate/config.json').write_text(json.dumps(c,indent=2)+'\n')
 PY
 chown root:accessgate /etc/access-gate/config.json
 chmod 0640 /etc/access-gate/config.json
@@ -156,8 +161,10 @@ acl restricted_tls ssl::server_name --client-requested "/etc/access-gate/restric
 acl restricted_url dstdomain "/etc/access-gate/restricted.acl"
 acl private_dst dst 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 ::1/128 fc00::/7 fe80::/10
 acl portal_dst dst 10.40.22.5/32
-external_acl_type gate ttl=0 negative_ttl=0 children-max=8 children-startup=2 %SRC /usr/bin/python3 /opt/access-gate/access_gate/acl_helper.py
+external_acl_type gate ttl=0 negative_ttl=0 children-max=8 children-startup=2 %>a %>p %la %lp /usr/bin/python3 /opt/access-gate/access_gate/acl_helper.py
 acl permit external gate
+external_acl_type visible_tls ttl=0 negative_ttl=0 children-max=8 children-startup=2 %>handshake /usr/bin/python3 /opt/access-gate/access_gate/tls_helper.py
+acl visible_tls external visible_tls
 deny_info 302:https://10.40.22.5/?return=https://%H/ permit
 http_access deny !pilot
 http_access deny !Safe_ports
@@ -167,11 +174,16 @@ http_access deny private_dst
 # CONNECT must reach SSL Bump before an HTTP redirect can be delivered.
 http_access allow CONNECT
 http_access deny restricted_url !permit
-http_access allow pilot
+http_access deny restricted_tls !permit
+http_access allow restricted_url permit
+http_access allow restricted_tls permit
+http_access allow !restricted_url !restricted_tls
 http_access deny all
 ssl_bump peek step1
-ssl_bump bump restricted_tls
-ssl_bump splice all
+ssl_bump bump restricted_tls visible_tls
+ssl_bump splice !restricted_tls visible_tls
+ssl_bump terminate all
+on_unsupported_protocol respond all
 cache deny all
 access_log none
 cache_log /var/log/squid/cache.log
@@ -196,12 +208,16 @@ if [[ -f /etc/apparmor.d/usr.sbin.squid ]] && command -v apparmor_parser >/dev/n
 /etc/access-gate/ r,
 /etc/access-gate/** r,
 /opt/access-gate/access_gate/acl_helper.py r,
+/opt/access-gate/access_gate/tls_helper.py r,
 /usr/bin/python3* ix,
 /usr/lib/python3*/** mr,
 /etc/python3*/** r,
 /var/lib/squid/ssl_db/ rw,
 /var/lib/squid/ssl_db/** rwk,
 APPARMOR
+    fi
+    if ! grep -q '^/opt/access-gate/access_gate/tls_helper.py r,' /etc/apparmor.d/local/usr.sbin.squid; then
+        sed -i '\|^/opt/access-gate/access_gate/acl_helper.py r,|a /opt/access-gate/access_gate/tls_helper.py r,' /etc/apparmor.d/local/usr.sbin.squid
     fi
     apparmor_parser -r /etc/apparmor.d/usr.sbin.squid
 fi
@@ -263,27 +279,49 @@ UNIT
 cat > /etc/systemd/system/access-gate-keeper.service <<'UNIT'
 [Unit]
 Description=Expire Access Gate pilot grants
-After=access-gate.service
+After=access-gate.service squid.service
 [Service]
+Type=notify
+WatchdogSec=8
+NotifyAccess=all
+Group=accessgate
+RuntimeDirectory=access-gate
+RuntimeDirectoryMode=0750
 WorkingDirectory=/opt/access-gate
 ExecStart=/usr/bin/python3 -m access_gate.keeper
+ExecStopPost=/usr/bin/python3 -m access_gate.keeper --stop
 Restart=on-failure
 UMask=0077
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/access-gate/data
+ReadWritePaths=/var/lib/access-gate/data /etc/access-gate /run/access-gate
 PrivateTmp=true
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH
+[Install]
+WantedBy=multi-user.target
+UNIT
+cat > /etc/systemd/system/access-gate-network.service <<'UNIT'
+[Unit]
+Description=Scoped Access Gate transparent interception
+After=network-online.target squid.service
+Wants=network-online.target
+ConditionPathExists=/etc/access-gate/network.json
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/access-gate
+ExecStart=/usr/bin/python3 -m access_gate.network restore
 [Install]
 WantedBy=multi-user.target
 UNIT
 /usr/bin/python3 /opt/access-gate/configure.py --check
 nginx -t
 systemctl daemon-reload
-systemctl enable --now access-gate.service access-gate-keeper.service
 systemctl enable squid nginx
 systemctl restart squid nginx
+systemctl enable --now access-gate.service access-gate-keeper.service
+if [[ -f /etc/access-gate/network.json ]]; then systemctl enable access-gate-network.service; systemctl restart access-gate-network.service; fi
 systemctl is-active access-gate.service access-gate-keeper.service squid.service nginx.service
 curl --fail --silent --show-error --cacert /etc/access-gate/ca/root.crt https://10.40.22.5/ >/dev/null
 printf '\nInstallation complete. CA certificate: http://10.40.22.5/ca.crt\n'
@@ -296,4 +334,4 @@ elif [[ -f /root/access-gate-initial-login.txt ]]; then
 else
     echo 'Admin portal: https://10.40.22.5/admin (existing password unchanged).'
 fi
-printf '\nNo FortiGate route or VPN client has been activated. See README.md.\n'
+printf '\nNo FortiGate settings were changed. Follow docs/ACTIVATION.md for identity setup, scoped interception and device tests.\n'

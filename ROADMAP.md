@@ -2,6 +2,17 @@
 
 The completed section records shipped portal features. All other items remain planned. Keep the application interface, messages and documentation in English.
 
+## Delivered in 0.3.0 and pending network acceptance
+
+| Issue | Source implementation | Remaining live acceptance |
+| --- | --- | --- |
+| [#1](https://github.com/CoyWorks/Access-Gate/issues/1) | Domain administration, metadata/import, exact/subdomain modes and worker apply/rollback with revisions/errors. | Observe the applied revision after the normal server update. |
+| [#2](https://github.com/CoyWorks/Access-Gate/issues/2) | Registered VPN accounts, fresh FortiGate evidence, labels/disable controls and grant/session binding. | Pin the actual reader host key, validate this firewall's output/permissions and test account reconnect/address reuse. |
+| [#3](https://github.com/CoyWorks/Access-Gate/issues/3) | Targeted restricted TCP tracking, persisted deadlines, health/time checks and watchdog cleanup. | Run the opt-in real-stream test and verify actual Squid tuple evidence/permissions and Android open-stream expiry. |
+| [#5](https://github.com/CoyWorks/Access-Gate/issues/5) | Original-destination interception toolkit, scoped FortiGate change/rollback, strict SNI/ECH helper and automatic portal return flow. | Review/apply the actual firewall plan; capture Android IPv4, IPv6, HTTP3 and ECH behavior before broader rollout. |
+
+See [ACTIVATION.md](docs/ACTIVATION.md). Only #1 is closed by this release. The three network acceptance issues stay open until the actual evidence is recorded. No rebuild of the working VPN or OCI configuration is required.
+
 ## Completed in 0.2.0
 
 | Issue | Delivered |
@@ -19,7 +30,7 @@ These portal features do not complete the pending VPN identity, interception, fu
 
 | Order | Feature | Scope | Issue |
 | --- | --- | --- | --- |
-| 1 | Restricted domains | Add, edit, remove and enable/disable domains in the portal; include subdomains and descriptions. | [#1](https://github.com/CoyWorks/Access-Gate/issues/1) |
+| Done | Restricted domains | Implemented in 0.3.0: portal management and worker apply/rollback. | [#1](https://github.com/CoyWorks/Access-Gate/issues/1) |
 | 2 | Devices and users | Stable device/account identification across VPN reconnects; prevent a reused VPN address from inheriting access. | [#2](https://github.com/CoyWorks/Access-Gate/issues/2) |
 | 3 | Automatic unlock page | Complete HTTPS proxy/FortiGate integration, automatic portal presentation and return to the requested site. | [#5](https://github.com/CoyWorks/Access-Gate/issues/5) |
 | 4 | Reliable access expiry | Enforce the configured duration, handle existing connections and show clear remaining-time/expired states. | [#3](https://github.com/CoyWorks/Access-Gate/issues/3) |
@@ -43,4 +54,4 @@ These portal features do not complete the pending VPN identity, interception, fu
 | 3 | Automatic batches | Prepare batches on a schedule using configurable defaults. | [#16](https://github.com/CoyWorks/Access-Gate/issues/16) |
 | 4 | Updates in administration | Display installed/available versions and expose an update action with progress/results. | [#17](https://github.com/CoyWorks/Access-Gate/issues/17) |
 
-Priority levels indicate importance. The requested code-management iteration is delivered in 0.2.0; network integration and reliable identity remain prerequisites for broader deployment.
+Priority levels indicate importance. The requested code-management iteration is delivered in 0.2.0; live acceptance of network integration and verified identity remains a prerequisite for broader deployment.

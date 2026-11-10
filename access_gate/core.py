@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo('Europe/Amsterdam')
 ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 STATUSES = ('unused', 'redeemed', 'revoked', 'expired', 'future')
 STATUS_SQL = "CASE WHEN c.revoked=1 THEN 'revoked' WHEN c.used IS NOT NULL THEN 'redeemed' WHEN b.ends<=:now THEN 'expired' WHEN b.starts>:now THEN 'future' ELSE 'unused' END"
 
@@ -48,7 +48,10 @@ def status_of(code, now):
     return 'unused'
 
 
-class Store:
+from .operations import Operations
+
+
+class Store(Operations):
     def __init__(self, path, pepper):
         self.path, self.pepper = str(path), pepper.encode()
 
@@ -106,6 +109,7 @@ class Store:
                 request_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, code TEXT NOT NULL REFERENCES codes(id),
                 ip TEXT NOT NULL, seconds INTEGER NOT NULL CHECK(seconds>0), previous_expires REAL NOT NULL,
                 new_expires REAL NOT NULL, created REAL NOT NULL, actor TEXT NOT NULL)''')
+            self.initialize_operations(db,version)
             db.commit()
 
     def digest(self, code):
@@ -166,11 +170,23 @@ class Store:
                 (str(ipaddress.ip_address(ip)),now)).fetchone()
             return dict(row) if row else None
 
-    def redeem(self, code, ip, now=None):
-        now = time.time() if now is None else now
+    def redeem(self, code, ip, now=None, identity=None, enforce=False):
+        live_clock = now is None
+        now = time.time() if live_clock else now
         ip = str(ipaddress.ip_address(ip))
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            if live_clock: now=time.time()
+            if enforce:
+                state=db.execute('SELECT * FROM policy_state WHERE id=1').fetchone()
+                age=time.monotonic()-state['heartbeat']
+                if not state['healthy'] or not 0<=age<=3 or state['applying']:
+                    raise GateError('Access enforcement is unavailable. Your code has not been used.')
+            if identity is not None:
+                device=db.execute('SELECT * FROM devices WHERE id=?',(identity['device_id'],)).fetchone()
+                if not device or not device['enabled']: raise GateError('This VPN device is disabled.')
+                if device['binding']!=identity['binding'] or device['last_ip']!=ip:
+                    raise GateError('The VPN session changed. Reload the page; your code has not been used.')
             old = db.execute('SELECT * FROM grants WHERE ip=?',(ip,)).fetchone()
             if old:
                 if old['expires']>now and not old['revoked']:
@@ -182,8 +198,8 @@ class Store:
                 raise GateError('This code is invalid, already used, revoked or outside its validity period.')
             expires = now+item['access_seconds']
             db.execute('UPDATE codes SET used=?,used_ip=? WHERE id=?',(now,ip,item['id']))
-            db.execute('INSERT INTO grants(ip,code,expires,started,session_id) VALUES(?,?,?,?,?)',
-                       (ip,item['id'],expires,now,secrets.token_hex(16)))
+            db.execute('INSERT INTO grants(ip,code,expires,started,session_id,device_id,vpn_binding) VALUES(?,?,?,?,?,?,?)',
+                       (ip,item['id'],expires,now,secrets.token_hex(16),identity['device_id'] if identity else None,identity['binding'] if identity else None))
             db.commit()
         return expires
 

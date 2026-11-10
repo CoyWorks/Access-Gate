@@ -32,3 +32,12 @@ if (countdown) {
   const sync = async () => { try { const response = await fetch('/status',{cache:'no-store'}); if (!response.ok) return; const state = await response.json(); offset = state.server_time-Date.now()/1000; expiry = state.active ? state.expires : 0; tick(); } catch (_) { /* Server-side checks remain authoritative. */ } };
   tick(); sync(); setInterval(tick,1000); setInterval(sync,5000);
 }
+
+const domainForm = document.getElementById('domain-form');
+if (domainForm) {
+  const preview = () => {
+    const data = new FormData(domainForm), domain = String(data.get('domain') || 'example.org').trim();
+    document.getElementById('domain-preview').textContent = data.get('enabled') ? (data.get('subdomains') ? `Matches ${domain} and its subdomains, such as www.${domain}. Other domains stay unaffected.` : `Matches ${domain} only. Subdomains stay unaffected.`) : 'Disabled rule: this entry will not restrict any domain.';
+  };
+  domainForm.addEventListener('input',preview); preview();
+}

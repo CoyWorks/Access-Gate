@@ -4,5 +4,5 @@
 {% for g in grants %}<tr><td>{{ g.ip }}</td><td><a href="{{ url_for('batch_detail',batch_id=g.batch_id) }}">{{ g.batch_name }}</a></td><td>…{{ g.hint }}</td><td>{{ g.expires|localtime }}</td><td>{% if g.revoked or g.expires <= now %}Closing{% else %}Active{% endif %}</td><td>{% if not g.revoked and g.expires > now %}<a class="button secondary" href="{{ url_for('extend_access',session_id=g.session_id) }}">Extend access</a>{% endif %}</td></tr>{% else %}<tr><td colspan="6">No active access.</td></tr>{% endfor %}</tbody></table></div></section>
 <section><h2>Codes</h2><p>Full codes are only shown immediately after generation.</p>{% include '_codes.html' %}</section>
 {% include '_extensions.html' %}
-<section><h2>Pilot settings</h2><p>Source addresses: {{ pilot|join(', ') }}</p><p>Domains: {{ domains|join(', ') or 'No domains configured yet' }}</p><p class="muted">Access currently uses the source IP. Verified VPN device/session identity is still pending.</p></section>
+<section><h2>Pilot settings</h2><p>Source addresses: {{ pilot|join(', ') }}</p><p>Applied domains: {{ domains|join(', ') or 'No domains configured yet' }}</p><p class="muted">VPN users and current sessions are verified when live identity enforcement is configured. See Devices &amp; users and the activation guide.</p></section>
 {% endblock %}
