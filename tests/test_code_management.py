@@ -36,6 +36,27 @@ class ManagementTests(unittest.TestCase):
         self.store.redeem(raw,ip,self.now)
         return self.store.grant(ip,self.now)
 
+    def test_short_codes_are_unique_unambiguous_and_accept_normalized_input(self):
+        _,codes=self.batch(count=1000)
+        self.assertEqual(len(set(codes)),1000)
+        for code in codes: self.assertRegex(code,r'^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$')
+        self.store.redeem(codes[0].lower().replace('-',''),'10.40.135.11',self.now)
+        with self.assertRaises(GateError): self.store.redeem(codes[0],'10.40.135.12',self.now)
+
+    def test_existing_twelve_character_codes_remain_redeemable(self):
+        _,codes=self.batch(count=1)
+        old='ABCD-EFGH-JKLM'
+        with self.store.connect() as db:
+            db.execute('UPDATE codes SET digest=?,hint=? WHERE digest=?',(self.store.digest(old),'JKLM',self.store.digest(codes[0])))
+        self.store.initialize()
+        self.assertEqual(self.store.redeem(old.lower(),'10.40.135.11',self.now),self.now+900)
+
+    def test_short_code_collision_retries_instead_of_reusing_a_saved_code(self):
+        with patch('access_gate.core.secrets.choice',side_effect=list('AAAAAAAA'+'AAAAAAAA'+'BBBBBBBB')):
+            _,first=self.batch(count=1)
+            _,second=self.batch(count=1)
+        self.assertEqual(first,['AAAA-AAAA']); self.assertEqual(second,['BBBB-BBBB'])
+
     def test_independent_validity_and_access_units(self):
         batch,codes=self.batch(name='Short validity, long access',count=2,validity_value=2,validity_unit='hours',access_value=3,access_unit='hours')
         detail=self.store.batch_detail(batch,self.now)
@@ -355,7 +376,7 @@ class ManagementWebTests(unittest.TestCase):
         self.assertIn(b'data-duration="2 hours"',r.data)
         detail=self.store.list_batches()['items'][0]
         self.assertEqual((detail['validity_seconds'],detail['access_seconds'],detail['total']),(14400,7200,3))
-        codes=re.findall(rb'[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}',r.data)
+        codes=re.findall(rb'[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}',r.data)
         self.assertEqual(len(codes),3)
         self.assertNotIn(codes[0],self.request('/admin').data)
         self.assertNotIn(codes[0],self.request('/admin/batches/'+detail['id']).data)

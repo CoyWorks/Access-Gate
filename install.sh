@@ -233,7 +233,7 @@ printf '\nInstallation complete. CA certificate: http://10.40.22.5/ca.crt\n'
 printf 'Completed mode: %s; version: %s\n' "$install_mode" "$(cat /opt/access-gate/VERSION)"
 if [[ $resume_install -eq 1 ]]; then
     echo 'Admin portal: https://10.40.22.5/admin'
-    echo 'Your existing admin password is unchanged; see /root/access-gate-initial-login.txt.'
+    echo 'Your existing admin password is unchanged. Initial login details, if still valid: /root/access-gate-initial-login.txt.'
 elif [[ -f /root/access-gate-initial-login.txt ]]; then
     cat /root/access-gate-initial-login.txt
 else

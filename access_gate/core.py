@@ -11,6 +11,7 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo('Europe/Amsterdam')
 ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
+CODE_LENGTH = 8
 SCHEMA_VERSION = 4
 STATUSES = ('unused', 'redeemed', 'revoked', 'expired', 'future')
 STATUS_SQL = "CASE WHEN c.revoked=1 THEN 'revoked' WHEN c.used IS NOT NULL THEN 'redeemed' WHEN b.ends<=:now THEN 'expired' WHEN b.starts>:now THEN 'future' ELSE 'unused' END"
@@ -131,10 +132,13 @@ class Store(BrowserSessions, DNSExports):
                           VALUES(?,?,?,?,?,?,?,?,?,?)''',
                        (batch,week,start,end,access//60,now,name,access,int(end-start),mode))
             for _ in range(count):
-                raw = ''.join(secrets.choice(ALPHABET) for _ in range(12))
+                for attempt in range(10):
+                    raw = ''.join(secrets.choice(ALPHABET) for _ in range(CODE_LENGTH))
+                    if not db.execute('SELECT 1 FROM codes WHERE digest=?',(self.digest(raw),)).fetchone(): break
+                else: raise GateError('Could not generate a unique code. Please try again.')
                 db.execute('INSERT INTO codes(id,batch,digest,hint) VALUES(?,?,?,?)',
                            (secrets.token_hex(8),batch,self.digest(raw),raw[-4:]))
-                raw_codes.append('-'.join(raw[i:i+4] for i in range(0,12,4)))
+                raw_codes.append('-'.join(raw[i:i+4] for i in range(0,CODE_LENGTH,4)))
             db.commit()
         return batch, raw_codes
 

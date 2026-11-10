@@ -5,6 +5,6 @@
 <p id="access-countdown" data-expires="{{ grant.expires }}" aria-live="polite">Access is active.</p><p>The timer keeps running when you close this page.</p><p><a href="/">Refresh status / enter another code after expiry</a></p>
 {% else %}<p>Use an unused code to activate temporary access in this browser.</p>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="entry" value="{{ entry_id }}">
-<label for="code">Access code</label><input id="code" name="code" placeholder="XXXX-XXXX-XXXX" autocomplete="off" maxlength="32" required autofocus>
+<label for="code">Access code</label><input id="code" name="code" placeholder="XXXX-XXXX" autocomplete="off" maxlength="32" required autofocus>
 <button>Activate access</button></form>{% endif %}
 {% endblock %}

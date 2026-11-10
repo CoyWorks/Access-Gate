@@ -1,6 +1,6 @@
 # Access Gate
 
-**Version 0.5.2.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+**Version 0.5.3.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
 Keep selected DNS names pointed at `10.40.22.5` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
 
@@ -25,6 +25,17 @@ The initial admin URL/password is saved locally:
 ```bash
 cat /root/access-gate-initial-login.txt
 ```
+
+New access codes use 8 characters in two groups, such as `K7MP-4RX9`. Input is case-insensitive and accepts codes with or without the separator. Previously generated 12-character codes remain valid.
+
+To change the admin password, run on the installed server as root in an interactive terminal:
+
+```bash
+/usr/bin/python3 /opt/access-gate/configure.py --set-admin-password
+systemctl restart access-gate.service
+```
+
+Enter and confirm the new password (at least 8 characters); input is hidden and the password is not saved in plaintext. Existing admin sessions are signed out after restart. Access codes, browser grants and certificates are preserved. The initial-login file is marked obsolete if present. Cancelling or mismatched input leaves the configuration unchanged.
 
 ## Update or resume
 

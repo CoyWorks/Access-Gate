@@ -137,3 +137,21 @@ DNS now points selected names at the gateway. The browser still requests the ori
 This source release has automated coverage for export construction, validation, persistence, browser-grant preservation and administration controls. Pi-hole daemon/query behavior and real-device access still require the checks above on the target network.
 
 References: [Pi-hole configuration](https://docs.pi-hole.net/ftldns/configfile/), [Pi-hole blocking modes](https://docs.pi-hole.net/ftldns/blockingmode/), [Pi-hole domain database](https://docs.pi-hole.net/database/gravity/), [Pi-hole FAQ/local DNS sources](https://docs.pi-hole.net/main/faq/), [dnsmasq address/local/host-record semantics](https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html), [StevenBlack hosts-format example](https://github.com/StevenBlack/hosts).
+
+## Scheduled configuration refresh (native Linux Pi-hole)
+
+Disable the Access Gate adlist and enable loading `/etc/dnsmasq.d` first as described above. On the Pi-hole server, install the repository's sync helper as root:
+
+```bash
+curl -fS --max-time 30 https://raw.githubusercontent.com/CoyWorks/Access-Gate/main/scripts/sync_pihole.sh -o /tmp/access-gate-pihole-sync
+install -m 0755 /tmp/access-gate-pihole-sync /usr/local/sbin/access-gate-pihole-sync
+/usr/local/sbin/access-gate-pihole-sync
+```
+
+After a successful first run, create `/etc/cron.d/access-gate-pihole`:
+
+```cron
+*/5 * * * * root /usr/local/sbin/access-gate-pihole-sync >> /var/log/access-gate-pihole-sync.log 2>&1
+```
+
+The helper fetches `http://10.40.22.5/pihole.conf` directly without environment proxies, locks against concurrent runs and skips unchanged downloads. It validates the export header and DNS syntax, rolls back failed validation/restart and restarts FTL only for changes. An empty managed list still exports the identifying header and clears the old mappings. No Gravity rebuild or allowlist changes are performed. This is for a normal Linux installation, not Docker volume management. Stop scheduled sync by removing the cron file; the last mappings remain loaded.

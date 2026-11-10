@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.3
+
+- Add a locked Pi-hole cron sync helper that downloads the DNS configuration from 10.40.22.5, skips unchanged exports, checks DNS syntax and rolls back failed validation/restarts. Document native Linux installation and a five-minute cron schedule.
+
+- Generate shorter single-use access codes with 8 unambiguous characters, displayed as XXXX-XXXX. Preserve existing code digests, separator/case-insensitive input, rate limiting and single-use/expiry behavior. Retry random collisions against all retained codes before committing a batch.
+- Add `configure.py --set-admin-password` for hidden local password entry and confirmation. Store only the hash, rotate the Flask session secret to sign out admin sessions after restart, preserve browser grants/pepper and mark the old initial-login file obsolete. Cancelled/mismatched/short input leaves settings unchanged.
+
 ## 0.5.2
 
 - End code form submissions on a same-origin continuation document before navigating back to the restricted website. This avoids Chrome blocking the cross-origin form redirect under the existing strict form-action policy.
