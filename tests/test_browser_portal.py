@@ -181,6 +181,15 @@ class BrowserWebTests(BrowserWebFixture,unittest.TestCase):
         _,codes=self.store.create_batch(count=1)
         response=self.request('/?entry='+entry,'POST',dict(csrf=self.csrf(),code=codes[0],entry=entry))
         self.assertEqual(response.status_code,303)
+        self.assertEqual(response.headers['Location'],'/continue?entry='+entry)
+        self.assertNotIn('ticket=',response.headers['Location'])
+        continued=self.request(response.headers['Location'])
+        self.assertEqual(continued.status_code,200)
+        self.assertNotIn('Location',continued.headers)
+        self.assertIn(('href="/?entry='+entry+'"').encode(),continued.data)
+        self.assertIn(b'Continue to website',continued.data)
+        self.assertIn("form-action 'self'",continued.headers['Content-Security-Policy'])
+        response=self.request('/?entry='+entry)
         target=response.headers['Location']; self.assertTrue(target.startswith('https://example.org/__access_gate/complete?ticket='))
         ticket=target.split('ticket=')[1]
         self.assertNotIn(codes[0],target)
@@ -189,6 +198,23 @@ class BrowserWebTests(BrowserWebFixture,unittest.TestCase):
         allowed=self.rpc('/internal/check',dict(token=handoff.json['token'],origin='https://example.org'))
         self.assertTrue(allowed.json['active'])
         self.assertEqual(self.rpc('/internal/check',dict(token=handoff.json['token'],origin='https://other.org')).status_code,401)
+
+    def test_continue_requires_valid_entry_and_current_browser_grant(self):
+        self.assertEqual(self.request('/continue').status_code,400)
+        self.assertEqual(self.request('/continue?entry=missing').status_code,400)
+        entry=self.rpc('/internal/entry',dict(origin='https://example.org')).json['login_url'].split('entry=')[1]
+        response=self.request('/continue?entry='+entry+'&next=https://evil.example')
+        self.assertEqual(response.status_code,303)
+        self.assertEqual(response.headers['Location'],'/?entry='+entry)
+        self.activate()
+        response=self.request('/continue?entry='+entry+'&next=https://evil.example')
+        self.assertEqual(response.status_code,200)
+        self.assertNotIn(b'evil.example',response.data)
+        self.assertNotIn(b'ticket=',response.data)
+        self.assertEqual(self.request('/continue?entry='+entry,client=self.app.test_client()).status_code,303)
+        grant=self.store.list_grants()[0]
+        self.store.revoke(grant['code'])
+        self.assertEqual(self.request('/continue?entry='+entry).status_code,303)
 
     def test_invalid_entry_does_not_consume_code(self):
         _,codes=self.store.create_batch(count=1)

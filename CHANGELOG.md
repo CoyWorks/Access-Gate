@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.2
+
+- End code form submissions on a same-origin continuation document before navigating back to the restricted website. This avoids Chrome blocking the cross-origin form redirect under the existing strict form-action policy.
+- Automatically continue using the existing external script and provide a visible Continue to website link for browsers with JavaScript disabled. Keep one-time origin-bound tickets, cookies and active-grant checks unchanged.
+- Cover the continuation and complete TLS/code/origin flow, including missing/invalid entries, another browser, revocation and ignored external redirect parameters.
+
 ## 0.5.1
 
 - Fix gateway startup when the retained portal certificate was created with restrictive permissions, such as root:root 0640 under the installer's umask 027. Normalize both portal.crt and portal.key to root:accessgate-gateway 0640 while preserving their contents and the root/issuing CA.

@@ -103,14 +103,24 @@ def create_app(config=None):
                 except GateError as exc: error=str(exc)
                 else:
                     if entry:
-                        target,ticket=store.issue_handoff(entry_id,token)
-                        return redirect(target+'/__access_gate/complete?'+urlencode({'ticket':ticket}),code=303)
+                        # End the form navigation on a portal document before leaving
+                        # the origin: Chrome applies form-action to redirect chains.
+                        return redirect(url_for('continue_access',entry=entry_id),code=303)
                     return redirect('/')
         grant=current_grant()
         if entry and grant:
             target,ticket=store.issue_handoff(entry_id,token)
             return redirect(target+'/__access_gate/complete?'+urlencode({'ticket':ticket}),code=303)
         return render_template('index.html',error=error,grant=grant,csrf=csrf(),entry_id=entry_id)
+
+    @app.get('/continue')
+    def continue_access():
+        entry_id=request.args.get('entry','')
+        if not entry_id: abort(400,'A website entry is required.')
+        store.entry(entry_id)
+        resume_url=url_for('index',entry=entry_id)
+        if not current_grant(): return redirect(resume_url,code=303)
+        return render_template('continue.html',resume_url=resume_url)
 
     @app.route('/admin/login', methods=['GET','POST'])
     def login():

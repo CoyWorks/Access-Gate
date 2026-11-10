@@ -120,3 +120,7 @@ The normal updater backs up the entire configuration/database and keeps the prio
 The source test suite uses real local TLS listeners, a trusted root/intermediate chain, the actual Flask private API and an independently certified HTTPS origin. It verifies certificate names/deep subdomains, origin-bound code/cookie return, request bodies, cookie/header isolation, refused upstream certificates, bounded TLS state and issuer reuse. Real streaming HTTP and WebSocket tests verify expiry/revocation/policy/API failure, extensions and continued portal reachability. Public-DNS validation and bootstrap behavior are tested without relying on the machine's Pi-hole resolver.
 
 These tests prove the implemented source behavior on local sockets. The updater has not been run remotely on srvaccess01 by this release, and Android/FortiGate/Pi-hole packet paths and transport caches still require the target checks above.
+
+### Returning after code activation
+
+Code submission redirects to a portal continuation page that returns HTTP 200. Its external script starts a new GET navigation to the existing entry handoff; a Continue to website link works without JavaScript. This ends the form redirect chain before leaving the portal, so Chrome can retain the strict `form-action 'self'` policy. The entry and live browser grant are rechecked before the usual one-time ticket is issued. Actual Android browser behavior still needs verification after updating.

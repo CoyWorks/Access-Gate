@@ -33,3 +33,7 @@ if (countdown) {
   tick(); sync(); setInterval(tick,1000); setInterval(sync,5000);
 }
 
+
+// A committed portal document ends the form-action redirect chain.
+const continueWebsite = document.getElementById('continue-website');
+if (continueWebsite) window.location.replace(continueWebsite.href);
