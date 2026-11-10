@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1
+
+- Wait up to 30 seconds for a verified HTTPS HTTP 200 response after service startup instead of failing on the first transient 502/refused connection.
+- Bypass environment proxy settings for the local readiness check and retain CA/hostname verification. Redirects do not count as readiness.
+- Show recent portal and Nginx error logs when startup remains unsuccessful; preserve the existing failed-update state and backup for diagnosis/resume.
+- This fixes the premature final check; persistent backend startup failures still require the actual service logs.
+
 ## 0.3.0
 
 - Add Restricted domains administration with case/IDN normalization, exact/subdomain modes, descriptions, search and enable/delete controls. Import existing rules once through schema version 2.

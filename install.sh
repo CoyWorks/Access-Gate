@@ -323,7 +323,15 @@ systemctl restart squid nginx
 systemctl enable --now access-gate.service access-gate-keeper.service
 if [[ -f /etc/access-gate/network.json ]]; then systemctl enable access-gate-network.service; systemctl restart access-gate-network.service; fi
 systemctl is-active access-gate.service access-gate-keeper.service squid.service nginx.service
-curl --fail --silent --show-error --cacert /etc/access-gate/ca/root.crt https://10.40.22.5/ >/dev/null
+if ! /usr/bin/python3 -m access_gate.readiness; then
+    echo 'Portal startup failed. Existing data and the pre-update backup remain available.' >&2
+    echo 'Recent portal service logs:' >&2
+    journalctl -u access-gate.service -n 40 --no-pager >&2 || true
+    echo 'Recent Nginx upstream errors:' >&2
+    tail -n 20 /var/log/nginx/error.log >&2 || true
+    echo 'Correct the reported backend/proxy error, then rerun update.sh. Do not reset the installation.' >&2
+    exit 1
+fi
 printf '\nInstallation complete. CA certificate: http://10.40.22.5/ca.crt\n'
 printf 'Completed mode: %s; version: %s\n' "$install_mode" "$(cat /opt/access-gate/VERSION)"
 if [[ $resume_install -eq 1 ]]; then

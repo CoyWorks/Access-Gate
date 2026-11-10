@@ -2,7 +2,7 @@
 
 A local pilot for temporary access to selected websites using configurable single-use codes. The interface, installer messages and documentation are in English.
 
-**Version:** 0.3.0. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
+**Version:** 0.3.1. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
 
 ## Enable the working VPN path
 
@@ -132,6 +132,21 @@ When upgrading from version 0.1.3 or earlier, run `git pull --ff-only` once to o
 
 **Interception:** the opt-in toolkit installs only the owned `inet access_gate` nftables table and generates a separate FortiGate change/rollback scoped to `NATIVE-VPN`. The original destination and source identity are preserved. Existing IKE, OCI tunnels and Pi-hole configuration are retained. No source-code test proves Android routing, CA trust or IPv6 lockdown; complete the target-network acceptance table before broader rollout.
 
+## Update reports HTTP 502
+
+`active` service processes may still be starting their HTTP workers. Version 0.3.1 waits up to 30 seconds for a real HTTPS HTTP 200 response, bypassing environment proxies while retaining certificate verification. If the portal still fails, the updater stops and prints recent portal/Nginx errors; it does not report a successful install or erase existing state.
+
+Rerun `bash /root/Access-Gate/update.sh` to fetch and apply the startup-check fix. For an existing failure, these read-only checks distinguish a backend problem from a proxy/startup problem:
+
+```bash
+curl --noproxy '*' -sS --cacert /etc/access-gate/ca/root.crt -o /dev/null -w 'Portal HTTP: %{http_code}\n' https://10.40.22.5/
+curl --noproxy '*' -sS -H 'X-Real-IP: 10.40.22.5' -o /dev/null -w 'Backend HTTP: %{http_code}\n' http://127.0.0.1:8088/
+journalctl -u access-gate.service -n 60 --no-pager
+tail -n 20 /var/log/nginx/error.log
+```
+
+No reset is required. A persistent 502 is not proven to be a startup race; use the recorded upstream error and backend traceback to fix its actual cause.
+
 ## Server checks
 
 ```bash
@@ -212,6 +227,6 @@ bash -n reset.sh
 node --check static/gate.js
 ```
 
-The suite currently runs 122 tests (121 pass; the target-only real-socket test is skipped without opt-in). It covers code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Updater integration tests use temporary local Git repositories to cover fast-forward updates, new updater execution, offline failures, dirty checkouts and diverged history. Git must be installed to run those integration tests. Code-management tests additionally cover legacy migration/rollback, independent durations, malformed forms, scoped archival, batch counts/pagination, extension idempotency, expiry under writer-lock contention and concurrent revocation/redemption/keeper actions. HTTP tests render and submit the administration flows. New tests also cover domain normalization/matching, policy rollback, applied-revision races, account/address reuse, verified-session changes, identity failures, heartbeat expiry, targeted connection cleanup, TLS SNI/ECH parsing, scoped network rendering and schema-1 upgrades. The real socket-destruction test is opt-in and requires root/CAP_NET_ADMIN on the target VM; see the guide. Live browser, Squid, Android and FortiGate integration still requires target-network verification.
+The suite currently runs 128 tests (127 pass; the target-only real-socket test is skipped without opt-in). It covers code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Updater integration tests use temporary local Git repositories to cover fast-forward updates, new updater execution, offline failures, dirty checkouts and diverged history. Git must be installed to run those integration tests. Code-management tests additionally cover legacy migration/rollback, independent durations, malformed forms, scoped archival, batch counts/pagination, extension idempotency, expiry under writer-lock contention and concurrent revocation/redemption/keeper actions. HTTP tests render and submit the administration flows. New tests also cover domain normalization/matching, policy rollback, applied-revision races, account/address reuse, verified-session changes, identity failures, heartbeat expiry, targeted connection cleanup, TLS SNI/ECH parsing, scoped network rendering and schema-1 upgrades. The real socket-destruction test is opt-in and requires root/CAP_NET_ADMIN on the target VM; see the guide. Live browser, Squid, Android and FortiGate integration still requires target-network verification.
 
 References: [Squid SSL Bump](https://www.squid-cache.org/Doc/config/ssl_bump/), [external ACLs](https://www.squid-cache.org/Doc/config/external_acl_type/), [redirects](https://www.squid-cache.org/Doc/config/deny_info/), [Ubuntu squid-openssl](https://packages.ubuntu.com/noble/squid-openssl), [Flask security](https://flask.palletsprojects.com/en/stable/web-security/).
