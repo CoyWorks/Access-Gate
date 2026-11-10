@@ -1,57 +1,44 @@
 # Roadmap
 
-The completed section records shipped portal features. All other items remain planned. Keep the application interface, messages and documentation in English.
+Access Gate is a basic, vendor-independent code portal. Users enter a code; administrators manage batches and active grants. Domain selection and actual network/website enforcement belong to the external FortiGate, Pi-hole or proxy setup. UI, messages and documentation remain English.
 
-## Delivered in 0.3.0 and pending network acceptance
+## Delivered
 
-| Issue | Source implementation | Remaining live acceptance |
-| --- | --- | --- |
-| [#1](https://github.com/CoyWorks/Access-Gate/issues/1) | Domain administration, metadata/import, exact/subdomain modes and worker apply/rollback with revisions/errors. | Observe the applied revision after the normal server update. |
-| [#2](https://github.com/CoyWorks/Access-Gate/issues/2) | Registered VPN accounts, fresh FortiGate evidence, labels/disable controls and grant/session binding. | Pin the actual reader host key, validate this firewall's output/permissions and test account reconnect/address reuse. |
-| [#3](https://github.com/CoyWorks/Access-Gate/issues/3) | Targeted restricted TCP tracking, persisted deadlines, health/time checks and watchdog cleanup. | Run the opt-in real-stream test and verify actual Squid tuple evidence/permissions and Android open-stream expiry. |
-| [#5](https://github.com/CoyWorks/Access-Gate/issues/5) | Original-destination interception toolkit, scoped FortiGate change/rollback, strict SNI/ECH helper and automatic portal return flow. | Review/apply the actual firewall plan; capture Android IPv4, IPv6, HTTP3 and ECH behavior before broader rollout. |
-
-See [ACTIVATION.md](docs/ACTIVATION.md). Only #1 is closed by this release. The three network acceptance issues stay open until the actual evidence is recorded. No rebuild of the working VPN or OCI configuration is required.
-
-## Completed in 0.2.0
-
-| Issue | Delivered |
+| Issue | Status |
 | --- | --- |
-| [#6](https://github.com/CoyWorks/Access-Gate/issues/6) | Configurable single-use batches: count, validity in hours/days, access in minutes/hours, one-time export and a repeatable legacy migration. |
-| [#7](https://github.com/CoyWorks/Access-Gate/issues/7) | Clear revoked, scoped globally or to one batch, retaining internal revocation and consumption records. |
-| [#8](https://github.com/CoyWorks/Access-Gate/issues/8) | Active-session administrator extensions, duplicate-operation protection, minimal extension history and refreshed client countdown. |
-| [#9](https://github.com/CoyWorks/Access-Gate/issues/9) | Named batch overview/detail pages, status counts/filters, pagination and whole-batch revocation. |
+| [#6](https://github.com/CoyWorks/Access-Gate/issues/6) | Configurable single-use code count, activation validity and access duration; retained in 0.4. |
+| [#7](https://github.com/CoyWorks/Access-Gate/issues/7) | Clear revoked without restoring consumed/revoked codes; retained in 0.4. |
+| [#8](https://github.com/CoyWorks/Access-Gate/issues/8) | Administrator-only active access extensions and idempotent submissions; retained in 0.4. |
+| [#9](https://github.com/CoyWorks/Access-Gate/issues/9) | Named batches, status totals, filtering/pagination and whole-batch revocation; retained in 0.4. |
+| [#2](https://github.com/CoyWorks/Access-Gate/issues/2) | Reworked in 0.4: automatic browser identity without user registration, IP-reuse isolation, unchanged deadlines across network changes and origin-bound gateway handoff. |
+| [#1](https://github.com/CoyWorks/Access-Gate/issues/1) | Historical: domain administration delivered in 0.3, retired from the 0.4 UI because domain selection now belongs outside the app. Historical database records are retained. |
 
-Resolved behavior: unused-code validity starts at generation; an eligible activation receives the full configured access duration even near the deadline. New validity days are fixed 24-hour periods. Existing weekly batches keep their calendar windows and 15-minute access. Extensions apply only to active, non-revoked access and never reset a code. Clear revoked archives rows rather than deleting their underlying records. Current limits and update instructions are in [README.md](README.md).
+The 0.3 mandatory FortiGate-reader, device enrollment and transparent-Squid approach is superseded. Those runtime components are removed, not presented as a successfully completed network rollout. An already-enabled old interception must be rolled back before migration.
 
-These portal features do not complete the pending VPN identity, interception, full expiry or administration-security work. Batches currently share the Default global domain list. Extension history is a minimal event record, not the complete activity log.
+## P0 — finish the chosen external integration
 
-## P0 — reliable core behavior
+| Issue | Remaining scope |
+| --- | --- |
+| [#5](https://github.com/CoyWorks/Access-Gate/issues/5) | Choose/configure the actual redirect/enforcement adapter. Verify the supplied entry/handoff/authorization contract, external-site certificates, real return flow and actual device/browser paths. |
+| [#3](https://github.com/CoyWorks/Access-Gate/issues/3) | Portal/API deadlines are implemented. Verify that the chosen gateway also stops existing restricted streams/connections at expiry and handles extensions/revocation correctly. |
+| [#4](https://github.com/CoyWorks/Access-Gate/issues/4) | Strengthen administrator authentication/password management and management-network restrictions. Anonymous code users do not need accounts. |
 
-| Order | Feature | Scope | Issue |
-| --- | --- | --- | --- |
-| Done | Restricted domains | Implemented in 0.3.0: portal management and worker apply/rollback. | [#1](https://github.com/CoyWorks/Access-Gate/issues/1) |
-| 2 | Devices and users | Stable device/account identification across VPN reconnects; prevent a reused VPN address from inheriting access. | [#2](https://github.com/CoyWorks/Access-Gate/issues/2) |
-| 3 | Automatic unlock page | Complete HTTPS proxy/FortiGate integration, automatic portal presentation and return to the requested site. | [#5](https://github.com/CoyWorks/Access-Gate/issues/5) |
-| 4 | Reliable access expiry | Enforce the configured duration, handle existing connections and show clear remaining-time/expired states. | [#3](https://github.com/CoyWorks/Access-Gate/issues/3) |
-| 5 | Administration access | Separate administration access, password changes and allowed management networks/devices. | [#4](https://github.com/CoyWorks/Access-Gate/issues/4) |
+See [INTEGRATION.md](docs/INTEGRATION.md). A redirect alone is not website authorization. The optional Nginx example is not installed by the portal updater and does not claim strict open-stream expiry.
 
-## P1 — daily administration
+## P1 — administration
 
-| Order | Feature | Scope | Issue |
-| --- | --- | --- | --- |
-| 4 | Active sessions | Live device/session overview, remaining time, terminate access and admin-only extensions in minutes/hours without reusing the code. | [#10](https://github.com/CoyWorks/Access-Gate/issues/10) |
-| 5 | Access profiles | Separate restricted-domain lists and associate code batches with a profile. | [#11](https://github.com/CoyWorks/Access-Gate/issues/11) |
-| 6 | Activity log | Record activation, expiry and administrator changes with configurable retention. | [#12](https://github.com/CoyWorks/Access-Gate/issues/12) |
-| 7 | System status | Portal/proxy/keeper health, clock synchronization, certificate expiry and useful errors. | [#13](https://github.com/CoyWorks/Access-Gate/issues/13) |
+| Issue | Scope |
+| --- | --- |
+| [#10](https://github.com/CoyWorks/Access-Gate/issues/10) | Improve active browser-session management, remaining time and termination controls. |
+| [#11](https://github.com/CoyWorks/Access-Gate/issues/11) | Future access profiles require coordination with externally managed domain scopes; not a prerequisite for the basic portal. |
+| [#12](https://github.com/CoyWorks/Access-Gate/issues/12) | Activity log and configurable retention. |
+| [#13](https://github.com/CoyWorks/Access-Gate/issues/13) | Portal/gateway health, clock/certificate status and useful errors. No obsolete keeper/reader dependency. |
 
 ## P2 — convenience
 
-| Order | Feature | Scope | Issue |
-| --- | --- | --- | --- |
-| 1 | Backup and restore | Consistent backup and recovery, accounting for previously consumed/revoked codes. | [#14](https://github.com/CoyWorks/Access-Gate/issues/14) |
-| 2 | Code exports | Printable pages/PDFs and optional QR codes alongside the existing text export. | [#15](https://github.com/CoyWorks/Access-Gate/issues/15) |
-| 3 | Automatic batches | Prepare batches on a schedule using configurable defaults. | [#16](https://github.com/CoyWorks/Access-Gate/issues/16) |
-| 4 | Updates in administration | Display installed/available versions and expose an update action with progress/results. | [#17](https://github.com/CoyWorks/Access-Gate/issues/17) |
-
-Priority levels indicate importance. The requested code-management iteration is delivered in 0.2.0; live acceptance of network integration and verified identity remains a prerequisite for broader deployment.
+| Issue | Scope |
+| --- | --- |
+| [#14](https://github.com/CoyWorks/Access-Gate/issues/14) | Consistent backups and restore without inadvertently restoring consumed codes. |
+| [#15](https://github.com/CoyWorks/Access-Gate/issues/15) | Printable codes/PDFs and optional QR codes. |
+| [#16](https://github.com/CoyWorks/Access-Gate/issues/16) | Scheduled batches with secure one-time code delivery. |
+| [#17](https://github.com/CoyWorks/Access-Gate/issues/17) | Installed/available version display and controlled administration updates. |

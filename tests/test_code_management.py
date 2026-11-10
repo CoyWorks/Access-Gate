@@ -11,7 +11,7 @@ from pathlib import Path
 
 from werkzeug.security import generate_password_hash
 from access_gate.core import Store, GateError, TZ
-from access_gate.keeper import expire
+from access_gate.core import expire
 from access_gate.web import create_app
 
 
@@ -96,7 +96,7 @@ class ManagementTests(unittest.TestCase):
             self.store.extend(grant['session_id'],1,'hours','a'*32,now=self.now+1)
         killed=[]
         expire(self.store,killed.append,self.now+1)
-        self.assertEqual(killed,[grant['ip']])
+        self.assertEqual(killed,[grant['session_id']])
         with self.store.connect() as db: self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
 
     def test_clear_revoked_is_scoped_to_batch(self):
@@ -176,12 +176,12 @@ class ManagementTests(unittest.TestCase):
                 e=pool.submit(extend); k=pool.submit(cleanup); extended=e.result(); k.result()
             if extended:
                 self.assertIsNotNone(self.store.grant(ip,self.now+61))
-                self.assertNotIn(ip,killed)
+                self.assertNotIn(grant['session_id'],killed)
                 self.store.revoke(grant['code'])
                 expire(self.store,lambda ip:None,self.now+62)
             else:
                 self.assertIsNone(self.store.grant(ip,self.now+61))
-                self.assertIn(ip,killed)
+                self.assertIn(grant['session_id'],killed)
 
     def test_batch_revoke_is_atomic_scoped_and_idempotent(self):
         a,ca=self.batch(count=3)
@@ -282,7 +282,7 @@ class MigrationTests(unittest.TestCase):
         detail=self.store.batch_detail('legacy',300)
         self.assertEqual((detail['name'],detail['starts'],detail['ends'],detail['access_seconds'],detail['timing_mode']),('Week starting 2026-11-09',100,10000,900,'legacy-week'))
         with self.store.connect() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],2)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],3)
             self.assertEqual(db.execute('SELECT digest FROM codes WHERE id=?',('UNUSED',)).fetchone()[0],self.store.digest('UNUSED'))
             self.assertEqual(db.execute('SELECT used FROM codes WHERE id=?',('USED',)).fetchone()[0],200)
             self.assertEqual(db.execute('SELECT revoked FROM codes WHERE id=?',('REVOKED',)).fetchone()[0],1)
@@ -292,11 +292,13 @@ class MigrationTests(unittest.TestCase):
 
     def test_repeated_migration_preserves_session_and_extension_event(self):
         self.store.initialize()
-        session=self.store.grant('10.40.135.11',300)['session_id']
+        self.assertIsNone(self.store.grant('10.40.135.11',300))
+        self.store.redeem('UNUSED','10.40.135.12',300)
+        session=self.store.grant('10.40.135.12',300)['session_id']
         self.store.extend(session,1,'hours','e'*32,now=300)
         self.store.initialize(); self.store.initialize()
-        self.assertEqual(self.store.grant('10.40.135.11',300)['session_id'],session)
-        self.assertEqual(self.store.grant('10.40.135.11',300)['expires'],4700)
+        self.assertEqual(self.store.grant('10.40.135.12',300)['session_id'],session)
+        self.assertEqual(self.store.grant('10.40.135.12',300)['expires'],4800)
         self.assertEqual(len(self.store.extension_history()),1)
         with self.store.connect() as db: self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(),[])
 
@@ -374,8 +376,10 @@ class ManagementWebTests(unittest.TestCase):
 
     def test_extension_preview_submit_repeat_and_live_status(self):
         _,codes=self.batch()
-        self.store.redeem(codes[0],'10.40.135.11')
-        grant=self.store.grant('10.40.135.11')
+        self.request('/')
+        browser=self.client.get_cookie('__Host-accessgate-browser',domain='10.40.22.5').value
+        self.store.redeem(codes[0],'10.40.135.11',browser_token=browser)
+        grant=self.store.browser_grant(browser)
         path='/admin/access/'+grant['session_id']+'/extend'
         preview=self.request(path)
         self.assertEqual(preview.status_code,200)
@@ -399,7 +403,7 @@ class ManagementWebTests(unittest.TestCase):
         batch,codes=self.batch()
         self.store.redeem(codes[0],'10.40.135.11')
         self.assertEqual(self.request(f'/admin/batches/{batch}/revoke','POST',dict(csrf=self.token)).status_code,302)
-        self.assertEqual(self.request('/internal/check?ip=10.40.135.11',headers={'X-Gate-Key':'web-acl'}).data,b'ERR\n')
+        self.assertEqual(self.request('/internal/check?ip=10.40.135.11',headers={'X-Gate-Key':'web-acl'}).status_code,401)
         self.assertFalse(self.request('/status').get_json()['active'])
         self.assertEqual(self.store.batch_detail(batch)['revoked_count'],2)
 

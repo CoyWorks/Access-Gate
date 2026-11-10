@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.4.0
+
+- Make the default app a standalone code portal with automatic anonymous browser sessions. Remove mandatory VPN users, device registration and domain management screens.
+- Preserve single-use batches, one-time exports, Clear revoked, batch revocation and administrator extensions. Multiple browsers sharing an IP remain independent; network changes do not renew the original deadline.
+- Add private, origin-bound gateway authorization and one-time browser handoffs so an external gateway can use the portal without sharing its cookie across unrelated domains. Include browser redirects/cookie responses and an optional Nginx example.
+- Remove the live FortiGate reader, privileged keeper, Squid/TLS inspection helpers and local interception toolkit from the runtime. Retire only their known local service/configuration additions during upgrade.
+- Migrate transactionally to schema version 3. Retain batches, digests, used/revoked flags, extension history and historical settings. Invalidate old IP/VPN-bound grants; preserve new browser grants across ordinary restarts.
+- Refuse migration before changes if legacy interception remains activated or cannot safely be restored. Keep matching remote firewall rollback an explicit prerequisite for those installations.
+- Keep the 0.3.1 verified HTTPS readiness check and error diagnostics; reduce required running services to the portal and Nginx.
+- Domain selection, external-site HTTPS, actual website forwarding and long-lived connection enforcement are responsibilities of the selected external gateway. This release does not claim to activate a live FortiGate/Pi-hole website gate.
+
 ## 0.3.1
 
 - Wait up to 30 seconds for a verified HTTPS HTTP 200 response after service startup instead of failing on the first transient 502/refused connection.

@@ -16,13 +16,13 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,req,fp,code,msg,headers,newurl): return None
 
 
-def https_probe(cafile=CAFILE):
+def https_probe(cafile=CAFILE,url=URL):
     context=ssl.create_default_context(cafile=cafile)
     # Local checks must never travel through an environment-configured proxy.
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                      urllib.request.HTTPSHandler(context=context),NoRedirect())
     def probe(timeout):
-        with opener.open(URL,timeout=timeout) as response:
+        with opener.open(url,timeout=timeout) as response:
             response.read(1)
             return response.status
     return probe
@@ -53,7 +53,12 @@ def wait_for_portal(probe,timeout=30,interval=1,clock=time.monotonic,sleep=time.
 
 def main():
     print('Waiting up to 30 seconds for the HTTPS portal...',flush=True)
-    try: wait_for_portal(https_probe())
+    try:
+        import json
+        from pathlib import Path
+        config=json.loads(Path('/etc/access-gate/config.json').read_text())
+        endpoint=config.get('portal_url',URL.rstrip('/')).rstrip('/')+'/'
+        wait_for_portal(https_probe(url=endpoint))
     except (ReadinessError,OSError,ValueError) as exc:
         print('Portal readiness failed: '+str(exc),file=sys.stderr)
         return 1

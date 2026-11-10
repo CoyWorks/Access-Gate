@@ -9,7 +9,7 @@ from unittest.mock import patch
 from urllib.parse import urlparse
 
 from access_gate.core import Store, GateError, TZ, domains
-from access_gate.keeper import expire
+from access_gate.core import expire
 from access_gate.web import create_app
 from werkzeug.security import generate_password_hash
 
@@ -94,12 +94,13 @@ class GateTests(unittest.TestCase):
     def test_revocation_and_expiry_cleanup(self):
         code = self.batch()[0]
         self.store.redeem(code,'10.40.135.11',self.now)
-        code_id=self.store.grant('10.40.135.11',self.now)['code']
+        grant=self.store.grant('10.40.135.11',self.now)
+        code_id=grant['code']
         self.store.revoke(code_id)
         self.assertIsNone(self.store.grant('10.40.135.11',self.now))
         killed=[]
         expire(self.store,killed.append,self.now+1)
-        self.assertEqual(killed,['10.40.135.11'])
+        self.assertEqual(killed,[grant['session_id']])
         self.assertEqual(self.store.dashboard()[1],[])
 
     def test_failed_socket_cleanup_keeps_grant_tombstone(self):
@@ -132,17 +133,11 @@ class GateTests(unittest.TestCase):
 
 class WebTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory()
-        root=Path(self.temp.name)
-        (root/'domains').write_text('example.org\n')
+        self.temp=tempfile.TemporaryDirectory(); root=Path(self.temp.name)
         self.config=dict(secret='testing-secret',pepper='testing-pepper',acl_token='testing-acl',
-                         database=str(root/'gate.sqlite'),domains=str(root/'domains'),
-                         pilot_clients=['10.40.135.11/32'],admin_hash=generate_password_hash('test-password'))
-        self.app=create_app(self.config)
-        self.app.config['TESTING']=True
-        self.store=self.app.extensions['store']
-        self.store.initialize()
-        self.client=self.app.test_client()
+                         database=str(root/'gate.sqlite'),admin_hash=generate_password_hash('test-password'))
+        self.app=create_app(self.config); self.app.config['TESTING']=True
+        self.store=self.app.extensions['store']; self.store.initialize(); self.client=self.app.test_client()
 
     def tearDown(self): self.temp.cleanup()
 
@@ -152,47 +147,35 @@ class WebTests(unittest.TestCase):
 
     def csrf(self):
         self.request()
-        with self.client.session_transaction(base_url='https://10.40.22.5') as session:
-            return session['csrf']
+        with self.client.session_transaction(base_url='https://10.40.22.5') as session: return session['csrf']
 
     def test_csrf_and_admin_authentication(self):
         self.assertEqual(self.request('/admin').status_code,302)
         self.assertEqual(self.request('/admin/login','POST',{'password':'test-password'}).status_code,400)
         response=self.request('/admin/login','POST',{'password':'test-password','csrf':self.csrf()})
         self.assertEqual(response.status_code,302)
-        response=self.request('/admin')
-        self.assertEqual(response.status_code,200)
-        self.assertIn(b'Access overview',response.data)
+        self.assertIn(b'Access overview',self.request('/admin').data)
 
-    def test_internal_endpoint_requires_key_and_is_fail_closed(self):
+    def test_internal_endpoint_requires_key_and_does_not_authorize_ip(self):
         self.assertEqual(self.request('/internal/check?ip=10.40.135.11').status_code,403)
-        self.assertEqual(self.request('/internal/check?ip=10.40.135.11',headers={'X-Gate-Key':'testing-acl'}).data,b'ERR\n')
+        self.assertEqual(self.request('/internal/check?ip=10.40.135.11',headers={'X-Gate-Key':'testing-acl'}).status_code,401)
 
-    def test_redeem_and_safe_redirect(self):
-        now=dt.datetime.now(TZ)
-        monday=(now.date()-dt.timedelta(days=now.weekday())).isoformat()
-        _, codes=self.store.new_batch(monday,2)
-        response=self.request('/','POST',{'csrf':self.csrf(),'code':codes[0],'return':'https://example.org/private?secret=abc'})
-        self.assertEqual(response.status_code,303)
-        self.assertEqual(response.headers['Location'],'https://example.org/')
-        self.assertEqual(self.request('/internal/check?ip=10.40.135.11',headers={'X-Gate-Key':'testing-acl'}).data,b'OK\n')
-        self.assertEqual(self.request('/internal/check?ip=10.40.135.12',headers={'X-Gate-Key':'testing-acl'}).data,b'ERR\n')
-        self.assertNotIn('secret=abc',response.headers['Location'])
+    def test_code_activation_works_without_users_or_domains(self):
+        _,codes=self.store.create_batch(count=1)
+        response=self.request('/','POST',{'csrf':self.csrf(),'code':codes[0]})
+        self.assertEqual(response.status_code,302)
+        self.assertTrue(self.request('/status').json['active'])
+        self.assertIn(b'Access active',self.request().data)
 
-    def test_open_redirect_is_rejected_and_code_not_logged_in_url(self):
-        today=dt.datetime.now(TZ)
-        monday=(today.date()-dt.timedelta(days=today.weekday())).isoformat()
-        _, codes=self.store.new_batch(monday,1)
+    def test_unsigned_return_url_does_not_create_open_redirect(self):
+        _,codes=self.store.create_batch(count=1)
         response=self.request('/','POST',{'csrf':self.csrf(),'code':codes[0],'return':'https://evil.example/'})
         self.assertEqual(response.headers['Location'],'/')
         self.assertNotIn(codes[0],response.headers['Location'])
 
-    def test_unregistered_client_does_not_consume_code(self):
-        today=dt.datetime.now(TZ)
-        monday=(today.date()-dt.timedelta(days=today.weekday())).isoformat()
-        _, codes=self.store.new_batch(monday,1)
-        response=self.request('/','POST',{'csrf':self.csrf(),'code':codes[0]},headers={'X-Real-IP':'10.40.135.12'})
-        self.assertIn(b'not been registered for the pilot',response.data)
+    def test_outside_client_network_cannot_consume_code(self):
+        _,codes=self.store.create_batch(count=1)
+        self.assertEqual(self.request('/','POST',{'csrf':self.csrf(),'code':codes[0]},headers={'X-Real-IP':'203.0.113.1'}).status_code,403)
         self.assertIsNone(self.store.dashboard()[0][0]['used'])
 
 

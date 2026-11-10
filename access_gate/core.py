@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo('Europe/Amsterdam')
 ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 STATUSES = ('unused', 'redeemed', 'revoked', 'expired', 'future')
 STATUS_SQL = "CASE WHEN c.revoked=1 THEN 'revoked' WHEN c.used IS NOT NULL THEN 'redeemed' WHEN b.ends<=:now THEN 'expired' WHEN b.starts>:now THEN 'future' ELSE 'unused' END"
 
@@ -48,10 +48,10 @@ def status_of(code, now):
     return 'unused'
 
 
-from .operations import Operations
+from .browser import BrowserSessions
 
 
-class Store(Operations):
+class Store(BrowserSessions):
     def __init__(self, path, pepper):
         self.path, self.pepper = str(path), pepper.encode()
 
@@ -109,7 +109,7 @@ class Store(Operations):
                 request_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, code TEXT NOT NULL REFERENCES codes(id),
                 ip TEXT NOT NULL, seconds INTEGER NOT NULL CHECK(seconds>0), previous_expires REAL NOT NULL,
                 new_expires REAL NOT NULL, created REAL NOT NULL, actor TEXT NOT NULL)''')
-            self.initialize_operations(db,version)
+            self.initialize_browsers(db,version)
             db.commit()
 
     def digest(self, code):
@@ -163,43 +163,29 @@ class Store(Operations):
         return allowed
 
     def grant(self, ip, now=None):
-        now = time.time() if now is None else now
-        with self.connect() as db:
-            row = db.execute('''SELECT g.*, b.name AS batch_name FROM grants g JOIN codes c ON c.id=g.code
-                JOIN batches b ON b.id=c.batch WHERE g.ip=? AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0''',
-                (str(ipaddress.ip_address(ip)),now)).fetchone()
-            return dict(row) if row else None
+        """Compatibility for old Python callers. HTTP authorization uses browser tokens."""
+        return self.browser_grant(self._legacy_token(ip),now)
 
-    def redeem(self, code, ip, now=None, identity=None, enforce=False):
-        live_clock = now is None
-        now = time.time() if live_clock else now
-        ip = str(ipaddress.ip_address(ip))
+    def redeem(self, code, ip, now=None, browser_token=None):
+        live_clock=now is None
+        ip=str(ipaddress.ip_address(ip))
+        token=browser_token if browser_token is not None else self._legacy_token(ip)
+        browser_hash=self.browser_digest(token)
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            if live_clock: now=time.time()
-            if enforce:
-                state=db.execute('SELECT * FROM policy_state WHERE id=1').fetchone()
-                age=time.monotonic()-state['heartbeat']
-                if not state['healthy'] or not 0<=age<=3 or state['applying']:
-                    raise GateError('Access enforcement is unavailable. Your code has not been used.')
-            if identity is not None:
-                device=db.execute('SELECT * FROM devices WHERE id=?',(identity['device_id'],)).fetchone()
-                if not device or not device['enabled']: raise GateError('This VPN device is disabled.')
-                if device['binding']!=identity['binding'] or device['last_ip']!=ip:
-                    raise GateError('The VPN session changed. Reload the page; your code has not been used.')
-            old = db.execute('SELECT * FROM grants WHERE ip=?',(ip,)).fetchone()
-            if old:
-                if old['expires']>now and not old['revoked']:
-                    raise GateError('Access is already active. Your code has not been used.')
-                raise GateError('The previous session is closing. Please try again in a few seconds.')
-            item = db.execute('''SELECT c.*,b.starts,b.ends,b.access_seconds,b.revoked AS batch_revoked
-                FROM codes c JOIN batches b ON c.batch=b.id WHERE c.digest=?''',(self.digest(code),)).fetchone()
+            now=time.time() if live_clock else now
+            old=db.execute('SELECT * FROM grants WHERE browser_hash=?',(browser_hash,)).fetchone()
+            if old and old['expires']>now and not old['revoked']:
+                raise GateError('Access is already active. Your code has not been used.')
+            item=db.execute("""SELECT c.*,b.starts,b.ends,b.access_seconds,b.revoked AS batch_revoked
+                FROM codes c JOIN batches b ON c.batch=b.id WHERE c.digest=?""",(self.digest(code),)).fetchone()
             if not item or item['used'] is not None or item['revoked'] or item['batch_revoked'] or not item['starts']<=now<item['ends']:
                 raise GateError('This code is invalid, already used, revoked or outside its validity period.')
-            expires = now+item['access_seconds']
+            if old: db.execute('UPDATE grants SET browser_hash=NULL WHERE session_id=?',(old['session_id'],))
+            expires=now+item['access_seconds']
             db.execute('UPDATE codes SET used=?,used_ip=? WHERE id=?',(now,ip,item['id']))
-            db.execute('INSERT INTO grants(ip,code,expires,started,session_id,device_id,vpn_binding) VALUES(?,?,?,?,?,?,?)',
-                       (ip,item['id'],expires,now,secrets.token_hex(16),identity['device_id'] if identity else None,identity['binding'] if identity else None))
+            db.execute('INSERT INTO grants(session_id,ip,code,expires,started,browser_hash) VALUES(?,?,?,?,?,?)',
+                       (secrets.token_hex(16),ip,item['id'],expires,now,browser_hash))
             db.commit()
         return expires
 
@@ -356,3 +342,16 @@ def domains(path):
 
 def matches(host, entries):
     return any(host == d or host.endswith('.'+d) for d in entries)
+
+
+def expire(store,close,now=None):
+    """Optional integration cleanup hook; authorization itself always checks the deadline."""
+    with store.connect() as db:
+        db.execute('BEGIN IMMEDIATE')
+        now=time.time() if now is None else now
+        rows=db.execute('SELECT ip,session_id FROM grants WHERE expires<=? OR revoked=1',(now,)).fetchall()
+        for row in rows:
+            close(row['session_id'])
+            db.execute('DELETE FROM gateway_entries WHERE session_id=?',(row['session_id'],))
+            db.execute('DELETE FROM grants WHERE session_id=?',(row['session_id'],))
+        db.commit()

@@ -33,11 +33,3 @@ if (countdown) {
   tick(); sync(); setInterval(tick,1000); setInterval(sync,5000);
 }
 
-const domainForm = document.getElementById('domain-form');
-if (domainForm) {
-  const preview = () => {
-    const data = new FormData(domainForm), domain = String(data.get('domain') || 'example.org').trim();
-    document.getElementById('domain-preview').textContent = data.get('enabled') ? (data.get('subdomains') ? `Matches ${domain} and its subdomains, such as www.${domain}. Other domains stay unaffected.` : `Matches ${domain} only. Subdomains stay unaffected.`) : 'Disabled rule: this entry will not restrict any domain.';
-  };
-  domainForm.addEventListener('input',preview); preview();
-}

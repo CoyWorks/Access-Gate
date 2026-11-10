@@ -17,7 +17,7 @@ bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if [[ $(readlink -f "$bundle_dir") == /opt/access-gate ]]; then
     echo 'Keep source files outside /opt/access-gate. Use /opt/access-gate-src for the Git checkout.' >&2; exit 1
 fi
-for required_item in access_gate templates static wsgi.py configure.py VERSION scripts/deploy_portal.py; do
+for required_item in access_gate templates static wsgi.py configure.py VERSION scripts/deploy_portal.py scripts/legacy_upgrade.py scripts/reset_install.py; do
     if [[ ! -e "$bundle_dir/$required_item" ]]; then
         echo "Missing source item: $required_item. Extract the complete repository archive first." >&2; exit 1
     fi
@@ -36,7 +36,7 @@ if [[ $resume_install -eq 1 ]]; then
 import json
 from pathlib import Path
 c = json.loads(Path('/etc/access-gate/config.json').read_text())
-for key in ('secret','pepper','acl_token','admin_hash','database','domains','pilot_clients'):
+for key in ('secret','pepper','acl_token','admin_hash','database'):
     if not c.get(key):
         raise SystemExit('Cannot resume: incomplete configuration.')
 if c['database'] != '/var/lib/access-gate/data/gate.sqlite3':
@@ -48,13 +48,14 @@ else
     if [[ -e /etc/access-gate/config.json ]]; then
         echo 'Access Gate already exists. To preserve its state, use the updated installer with --resume.' >&2; exit 1
     fi
-    if ss -H -lnt | awk '{print $4}' | grep -Eq ':(80|443|3128|3129|3130|8088)$'; then
+    if ss -H -lnt | awk '{print $4}' | grep -Eq ':(80|443|8088)$'; then
         echo 'A required port is in use. Use a dedicated VM.' >&2; exit 1
     fi
 fi
+/usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" check
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y squid-openssl nginx python3-flask gunicorn openssl curl iproute2 nftables openssh-client
+apt-get install -y nginx python3-flask gunicorn openssl curl iproute2
 if [[ $resume_install -eq 1 ]]; then
     for unit in access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
@@ -62,29 +63,27 @@ if [[ $resume_install -eq 1 ]]; then
     backup_dir=$(mktemp -d /root/access-gate-resume.XXXXXX)
     cp -a /etc/access-gate "$backup_dir/config"
     cp -a /var/lib/access-gate/data "$backup_dir/data"
-    cp -a /etc/squid/squid.conf "$backup_dir/squid.conf"
+    if [[ -f /etc/squid/squid.conf ]]; then cp -a /etc/squid/squid.conf "$backup_dir/squid.conf"; fi
     if [[ -f /etc/nginx/sites-available/access-gate ]]; then
         cp -a /etc/nginx/sites-available/access-gate "$backup_dir/nginx.conf"
     fi
     echo "Existing server state backed up to $backup_dir"
 fi
-systemctl stop squid
+/usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" retire
 id accessgate >/dev/null 2>&1 || useradd --system --home /var/lib/access-gate --shell /usr/sbin/nologin accessgate
 install -d -m 0755 /etc/access-gate /var/lib/access-gate/public
 install -d -o accessgate -g accessgate -m 0700 /var/lib/access-gate/data
-install -d -o root -g proxy -m 0750 /etc/access-gate/ca
+install -d -o root -g root -m 0700 /etc/access-gate/ca
 /usr/bin/python3 "$bundle_dir/scripts/deploy_portal.py" "$bundle_dir" /opt/access-gate
 chown -R root:root /opt/access-gate
 chmod -R go-w /opt/access-gate
-touch /etc/access-gate/domains.txt
-chmod 0644 /etc/access-gate/domains.txt
 
 if [[ $resume_install -eq 0 ]]; then
 openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 3650 \
     -keyout /etc/access-gate/ca/root.key -out /etc/access-gate/ca/root.crt \
     -subj '/CN=Home Access Gate Root CA' \
     -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign'
-chown root:proxy /etc/access-gate/ca/root.key /etc/access-gate/ca/root.crt
+chown root:root /etc/access-gate/ca/root.key /etc/access-gate/ca/root.crt
 chmod 0640 /etc/access-gate/ca/root.key
 chmod 0644 /etc/access-gate/ca/root.crt
 openssl req -new -newkey rsa:2048 -nodes -keyout /etc/access-gate/portal.key \
@@ -111,8 +110,7 @@ password = secrets.token_urlsafe(20)
 config = dict(secret=secrets.token_hex(32), pepper=secrets.token_hex(32),
               acl_token=secrets.token_hex(32), admin_hash=generate_password_hash(password),
               database='/var/lib/access-gate/data/gate.sqlite3',
-              domains='/etc/access-gate/domains.txt',
-              pilot_clients=['127.0.0.1/32','10.40.22.5/32'])
+              portal_url='https://10.40.22.5',client_networks=['10.40.0.0/16','127.0.0.1/32','::1/128'])
 Path('/etc/access-gate/config.json').write_text(json.dumps(config,indent=2)+'\n')
 Path('/etc/access-gate/acl-token').write_text(config['acl_token']+'\n')
 Path('/root/access-gate-initial-login.txt').write_text('https://10.40.22.5/admin\nAdmin password: '+password+'\n')
@@ -124,110 +122,18 @@ else
     install -m 0644 /etc/access-gate/ca/root.crt /var/lib/access-gate/public/ca.crt
 fi
 cd /opt/access-gate
-/usr/bin/python3 - <<'PY'
-import json
-from pathlib import Path
-from access_gate.core import Store
-c = json.loads(Path('/etc/access-gate/config.json').read_text())
-store=Store(c['database'],c['pepper'])
-store.initialize()
-store.import_domains(c['domains'])
-c.setdefault('require_identity',True)
-c.setdefault('enforcement',True)
-Path('/etc/access-gate/config.json').write_text(json.dumps(c,indent=2)+'\n')
-PY
+/usr/bin/python3 /opt/access-gate/configure.py --check
 chown root:accessgate /etc/access-gate/config.json
 chmod 0640 /etc/access-gate/config.json
-chown root:proxy /etc/access-gate/acl-token
-chmod 0640 /etc/access-gate/acl-token
+chown root:root /etc/access-gate/acl-token
+chmod 0600 /etc/access-gate/acl-token
 chown -R accessgate:accessgate /var/lib/access-gate/data
-
-if [[ ! -e /etc/squid/squid.conf.before-access-gate ]]; then
-    cp -a /etc/squid/squid.conf /etc/squid/squid.conf.before-access-gate
-fi
-cat > /etc/squid/squid.conf <<'SQUID'
-visible_hostname srvaccess01
-http_port 10.40.22.5:3128 ssl-bump cert=/etc/access-gate/ca/root.crt key=/etc/access-gate/ca/root.key generate-host-certificates=on dynamic_cert_mem_cache_size=4MB
-http_port 10.40.22.5:3129 intercept
-https_port 10.40.22.5:3130 intercept ssl-bump cert=/etc/access-gate/ca/root.crt key=/etc/access-gate/ca/root.key generate-host-certificates=on dynamic_cert_mem_cache_size=4MB
-sslcrtd_program /usr/lib/squid/security_file_certgen -s /var/lib/squid/ssl_db -M 4MB
-tls_outgoing_options cafile=/etc/ssl/certs/ca-certificates.crt
-acl pilot src "/etc/access-gate/clients.acl"
-acl Safe_ports port 80 443
-acl SSL_ports port 443
-acl CONNECT method CONNECT
-acl step1 at_step SslBump1
-acl restricted_tls ssl::server_name --client-requested "/etc/access-gate/restricted.acl"
-acl restricted_url dstdomain "/etc/access-gate/restricted.acl"
-acl private_dst dst 0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.168.0.0/16 224.0.0.0/4 ::1/128 fc00::/7 fe80::/10
-acl portal_dst dst 10.40.22.5/32
-external_acl_type gate ttl=0 negative_ttl=0 children-max=8 children-startup=2 %>a %>p %la %lp /usr/bin/python3 /opt/access-gate/access_gate/acl_helper.py
-acl permit external gate
-external_acl_type visible_tls ttl=0 negative_ttl=0 children-max=8 children-startup=2 %>handshake /usr/bin/python3 /opt/access-gate/access_gate/tls_helper.py
-acl visible_tls external visible_tls
-deny_info 302:https://10.40.22.5/?return=https://%H/ permit
-http_access deny !pilot
-http_access deny !Safe_ports
-http_access deny CONNECT !SSL_ports
-http_access allow portal_dst
-http_access deny private_dst
-# CONNECT must reach SSL Bump before an HTTP redirect can be delivered.
-http_access allow CONNECT
-http_access deny restricted_url !permit
-http_access deny restricted_tls !permit
-http_access allow restricted_url permit
-http_access allow restricted_tls permit
-http_access allow !restricted_url !restricted_tls
-http_access deny all
-ssl_bump peek step1
-ssl_bump bump restricted_tls visible_tls
-ssl_bump splice !restricted_tls visible_tls
-ssl_bump terminate all
-on_unsupported_protocol respond all
-cache deny all
-access_log none
-cache_log /var/log/squid/cache.log
-SQUID
-# Ubuntu may not create this directory when no on-disk cache is configured.
-install -d -o proxy -g proxy -m 0750 /var/lib/squid
-if [[ ! -d /var/lib/squid/ssl_db ]]; then
-    runuser -u proxy -- /usr/lib/squid/security_file_certgen -c -s /var/lib/squid/ssl_db -M 4MB
-fi
-
-# Extend Ubuntu's existing confinement only for this helper and its data.
-if [[ -f /etc/apparmor.d/usr.sbin.squid ]] && command -v apparmor_parser >/dev/null; then
-    if ! grep -q 'local/usr.sbin.squid' /etc/apparmor.d/usr.sbin.squid; then
-        echo 'The Squid AppArmor profile has no local include. Share this error; AppArmor has not been disabled.' >&2
-        exit 1
-    fi
-    install -d -m 0755 /etc/apparmor.d/local
-    if ! grep -q '^# Access Gate local pilot$' /etc/apparmor.d/local/usr.sbin.squid 2>/dev/null; then
-    cat >> /etc/apparmor.d/local/usr.sbin.squid <<'APPARMOR'
-
-# Access Gate local pilot
-/etc/access-gate/ r,
-/etc/access-gate/** r,
-/opt/access-gate/access_gate/acl_helper.py r,
-/opt/access-gate/access_gate/tls_helper.py r,
-/usr/bin/python3* ix,
-/usr/lib/python3*/** mr,
-/etc/python3*/** r,
-/var/lib/squid/ssl_db/ rw,
-/var/lib/squid/ssl_db/** rwk,
-APPARMOR
-    fi
-    if ! grep -q '^/opt/access-gate/access_gate/tls_helper.py r,' /etc/apparmor.d/local/usr.sbin.squid; then
-        sed -i '\|^/opt/access-gate/access_gate/acl_helper.py r,|a /opt/access-gate/access_gate/tls_helper.py r,' /etc/apparmor.d/local/usr.sbin.squid
-    fi
-    apparmor_parser -r /etc/apparmor.d/usr.sbin.squid
-fi
 
 cat > /etc/nginx/sites-available/access-gate <<'NGINX'
 server {
     listen 10.40.22.5:80;
     server_name 10.40.22.5 toegang.coyseinri.nl;
-    allow 10.40.0.0/16;
-    deny all;
+    include /etc/access-gate/client-networks.nginx;
     location = /ca.crt {
         root /var/lib/access-gate/public;
         default_type application/x-x509-ca-cert;
@@ -241,8 +147,7 @@ server {
     ssl_certificate /etc/access-gate/portal.crt;
     ssl_certificate_key /etc/access-gate/portal.key;
     ssl_protocols TLSv1.2 TLSv1.3;
-    allow 10.40.0.0/16;
-    deny all;
+    include /etc/access-gate/client-networks.nginx;
     access_log off;
     client_max_body_size 16k;
     location /internal/ { return 404; }
@@ -276,53 +181,11 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 UNIT
-cat > /etc/systemd/system/access-gate-keeper.service <<'UNIT'
-[Unit]
-Description=Expire Access Gate pilot grants
-After=access-gate.service squid.service
-[Service]
-Type=notify
-WatchdogSec=8
-NotifyAccess=all
-Group=accessgate
-RuntimeDirectory=access-gate
-RuntimeDirectoryMode=0750
-WorkingDirectory=/opt/access-gate
-ExecStart=/usr/bin/python3 -m access_gate.keeper
-ExecStopPost=/usr/bin/python3 -m access_gate.keeper --stop
-Restart=on-failure
-UMask=0077
-NoNewPrivileges=true
-ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/var/lib/access-gate/data /etc/access-gate /run/access-gate
-PrivateTmp=true
-CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_OVERRIDE CAP_DAC_READ_SEARCH
-[Install]
-WantedBy=multi-user.target
-UNIT
-cat > /etc/systemd/system/access-gate-network.service <<'UNIT'
-[Unit]
-Description=Scoped Access Gate transparent interception
-After=network-online.target squid.service
-Wants=network-online.target
-ConditionPathExists=/etc/access-gate/network.json
-[Service]
-Type=oneshot
-RemainAfterExit=yes
-WorkingDirectory=/opt/access-gate
-ExecStart=/usr/bin/python3 -m access_gate.network restore
-[Install]
-WantedBy=multi-user.target
-UNIT
-/usr/bin/python3 /opt/access-gate/configure.py --check
 nginx -t
 systemctl daemon-reload
-systemctl enable squid nginx
-systemctl restart squid nginx
-systemctl enable --now access-gate.service access-gate-keeper.service
-if [[ -f /etc/access-gate/network.json ]]; then systemctl enable access-gate-network.service; systemctl restart access-gate-network.service; fi
-systemctl is-active access-gate.service access-gate-keeper.service squid.service nginx.service
+systemctl enable nginx access-gate.service
+systemctl restart nginx access-gate.service
+systemctl is-active access-gate.service nginx.service
 if ! /usr/bin/python3 -m access_gate.readiness; then
     echo 'Portal startup failed. Existing data and the pre-update backup remain available.' >&2
     echo 'Recent portal service logs:' >&2
@@ -342,4 +205,4 @@ elif [[ -f /root/access-gate-initial-login.txt ]]; then
 else
     echo 'Admin portal: https://10.40.22.5/admin (existing password unchanged).'
 fi
-printf '\nNo FortiGate settings were changed. Follow docs/ACTIVATION.md for identity setup, scoped interception and device tests.\n'
+printf '\nStandalone code portal ready. No user/domain registration is required. Configure redirects and authorization enforcement in your external gateway; see docs/INTEGRATION.md.\n'
