@@ -17,10 +17,12 @@ from .dns_export import TARGET_IP
 from .blocklist import download_blocklist
 from .administration import management_networks
 from .health import Health
+from .exclusions import exclusion_networks,ADMIN_IDLE_SECONDS
 
 BROWSER_COOKIE='__Host-accessgate-browser'
 SITE_COOKIE='__Host-accessgate-site'
 CHALLENGE_COOKIE='__Host-accessgate-challenge'
+ADMIN_COOKIE='__Host-accessgate-admin'
 DNS_FEED_PATHS = frozenset(('/domains.txt', '/pihole.conf'))
 
 
@@ -30,7 +32,7 @@ def create_app(config=None):
     app=Flask(__name__,template_folder='../templates',static_folder='../static')
     app.config.update(SECRET_KEY=config['secret'],SESSION_COOKIE_SECURE=True,
                       SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax',
-                      PERMANENT_SESSION_LIFETIME=dt.timedelta(hours=2),MAX_CONTENT_LENGTH=16384)
+                      PERMANENT_SESSION_LIFETIME=dt.timedelta(days=7),MAX_CONTENT_LENGTH=16384)
     store=Store(config['database'],config['pepper']); app.extensions['store']=store
     health=Health(config,store); app.extensions['health']=health
     networks=[ipaddress.ip_network(n) for n in config.get('client_networks',['10.40.0.0/16','127.0.0.1/32','::1/128'])]
@@ -54,6 +56,22 @@ def create_app(config=None):
 
     def csrf(): return session.setdefault('csrf',secrets.token_urlsafe(32))
 
+    def current_exclusion():
+        if store.ip_excluded(client_ip(),config):return dict(kind='ip',expires=None)
+        if getattr(g,'admin_login',None):return dict(kind='admin',expires=g.admin_login['expires'])
+        return None
+
+    def website_handoff(entry_id,token,entry):
+        if store.ip_excluded(client_ip(),config):return redirect(entry['origin']+'/',code=303)
+        if getattr(g,'admin_login',None):target,ticket=store.issue_admin_handoff(entry_id,g.admin_login['id'],config)
+        else:target,ticket=store.issue_handoff(entry_id,token)
+        return redirect(target+'/__access_gate/complete?'+urlencode({'ticket':ticket}),code=303)
+
+    def end_login():
+        store.end_admin_login(request.cookies.get(ADMIN_COOKIE,''),browser())
+        session.clear();g.admin_login=None;g.new_admin_cookie=None;g.clear_admin_cookie=True
+
+
     @app.before_request
     def guard():
         if request.path.startswith('/internal/'):
@@ -61,12 +79,22 @@ def create_app(config=None):
             if request.remote_addr not in ('127.0.0.1','::1') or not expected or not hmac.compare_digest(request.headers.get('X-Gate-Key','').encode(),expected.encode()): abort(403)
             return
         address=client_ip()
+        g.admin_security=store.admin_security(config)
+        # Polling/static/feed requests validate but never renew an idle login.
+        activity=request.path not in DNS_FEED_PATHS and request.path!='/status' and not request.path.startswith(('/static/','/admin/api/'))
+        g.admin_login=None
+        admin_cookie=request.cookies.get(ADMIN_COOKIE,'')
+        if admin_cookie:
+            g.admin_login=store.admin_login(admin_cookie,browser(),config,touch=activity)
+            if not g.admin_login:g.clear_admin_cookie=True
+        if g.admin_login:
+            if activity:g.new_admin_cookie=admin_cookie
+            session['admin']=True; session['auth_version']=g.admin_security['version']; session.permanent=True
+        else:
+            for key in ('admin','auth_version'):session.pop(key,None)
         if request.path=='/admin' or request.path.startswith('/admin/'):
-            g.admin_security=store.admin_security(config)
             if not any(ipaddress.ip_address(address) in ipaddress.ip_network(n) for n in g.admin_security['networks']):
                 abort(403,'Administration is not available from this network. The code portal is still available.')
-            if session.get('admin') and not hmac.compare_digest(str(session.get('auth_version','')),g.admin_security['version']):
-                session.clear()
         if request.path not in DNS_FEED_PATHS and urlsplit('https://'+request.host).hostname!=urlsplit(portal_url).hostname:
             if request.method in ('GET','HEAD'):
                 return redirect(portal_url+request.full_path.rstrip('?'),code=308)
@@ -81,6 +109,11 @@ def create_app(config=None):
             'Content-Security-Policy':"default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"})
         if getattr(g,'new_browser',False):
             response.set_cookie(BROWSER_COOKIE,g.browser_token,max_age=365*86400,secure=True,httponly=True,samesite='Lax',path='/')
+        if getattr(g,'new_admin_cookie',None):
+            # The opaque cookie is only a lookup handle; the DB enforces seven idle days.
+            response.set_cookie(ADMIN_COOKIE,g.new_admin_cookie,max_age=365*86400,secure=True,httponly=True,samesite='Lax',path='/')
+        elif getattr(g,'clear_admin_cookie',False):
+            response.delete_cookie(ADMIN_COOKIE,secure=True,httponly=True,samesite='Lax',path='/')
         return response
 
     @app.template_filter('localtime')
@@ -105,6 +138,8 @@ def create_app(config=None):
     def index():
         ip=client_ip(); token=browser(); entry_id=request.values.get('entry',''); error=None
         entry=store.entry(entry_id) if entry_id else None
+        if request.method=='POST' and current_exclusion():
+            return redirect(url_for('continue_access',entry=entry_id) if entry_id else '/',code=303)
         if request.method=='POST':
             if not store.attempt('redeem:'+ip,10): error='Too many attempts. Please wait 15 minutes.'
             else:
@@ -116,11 +151,9 @@ def create_app(config=None):
                         # the origin: Chrome applies form-action to redirect chains.
                         return redirect(url_for('continue_access',entry=entry_id),code=303)
                     return redirect('/')
-        grant=current_grant()
-        if entry and grant:
-            target,ticket=store.issue_handoff(entry_id,token)
-            return redirect(target+'/__access_gate/complete?'+urlencode({'ticket':ticket}),code=303)
-        return render_template('index.html',error=error,grant=grant,csrf=csrf(),entry_id=entry_id)
+        grant=current_grant();exclusion=current_exclusion()
+        if entry and (grant or exclusion):return website_handoff(entry_id,token,entry)
+        return render_template('index.html',error=error,grant=grant,exclusion=exclusion,csrf=csrf(),entry_id=entry_id)
 
     @app.get('/continue')
     def continue_access():
@@ -128,31 +161,42 @@ def create_app(config=None):
         if not entry_id: abort(400,'A website entry is required.')
         store.entry(entry_id)
         resume_url=url_for('index',entry=entry_id)
-        if not current_grant(): return redirect(resume_url,code=303)
+        if not (current_grant() or current_exclusion()): return redirect(resume_url,code=303)
         return render_template('continue.html',resume_url=resume_url)
 
     @app.route('/admin/login', methods=['GET','POST'])
     def login():
         error = None
+        portal=request.values.get('portal','')=='1'
+        entry_id=request.values.get('entry','')
+        if entry_id:store.entry(entry_id)
         if request.method == 'POST':
             ip = client_ip()
             if not store.attempt('login:'+ip, 5):
                 error = 'Too many attempts. Please wait 15 minutes.'
             elif check_password_hash(g.admin_security['password_hash'], request.form.get('password','')):
+                token,login_state=store.new_admin_login(browser(),config,expected_version=g.admin_security['version'])
+                g.new_admin_cookie=token;g.clear_admin_cookie=False;g.admin_login=login_state
                 session.clear()
                 session['admin'] = True
                 session['auth_version'] = g.admin_security['version']
                 session.permanent = True
+                if portal:return redirect(url_for('continue_access',entry=entry_id) if entry_id else '/',code=303)
                 return redirect('/admin')
             else:
                 error = 'Incorrect password.'
-        return render_template('login.html', csrf=csrf(), error=error)
+        return render_template('login.html', csrf=csrf(), error=error,portal=portal,entry_id=entry_id)
 
     @app.post('/admin/logout')
     @admin_only
     def logout():
-        session.clear()
+        end_login()
         return redirect('/admin/login')
+
+    @app.post('/logout')
+    def portal_logout():
+        end_login()
+        return redirect('/')
 
     @app.route('/admin/settings',methods=['GET','POST'])
     @admin_only
@@ -173,9 +217,11 @@ def create_app(config=None):
                 changes['networks']=management_networks(request.form.get('networks',''))
                 if not any(ipaddress.ip_address(client_ip()) in ipaddress.ip_network(n) for n in changes['networks']):
                     raise GateError('Keep your current management address in an allowed network to prevent lockout.')
+            elif action=='exclusions':
+                changes['exclusions']=exclusion_networks(request.form.get('exclusions',''))
             else: raise GateError('Invalid settings action.')
             store.save_admin_security(config,expected_version=request.form.get('version',''),**changes)
-            session.clear()
+            end_login()
             flash('Administrator settings saved. Sign in again. Other administrator sessions have been signed out.','success')
             return redirect(url_for('login'))
         return render_template('settings.html',security=security,csrf=csrf(),address=client_ip())
@@ -239,7 +285,8 @@ def create_app(config=None):
     def access_status():
         ip = client_ip()
         grant = current_grant()
-        return jsonify(active=bool(grant),expires=grant['expires'] if grant else None,server_time=time.time())
+        exclusion=current_exclusion()
+        return jsonify(active=bool(grant or exclusion),expires=exclusion['expires'] if exclusion else (grant['expires'] if grant else None),kind=exclusion['kind'] if exclusion else ('code' if grant else None),server_time=time.time())
 
     @app.get('/admin')
     @admin_only
@@ -386,7 +433,7 @@ def create_app(config=None):
     def accept_handoff():
         data=request.get_json()
         if not isinstance(data,dict): abort(400)
-        result=store.accept_handoff(data.get('ticket'),data.get('nonce'),data.get('origin'))
+        result=store.accept_admin_handoff(data.get('ticket'),data.get('nonce'),data.get('origin'),config) or store.accept_handoff(data.get('ticket'),data.get('nonce'),data.get('origin'))
         return jsonify(result)
 
     @app.route('/internal/check',methods=['GET','POST'])
@@ -400,12 +447,18 @@ def create_app(config=None):
                 target = origin(data.get('origin'))
                 if not store.restricted_host(target[8:]): return jsonify(active=False),403
             except GateError: return jsonify(active=False),403
-        try: grant=store.gateway_grant(data.get('token'),data.get('origin'))
-        except GateError: grant=None
+        grant=None
+        if require_domain and request.method=='GET' and store.ip_excluded(request.headers.get('X-Gate-Client-IP'),config):
+            grant=dict(expires=time.time()+60,session_id='ip-exclusion',kind='ip')
+        if not grant:
+            try:
+                grant=store.admin_site_grant(data.get('token'),data.get('origin'),config,
+                    activity=request.method=='GET' and request.headers.get('X-Gate-Activity')=='1') or store.gateway_grant(data.get('token'),data.get('origin'))
+            except GateError:grant=None
         if not grant: return jsonify(active=False),401
         response=jsonify(active=True,expires=grant['expires'],session_id=grant['session_id'])
         response.headers['X-Gate-Expires']=str(grant['expires'])
-        reserved={BROWSER_COOKIE,SITE_COOKIE,CHALLENGE_COOKIE}
+        reserved={BROWSER_COOKIE,SITE_COOKIE,CHALLENGE_COOKIE,ADMIN_COOKIE}
         response.headers['X-Gate-Upstream-Cookie']='; '.join(part.strip() for part in request.headers.get('Cookie','').split(';') if part.strip() and part.strip().split('=',1)[0] not in reserved)
         return response
 
@@ -430,7 +483,7 @@ def create_app(config=None):
     @app.get('/internal/finish')
     def finish_gateway_browser():
         target=request.headers.get('X-Gate-Origin')
-        result=store.accept_handoff(request.args.get('ticket'),request.cookies.get(CHALLENGE_COOKIE),target)
+        result=store.accept_admin_handoff(request.args.get('ticket'),request.cookies.get(CHALLENGE_COOKIE),target,config) or store.accept_handoff(request.args.get('ticket'),request.cookies.get(CHALLENGE_COOKIE),target)
         from .browser import origin
         response=redirect(origin(target)+'/',code=303)
         response.set_cookie(SITE_COOKIE,result['token'],max_age=365*86400,secure=True,httponly=True,samesite='Lax',path='/')

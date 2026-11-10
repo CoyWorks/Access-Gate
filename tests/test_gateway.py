@@ -352,6 +352,57 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         self.store.extend(self.grant['session_id'], '1', 'minutes', secrets.token_hex(16))
         self.assertEqual((await response.read()).count(b'chunk\n'), 19)
 
+    async def admin_activate(self):
+        first=await self.get('restricted.example'); self.assertEqual(first.status,302)
+        entry=first.headers['Location'].split('entry=')[1]; await first.read()
+        form=await self.get(path='/admin/login?portal=1&entry='+entry)
+        csrf=re.search(r'name="csrf" value="([^"]+)"',await form.text()).group(1)
+        accepted=await self.get(path='/admin/login',method='POST',data=dict(csrf=csrf,password='admin',portal='1',entry=entry))
+        self.assertEqual(accepted.status,303); self.assertEqual(accepted.headers['Location'],'/continue?entry='+entry); await accepted.read()
+        continued=await self.get(path='/continue?entry='+entry); self.assertEqual(continued.status,200); await continued.read()
+        resume=await self.get(path='/?entry='+entry)
+        callback=resume.headers['Location'].split('https://restricted.example')[1]; await resume.read()
+        completed=await self.get('restricted.example',callback); self.assertEqual(completed.status,303); await completed.read()
+        self.assertEqual(self.store.list_batches()['total'],0)
+
+    async def test_admin_login_bypasses_code_and_logout_closes_real_stream(self):
+        await self.admin_activate()
+        origin=await self.get('restricted.example'); self.assertEqual(origin.status,200); await origin.read()
+        for headers in self.seen:
+            self.assertNotIn('__Host-accessgate-admin',headers.get('Cookie',''))
+            self.assertNotIn('__Host-accessgate-site',headers.get('Cookie',''))
+        response=await self.get('restricted.example','/stream'); await response.content.readline()
+        form=await self.get(); csrf=re.search(r'name="csrf" value="([^"]+)"',await form.text()).group(1)
+        logout=await self.get(path='/logout',method='POST',data=dict(csrf=csrf)); self.assertEqual(logout.status,302); await logout.read()
+        with self.assertRaises(aiohttp.ClientPayloadError):await asyncio.wait_for(response.read(),1.5)
+        denied=await self.get('restricted.example');self.assertEqual(denied.status,302);await denied.read()
+
+    async def test_admin_website_use_renews_login_but_passive_stream_watcher_expires(self):
+        await self.admin_activate()
+        with self.store.connect() as db:db.execute('UPDATE admin_logins SET expires=?',(time.time()+100,))
+        allowed=await self.get('restricted.example');self.assertEqual(allowed.status,200);await allowed.read()
+        with self.store.connect() as db:self.assertGreater(db.execute('SELECT expires FROM admin_logins').fetchone()[0],time.time()+6*86400)
+        response=await self.get('restricted.example','/stream');await response.content.readline()
+        with self.store.connect() as db:db.execute('UPDATE admin_logins SET expires=?',(time.time()+0.2,))
+        with self.assertRaises(aiohttp.ClientPayloadError):await asyncio.wait_for(response.read(),1.5)
+        denied=await self.get('restricted.example');self.assertEqual(denied.status,302);await denied.read()
+
+    async def test_ip_exclusion_forwards_without_cookie_and_removal_closes_stream(self):
+        policy=dict(secret='secret',admin_hash='bootstrap')
+        self.store.save_admin_security(policy,exclusions=['127.0.0.1/32'])
+        allowed=await self.get('restricted.example');self.assertEqual(allowed.status,200);await allowed.read()
+        self.assertEqual(self.store.list_batches()['total'],0)
+        response=await self.get('restricted.example','/stream');await response.content.readline()
+        self.store.save_admin_security(policy,exclusions=[])
+        with self.assertRaises(aiohttp.ClientPayloadError):await asyncio.wait_for(response.read(),1.5)
+        denied=await self.get('restricted.example');self.assertEqual(denied.status,302);await denied.read()
+
+    async def test_client_cannot_spoof_excluded_address_to_gateway(self):
+        self.store.save_admin_security(dict(secret='secret',admin_hash='bootstrap'),exclusions=['127.0.0.2/32'])
+        response=await self.client.get(f'https://restricted.example:{self.port}/',headers={'Host':'restricted.example','X-Gate-Client-IP':'127.0.0.2','X-Real-IP':'127.0.0.2','X-Forwarded-For':'127.0.0.2'},allow_redirects=False)
+        self.assertEqual(response.status,302);await response.read()
+        self.assertEqual(self.seen,[])
+
     async def test_health_probe_verifies_actual_tls_listener_and_certificate_metadata(self):
         provider=Health(dict(portal_url='https://portal.example'),self.store,
             ca_file=str(self.root/'etc/access-gate/ca/root.crt'),gateway_address=('127.0.0.1',self.port))

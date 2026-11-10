@@ -164,8 +164,9 @@ class BlocklistImportWebTests(BrowserWebFixture, unittest.TestCase):
         self.assertEqual(self.store.list_dns_domains(), [])
 
     def test_import_counts_uses_fixed_target_and_preserves_existing_rules_and_grants(self):
-        self.login(); self.activate()
-        deadline = self.request('/status').json['expires']
+        self.activate(); self.login()
+        browser=self.client.get_cookie('__Host-accessgate-browser',domain='10.40.22.5').value
+        deadline = self.store.browser_grant(browser)['expires']
         self.store.add_dns_domains('existing.example', scope='exact')
         self.store.change_dns_domain('existing.example', 'disable')
         source = '0.0.0.0 new.example existing.example\n:: new.example\n127.0.0.1 localhost\n'
@@ -179,7 +180,7 @@ class BlocklistImportWebTests(BrowserWebFixture, unittest.TestCase):
         rows = self.store.list_dns_domains()
         self.assertEqual(rows[0]['enabled'], 0); self.assertEqual(rows[0]['include_subdomains'], 0)
         self.assertIn('address=/new.example/10.40.22.5', self.store.export_dns_domains('dnsmasq'))
-        self.assertEqual(self.request('/status').json['expires'], deadline)
+        self.assertEqual(self.store.browser_grant(browser)['expires'], deadline)
 
     def test_failed_fetch_parse_or_cap_preserves_every_existing_row(self):
         self.login(); self.store.add_dns_domains('existing.example')

@@ -1,6 +1,6 @@
 # Access Gate
 
-**Version 0.6.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+**Version 0.7.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
 Keep selected DNS names pointed at `10.40.22.5` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
 
@@ -37,6 +37,10 @@ systemctl restart access-gate.service
 
 Enter and confirm the new password (at least 8 characters); input is hidden and the password is not saved in plaintext. Existing admin sessions are signed out after restart. Access codes, browser grants and certificates are preserved. The initial-login file is marked obsolete if present. Cancelling or mismatched input leaves the configuration unchanged.
 
+## Access exclusions
+
+Signed-in administrators bypass the code requirement in their browser. The normal portal includes Sign in/Sign out; logins last seven idle days and renew with portal/website use. In **Settings → Access exclusions**, add individual addresses (`10.40.32.20/32`) or networks (`10.40.32.0/24`) that should bypass the code requirement without gaining administrator permissions. Leave empty to disable IP exclusions. See [Exclusions, rolling login and enforcement](docs/EXCLUSIONS.md) for trusted-address/VPN/NAT behavior, cookie scope, logout and recovery.
+
 ## Administration
 
 Signed-in navigation now includes **Settings** (password and separate management networks), **Sessions** (live remaining time, extension and confirmed per-browser termination) and **System status** (installed version, services, clock and verified gateway/certificate health). Runtime admin policy is stored in the database and checked across workers. See [Administration and local recovery](docs/ADMINISTRATION.md).
@@ -67,7 +71,7 @@ The final check waits up to 30 seconds for an actual verified HTTPS HTTP 200 res
 
 ### Upgrading from 0.4.x
 
-The normal update installs the gateway and its isolated issuing CA while migrating to schema version 5 and preserving existing browser grants, codes, credentials and the trusted root CA. Nginx releases its old 443 listener, and `access-gate-gateway` owns HTTPS on the same address. HTTP feeds and the CA download remain available. The existing root CA already installed on devices remains the trust anchor; keep selected DNS records pointed at this VM and perform the [restricted-host TLS/browser checks](docs/GATEWAY.md). No new VPN account mapping or remote firewall change is installed.
+The normal update installs the gateway and its isolated issuing CA while migrating to schema version 6 and preserving existing browser grants, codes, credentials and the trusted root CA. Nginx releases its old 443 listener, and `access-gate-gateway` owns HTTPS on the same address. HTTP feeds and the CA download remain available. The existing root CA already installed on devices remains the trust anchor; keep selected DNS records pointed at this VM and perform the [restricted-host TLS/browser checks](docs/GATEWAY.md). No new VPN account mapping or remote firewall change is installed.
 
 ### Upgrading from 0.3.x or earlier
 

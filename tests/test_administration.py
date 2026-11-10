@@ -27,8 +27,9 @@ class AdministrationTests(BrowserWebFixture,unittest.TestCase):
         self.assertEqual(self.request('/admin/access/'+sid+'/terminate','POST').status_code,400)
     def test_password_change_invalidates_all_workers_sessions_and_retains_browser_grant(self):
         second_app=create_app(self.config);second_app.config['TESTING']=True
-        other=second_app.test_client();self.login(client=other);self.login();self.activate()
+        other=second_app.test_client();self.activate()
         expires=self.request('/status').json['expires']
+        self.login(client=other);self.login()
         self.assertEqual(self.settings().status_code,302)
         self.assertEqual(self.request('/admin').status_code,302)
         self.assertEqual(self.request('/admin',client=other).status_code,302)

@@ -24,12 +24,13 @@ if (extendForm) {
 }
 const countdown = document.getElementById('access-countdown');
 if (countdown) {
-  let expiry = Number(countdown.dataset.expires), offset = 0;
+  let expiry = Number(countdown.dataset.expires), offset = 0, exclusionKind = null;
   const tick = () => {
+    if (exclusionKind === 'ip' || exclusionKind === 'admin') { countdown.textContent = exclusionKind === 'ip' ? 'IP exclusion active. No access code required.' : 'Signed-in access active. Your login renews with use.'; return; }
     const left = Math.max(0,Math.ceil(expiry-Date.now()/1000-offset));
     countdown.textContent = left ? `Time remaining: ${Math.floor(left/3600)}h ${Math.floor(left%3600/60)}m ${left%60}s` : 'Access expired. Refresh this page to enter another unused code.';
   };
-  const sync = async () => { try { const response = await fetch('/status',{cache:'no-store'}); if (!response.ok) return; const state = await response.json(); offset = state.server_time-Date.now()/1000; expiry = state.active ? state.expires : 0; tick(); } catch (_) { /* Server-side checks remain authoritative. */ } };
+  const sync = async () => { try { const response = await fetch('/status',{cache:'no-store'}); if (!response.ok) return; const state = await response.json(); offset = state.server_time-Date.now()/1000; expiry = state.active ? state.expires : 0; exclusionKind = state.active ? state.kind : null; tick(); } catch (_) { /* Server-side checks remain authoritative. */ } };
   tick(); sync(); setInterval(tick,1000); setInterval(sync,5000);
 }
 

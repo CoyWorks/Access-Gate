@@ -1,10 +1,10 @@
 # Administration
 
-Version 0.6 adds **Settings**, **Sessions** and **System status** to the signed-in navigation. Use the normal updater; no reset or replacement CA is needed. The transactional schema-5 migration preserves existing codes, grants, domain rules and administrator credentials. Existing admin cookies without the new authentication version require a fresh login.
+Version 0.6 introduced **Settings**, **Sessions** and **System status** to the signed-in navigation. Use the normal updater; no reset or replacement CA is needed. The transactional schema-6 migration preserves existing codes, grants, domain rules and administrator credentials. Version 0.7 adds revocable server-side logins; older Flask-only administrator cookies require a fresh login. See [EXCLUSIONS.md](EXCLUSIONS.md) for seven-day rolling sessions and IP exceptions.
 
 ## Password and management access
 
-In Settings, enter your current password and the new password twice (8–256 characters). Only a password hash is stored. A successful change signs out all administrator sessions, including other Gunicorn workers; users' code grants keep their original end times. Every management request checks the current authentication version in the database.
+In Settings, enter your current password and the new password twice (8–256 characters). Only a password hash is stored. A successful change signs out all administrator sessions, including other Gunicorn workers; users' code grants keep their original end times. Every management request checks the live server login and current authentication version in the database.
 
 Management networks are independent of the public code portal's client networks. Initially they inherit `admin_networks` from the root-owned configuration if configured, otherwise the existing client networks. Enter IPv4/IPv6 CIDRs, one per line. Changes require the current password, valid CSRF and a fresh settings version. The current management address must remain allowed. This prevents immediate self-lockout, but administrators should retain a trusted recovery network before changing network/VPN configuration.
 

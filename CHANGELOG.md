@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.7.0
+
+- Add administrator-browser and configurable CIDR access exclusions without changing global DNS behavior. Keep management networks separate, validate aligned CIDRs and empty-list removal, require current password/CSRF/fresh policy version, and preserve existing code grants and CA.
+- Add Sign in/Sign out to the public portal with entry-preserving automatic website return. Persist hashed, browser-bound administrator logins with a seven-day rolling server idle deadline; portal and actual proxied website activity renew it, passive polling/watchers do not. Revoke login/site proofs on logout and authentication-version changes, including cookie replay and other workers.
+- Keep portal login credentials isolated from per-origin one-use handoffs/site proofs. Transfer only the trusted gateway peer address/activity flag through the private API; reject spoofed client headers, unmanaged domains and IP-only query assertions. Recheck exceptions on live streams so removal/logout/expiry closes only unauthorized traffic.
+- Migrate transactionally to schema 6 with empty initial IP exclusions. Preserve root-owned configuration, codes, grants, domains and existing management policy; require one fresh login for old Flask-only administrator sessions. Document VPN/NAT, cookie lifetime, idle renewal and the fact that exclusions do not bypass TLS trust or unrelated Pi-hole blocking.
+
 ## 0.6.0
 
 - Add administrator Settings for current-password-confirmed password changes and independent management networks. Persist hashed credentials/network policy with transactional optimistic concurrency and a cross-worker authentication version. Reject immediate network lockout, retain CSRF/login limits, and invalidate existing/legacy administrator sessions without changing code grants.

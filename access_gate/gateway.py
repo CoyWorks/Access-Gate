@@ -24,7 +24,7 @@ from .gateway_tls import CertificateCache, expires
 
 HOP = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
        'transfer-encoding', 'upgrade', 'alt-svc', 'alternate-protocol', 'proxy-connection'}
-RESERVED_COOKIES = {'__Host-accessgate-browser', '__Host-accessgate-site', '__Host-accessgate-challenge'}
+RESERVED_COOKIES = {'__Host-accessgate-browser', '__Host-accessgate-site', '__Host-accessgate-challenge', '__Host-accessgate-admin'}
 STARTED = getattr(web, 'RequestKey', web.AppKey)('gateway_response_started', bool)
 
 
@@ -177,14 +177,16 @@ class Gateway:
             return name
         except (ValueError, UnicodeError): raise web.HTTPBadRequest(text='Invalid hostname.')
 
-    async def rpc(self, path, host, cookie=''):
+    async def rpc(self, path, host, cookie='', address=None, activity=False):
         headers = {'X-Gate-Key': self.key, 'X-Gate-Origin': 'https://' + host, 'Cookie': cookie}
+        if address is not None:headers['X-Gate-Client-IP']=address
+        if activity:headers['X-Gate-Activity']='1'
         async with self.local.get(self.api_url + path, headers=headers, allow_redirects=False) as response:
             data = await read_limited(response.content, 65536)
             return response.status, CIMultiDict(response.headers), data
 
-    async def allowed(self, host, cookie):
-        status, headers, data = await self.rpc('/internal/gateway/check', host, cookie)
+    async def allowed(self, host, cookie, address=None, activity=False):
+        status, headers, data = await self.rpc('/internal/gateway/check', host, cookie, address, activity)
         if status in (401, 403): return False, None, headers
         if status != 200: raise OSError('Authorization service unavailable.')
         result = json.loads(data)
@@ -193,11 +195,11 @@ class Gateway:
         if result['expires'] <= time.time(): return False, None, headers
         return True, result['expires'], headers
 
-    async def watch(self, request, host, cookie, task):
+    async def watch(self, request, host, cookie, address, task):
         try:
             while True:
                 await asyncio.sleep(self.poll_interval)
-                active, _, _ = await self.allowed(host, cookie)
+                active, _, _ = await self.allowed(host, cookie, address)
                 if not active: break
         except (aiohttp.ClientError, asyncio.TimeoutError, OSError, ValueError): pass
         if request.transport is not None: request.transport.abort()
@@ -230,9 +232,9 @@ class Gateway:
                 if request.method != 'GET': raise web.HTTPMethodNotAllowed(request.method, ['GET'])
                 path = '/internal/finish?' + urlencode({'ticket': request.query.get('ticket', '')})
                 return await self.local_response(path, host, cookie)
-            active, _, headers = await self.allowed(host, cookie)
+            active, _, headers = await self.allowed(host, cookie, address, activity=True)
             if not active: return await self.local_response('/internal/start', host, cookie)
-            watcher = asyncio.create_task(self.watch(request, host, cookie, asyncio.current_task()))
+            watcher = asyncio.create_task(self.watch(request, host, cookie, address, asyncio.current_task()))
             try:
                 if request.headers.get('Upgrade', '').lower() == 'websocket':
                     return await self.websocket(request, host, headers)

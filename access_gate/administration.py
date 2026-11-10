@@ -23,13 +23,17 @@ class Administration:
             networks TEXT)''')
 
     def admin_security(self,config):
-        with self.connect() as db: row=db.execute('SELECT * FROM administrator_policy WHERE id=1').fetchone()
+        with self.connect() as db:return self._admin_security(db,config)
+
+    def _admin_security(self,db,config):
+        row=db.execute('SELECT * FROM administrator_policy WHERE id=1').fetchone()
         fallback=hashlib.sha256((config['secret']+'\0'+config['admin_hash']).encode()).hexdigest()
         return dict(password_hash=row['password_hash'] if row and row['password_hash'] else config['admin_hash'],
                     version=row['version'] if row else fallback,
+                    exclusions=json.loads(row['exclusions']) if row else [],
                     networks=json.loads(row['networks']) if row and row['networks'] else config.get('admin_networks',config.get('client_networks',['10.40.0.0/16','127.0.0.1/32','::1/128'])))
 
-    def save_admin_security(self,config,expected_version=None,password_hash=None,networks=None,reset_networks=False):
+    def save_admin_security(self,config,expected_version=None,password_hash=None,networks=None,reset_networks=False,exclusions=None):
         from .core import GateError
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
@@ -41,7 +45,8 @@ class Administration:
             saved_hash=password_hash if password_hash is not None else (row['password_hash'] if row else None)
             saved_networks=None if reset_networks else (json.dumps(networks) if networks is not None else (row['networks'] if row else None))
             version=secrets.token_hex(32)
-            db.execute('INSERT OR REPLACE INTO administrator_policy VALUES(1,?,?,?)',(saved_hash,version,saved_networks))
+            saved_exclusions=json.dumps(exclusions) if exclusions is not None else (row['exclusions'] if row else '[]')
+            db.execute('INSERT OR REPLACE INTO administrator_policy(id,password_hash,version,networks,exclusions) VALUES(1,?,?,?,?)',(saved_hash,version,saved_networks,saved_exclusions))
             db.commit()
         return version
 

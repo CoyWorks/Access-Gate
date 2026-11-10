@@ -303,7 +303,7 @@ class MigrationTests(unittest.TestCase):
         detail=self.store.batch_detail('legacy',300)
         self.assertEqual((detail['name'],detail['starts'],detail['ends'],detail['access_seconds'],detail['timing_mode']),('Week starting 2026-11-09',100,10000,900,'legacy-week'))
         with self.store.connect() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],5)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],6)
             self.assertEqual(db.execute('SELECT digest FROM codes WHERE id=?',('UNUSED',)).fetchone()[0],self.store.digest('UNUSED'))
             self.assertEqual(db.execute('SELECT used FROM codes WHERE id=?',('USED',)).fetchone()[0],200)
             self.assertEqual(db.execute('SELECT revoked FROM codes WHERE id=?',('REVOKED',)).fetchone()[0],1)
@@ -353,6 +353,9 @@ class ManagementWebTests(unittest.TestCase):
         self.token='csrf-test-token'
         with self.client.session_transaction(base_url='https://10.40.22.5') as sess:
             sess['admin']=True; sess['csrf']=self.token; sess['auth_version']=self.store.admin_security(config)['version']
+        login,_=self.store.new_admin_login('a'*64,config)
+        self.client.set_cookie('__Host-accessgate-browser','a'*64,domain='10.40.22.5',secure=True)
+        self.client.set_cookie('__Host-accessgate-admin',login,domain='10.40.22.5',secure=True)
 
     def tearDown(self): self.temp.cleanup()
 
@@ -408,7 +411,10 @@ class ManagementWebTests(unittest.TestCase):
         form=dict(csrf=self.token,request_id=token,value='1',unit='hours')
         for _ in range(2): self.assertEqual(self.request(path,'POST',form).status_code,302)
         live=self.request('/status').get_json()
-        self.assertEqual(live['expires'],grant['expires']+3600)
+        self.assertEqual(live['kind'],'admin')
+        self.assertEqual(self.store.browser_grant(browser)['expires'],grant['expires']+3600)
+        rows=self.request('/admin/api/sessions').get_json()['items']
+        self.assertEqual(next(r['expires'] for r in rows if r['session_id']==grant['session_id']),grant['expires']+3600)
         self.assertEqual(len(self.store.extension_history()),1)
         self.assertIn('Administrator (10.40.135.11)',self.store.extension_history()[0]['actor'])
 
@@ -425,6 +431,8 @@ class ManagementWebTests(unittest.TestCase):
         self.store.redeem(codes[0],'10.40.135.11')
         self.assertEqual(self.request(f'/admin/batches/{batch}/revoke','POST',dict(csrf=self.token)).status_code,302)
         self.assertEqual(self.request('/internal/check?ip=10.40.135.11',headers={'X-Gate-Key':'web-acl'}).status_code,401)
+        self.assertEqual(self.request('/status').get_json()['kind'],'admin')
+        self.client.delete_cookie('__Host-accessgate-admin',domain='10.40.22.5')
         self.assertFalse(self.request('/status').get_json()['active'])
         self.assertEqual(self.store.batch_detail(batch)['revoked_count'],2)
 
@@ -436,7 +444,8 @@ class ManagementWebTests(unittest.TestCase):
                    (f'/admin/batches/{batch}/revoke',{}),
                    ('/admin/access/'+grant['session_id']+'/extend',{'value':'1','unit':'hours','request_id':'f'*32})]
         for path,data in endpoints: self.assertEqual(self.request(path,'POST',data).status_code,400)
-        with self.client.session_transaction(base_url='https://10.40.22.5') as sess: sess.pop('admin')
+        self.client.delete_cookie('__Host-accessgate-admin',domain='10.40.22.5')
+        with self.client.session_transaction(base_url='https://10.40.22.5') as sess: sess.pop('admin',None)
         for path,data in endpoints: self.assertEqual(self.request(path,'POST',dict(csrf=self.token,**data)).status_code,302)
         self.assertIsNotNone(self.store.grant('10.40.135.11'))
         self.assertEqual(self.store.list_batches()['total'],1)

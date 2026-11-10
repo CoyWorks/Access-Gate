@@ -1,10 +1,15 @@
 {% extends 'base.html' %}{% block content %}
-<h1>{% if grant %}Access active{% else %}Enter your access code{% endif %}</h1>
+<h1>{% if exclusion %}Access unrestricted{% elif grant %}Access active{% else %}Enter your access code{% endif %}</h1>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-{% if grant %}<p>Your access is active until <strong>{{ grant.expires|localtime }}</strong>.</p>
+{% if exclusion %}
+{% if exclusion.kind=='admin' %}<p>You are signed in. Restricted websites open without an access code.</p><p>Your portal login expires after seven days without use and renews automatically when used.</p>{% else %}<p>Your current address is covered by an IP exclusion. Restricted websites open without an access code.</p>{% endif %}
+{% elif grant %}<p>Your access is active until <strong>{{ grant.expires|localtime }}</strong>.</p>
 <p id="access-countdown" data-expires="{{ grant.expires }}" aria-live="polite">Access is active.</p><p>The timer keeps running when you close this page.</p><p><a href="/">Refresh status / enter another code after expiry</a></p>
 {% else %}<p>Use an unused code to activate temporary access in this browser.</p>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="entry" value="{{ entry_id }}">
 <label for="code">Access code</label><input id="code" name="code" placeholder="XXXX-XXXX" autocomplete="off" maxlength="32" required autofocus>
 <button>Activate access</button></form>{% endif %}
+<section><h2>Portal login</h2>
+{% if session.get('admin') %}<p>You are signed in. <a href="{{ url_for('admin') }}">Open administration</a></p><form method="post" action="{{ url_for('portal_logout') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary">Sign out</button></form>
+{% else %}<p>Administrators can sign in for access without a code.</p><a class="button secondary" href="{{ url_for('login',portal='1',entry=entry_id) }}">Sign in</a>{% endif %}</section>
 {% endblock %}

@@ -106,3 +106,7 @@ The optional Python `expire(store, close, now)` maintenance hook calls `close(se
 The backend redirects/cookies/API are tested through Flask HTTP flows, including nonce/origin binding and concurrency. The built-in gateway also has real local TLS/origin/stream/WebSocket tests. Actual service deployment, firewall/Pi-hole/device paths and the manual Nginx alternative still require target-network validation; the source release is not a claim of remote activation on srvaccess01.
 
 References: [Nginx auth_request](https://nginx.org/en/docs/http/ngx_http_auth_request_module.html), [Nginx proxy module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html), [host-only cookies and cookie prefixes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie).
+
+## Built-in gateway exclusions (0.7)
+
+The built-in gateway supplies the real peer address as `X-Gate-Client-IP` on its authenticated GET `/internal/gateway/check` requests. It sets `X-Gate-Activity: 1` only for incoming website requests; passive stream checks omit it. The backend checks managed-host scope before applying an IP exception and checks live admin proofs before code grants. It accepts no ordinary client `ip=` assertion. External adapters must preserve this trusted boundary rather than forward browser-supplied headers. Admin handoffs use the same entry/challenge callback contract but a separate token namespace/storage from portal login credentials. See [EXCLUSIONS.md](EXCLUSIONS.md).

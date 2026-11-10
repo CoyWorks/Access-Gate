@@ -4,6 +4,8 @@ Access Gate provides a code portal, managed DNS-domain exports and a local HTTPS
 
 ## Delivered
 
+Version 0.7 additionally delivers administrator-browser and CIDR access exclusions, public portal sign-in/out and revocable seven-day rolling logins. See [EXCLUSIONS.md](docs/EXCLUSIONS.md).
+
 | Issue | Status |
 | --- | --- |
 | [#4](https://github.com/CoyWorks/Access-Gate/issues/4) | Delivered in 0.6: Settings password/management networks, cross-worker admin-session invalidation, no-lockout validation and local recovery. |
