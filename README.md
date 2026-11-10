@@ -2,7 +2,7 @@
 
 A local pilot for temporary access to selected websites using single-use weekly codes. The interface, installer messages and documentation are in English.
 
-**Version:** 0.1.2. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
+**Version:** 0.1.3. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
 
 ## Download and run from /root
 
@@ -25,6 +25,28 @@ Each run downloads the latest `main` archive into a **new directory under `/root
 **For the installation that stopped at the missing `/var/lib/squid` directory, use `resume`.** The updated installer creates the directory with the correct owner and reuses your existing database, credentials and certificates. Do not delete `/etc/access-gate/config.json` to bypass the guard.
 
 The launcher requires `curl`, `tar` and `mktemp`. The target must be Ubuntu 24.04 with the configured server address. Deployment-specific addresses are currently explicit in the pilot; this is not yet a general-purpose installer for arbitrary networks.
+
+## Full installation reset
+
+For the dedicated Access Gate VM, update your local checkout and run the explicit purge command:
+
+```bash
+cd /root/Access-Gate
+git pull --ff-only
+bash reset.sh --purge
+```
+
+This permanently deletes the portal installation, configuration, code database, generated CA/certificates, initial admin credentials and saved Access Gate installation backups. It stops and disables the portal, keeper, Squid and Nginx services on this dedicated VM. The original Squid configuration is restored, and only Access Gate's known AppArmor block is removed. The source checkout, system account and installed dependency packages remain. FortiGate and Pi-hole configurations are not changed.
+
+The script validates that restoration is possible before removing data. You can inspect its file plan first with `bash reset.sh --dry-run`.
+
+Start a clean installation after a successful purge:
+
+```bash
+bash install.sh
+```
+
+The new installation generates a new admin password and CA. If you installed the previous CA on devices, remove that old CA and install the new one. Do not use this purge procedure on a VM hosting unrelated Nginx/Squid workloads.
 
 ## What install, resume and update do
 
@@ -172,8 +194,9 @@ bash -n install.sh
 bash -n resume.sh
 bash -n update.sh
 bash -n access-gate.sh
+bash -n reset.sh
 ```
 
-There are 27 tests covering code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Live Squid, Android and FortiGate integration must still be verified on the target network.
+There are 35 tests covering code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Live Squid, Android and FortiGate integration must still be verified on the target network.
 
 References: [Squid SSL Bump](https://www.squid-cache.org/Doc/config/ssl_bump/), [external ACLs](https://www.squid-cache.org/Doc/config/external_acl_type/), [redirects](https://www.squid-cache.org/Doc/config/deny_info/), [Ubuntu squid-openssl](https://packages.ubuntu.com/noble/squid-openssl), [Flask security](https://flask.palletsprojects.com/en/stable/web-security/).

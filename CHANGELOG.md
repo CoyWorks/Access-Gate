@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.1.3
+
+- Add an explicit full reset command for the dedicated VM, including saved installation backups.
+- Restore the original Squid configuration and remove only the Access Gate AppArmor rules.
+- Keep source checkouts and installed dependency packages available for a fresh installation.
+
 ## 0.1.2
 
 - Publish the application as source files at the GitHub repository root.
