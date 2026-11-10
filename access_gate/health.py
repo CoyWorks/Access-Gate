@@ -1,0 +1,102 @@
+"""Read-only, bounded system health; no private keys or browsing data."""
+import datetime as dt
+import http.client
+import json
+from pathlib import Path
+import ssl
+import socket
+import subprocess
+import threading
+import time
+from urllib.parse import urlsplit
+from cryptography import x509
+
+
+class Health:
+    def __init__(self,config,store,clock=time.time,ca_file='/var/lib/access-gate/public/ca.crt',gateway_address=('10.40.22.5',443)):
+        self.config=config; self.store=store; self.clock=clock
+        self.ca_file=ca_file; self.gateway_address=gateway_address
+        self.cached=None; self.checked=0; self.lock=threading.Lock()
+
+    @staticmethod
+    def command(args):
+        result=subprocess.run(args,capture_output=True,text=True,timeout=1,check=False)
+        if result.returncode: raise OSError('Status command unavailable.')
+        return result.stdout.strip()
+
+    @staticmethod
+    def item(name,state,detail,action=''):
+        return dict(name=name,state=state,detail=detail,action=action)
+
+    def certificate(self,name,stamp,now):
+        days=int((stamp-now)//86400)
+        state='failed' if stamp<=now else ('warning' if days<30 else 'healthy')
+        return self.item(name,state,'Expires '+dt.datetime.fromtimestamp(stamp,dt.timezone.utc).isoformat()+f' ({days} days).','Renew through the documented certificate/update procedure.' if state!='healthy' else '')
+
+    def gateway(self,now):
+        # Use the public CA copy, never the protected root-key directory.
+        ca=Path(self.ca_file)
+        root=x509.load_pem_x509_certificate(ca.read_bytes())
+        context=ssl.create_default_context(cafile=str(ca))
+        target=urlsplit(self.config.get('portal_url','https://10.40.22.5'))
+        connection=http.client.HTTPSConnection(target.hostname,443,timeout=1,context=context)
+        try:
+            connection.sock=context.wrap_socket(socket.create_connection(self.gateway_address,timeout=1),server_hostname=target.hostname)
+            cert=x509.load_der_x509_certificate(connection.sock.getpeercert(binary_form=True))
+            connection.request('GET','/__access_gate/health',headers={'Connection':'close'})
+            response=connection.getresponse(); body=response.read(8193)
+            if response.status!=200 or len(body)>8192: raise ValueError('Invalid gateway health response.')
+            data=json.loads(body)
+            if data.get('gateway')!='ready': raise ValueError('Gateway not ready.')
+            issuer=dt.datetime.fromisoformat(data['issuer_expires'])
+            if issuer.tzinfo is None: raise ValueError('Invalid issuer time.')
+            return [self.item('Gateway HTTPS','healthy','Verified HTTPS listener and issuing-key setup respond. This does not test a restricted website or Pi-hole.'),
+                    self.certificate('Portal certificate',cert.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now),
+                    self.certificate('Gateway issuing certificate',issuer.timestamp(),now),
+                    self.certificate('Device root CA',root.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now)]
+        finally: connection.close()
+
+    def collect(self):
+        now=self.clock(); checks=[]
+        try:
+            version=(Path(__file__).resolve().parents[1]/'VERSION').read_text().strip()
+        except OSError: version='Unknown'
+        checks.append(self.item('Portal','healthy','This installed portal answered the authenticated health request.'))
+        try:
+            with self.store.connect() as db: db.execute('SELECT 1 FROM administrator_policy LIMIT 1').fetchone()
+            checks.append(self.item('Database','healthy','Application database is readable.'))
+        except Exception:
+            checks.append(self.item('Database','failed','Application database is unavailable.','Check portal service logs and data-directory permissions.'))
+        for name in ('access-gate','access-gate-gateway','nginx'):
+            try:
+                # is-active returns non-zero for inactive/failed; show gives the state without that ambiguity.
+                state=self.command(['systemctl','show',name+'.service','--property=ActiveState','--value'])
+                if state not in ('active','inactive','failed','activating','deactivating','reloading'): raise ValueError()
+                checks.append(self.item(name,'healthy' if state=='active' else 'failed','Service state: '+state+'.','Inspect this service with systemctl status.' if state!='active' else ''))
+            except (OSError,ValueError,subprocess.SubprocessError):
+                checks.append(self.item(name,'unknown','Service status could not be read.','Check systemd availability and service logs on the server.'))
+        try:
+            synced=self.command(['timedatectl','show','--property=NTPSynchronized','--value'])
+            if synced not in ('yes','no'): raise ValueError()
+            checks.append(self.item('Clock synchronization','healthy' if synced=='yes' else 'warning','System clock synchronization: '+synced+'.','Check timedatectl and the configured time service.' if synced=='no' else ''))
+        except (OSError,ValueError,subprocess.SubprocessError):
+            checks.append(self.item('Clock synchronization','unknown','Clock synchronization could not be verified.','Check timedatectl on the server.'))
+        try: checks.extend(self.gateway(now))
+        except FileNotFoundError:
+            checks.append(self.item('Gateway HTTPS','unknown','Public CA copy or gateway setup is missing.','Run the normal updater; verify /var/lib/access-gate/public/ca.crt.'))
+        except (OSError,ValueError,KeyError,TypeError,http.client.HTTPException):
+            checks.append(self.item('Gateway HTTPS','failed','Verified gateway HTTPS or certificate probe failed.','Check gateway service logs, portal certificate, public CA and server clock.'))
+        overall='failed' if any(c['state']=='failed' for c in checks) else ('warning' if any(c['state'] in ('warning','unknown') for c in checks) else 'healthy')
+        return dict(version=version,checked_at=now,state=overall,checks=checks,stale=False,cache_seconds=15,
+                    scope='Local portal/gateway checks only. DNS sync, public-origin reachability and device enforcement require an end-to-end test.')
+
+    def snapshot(self):
+        now=time.monotonic()
+        if self.cached is not None and now-self.checked<15: return dict(self.cached)
+        if not self.lock.acquire(blocking=False):
+            if self.cached is not None: return dict(self.cached,state='unknown',stale=True)
+            return dict(version='Unknown',checked_at=None,state='unknown',checks=[],stale=True,cache_seconds=15,scope='Health checks are running. Refresh shortly.')
+        try:
+            result=self.collect(); self.cached=result; self.checked=time.monotonic()
+            return dict(result)
+        finally: self.lock.release()

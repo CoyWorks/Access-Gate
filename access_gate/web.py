@@ -10,11 +10,13 @@ from pathlib import Path
 from urllib.parse import urlencode,urlsplit
 
 from flask import Flask,abort,redirect,render_template,request,session,flash,jsonify,url_for,g
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash,generate_password_hash
 from .core import Store,GateError,TZ,STATUSES
 from .browser import TOKEN
 from .dns_export import TARGET_IP
 from .blocklist import download_blocklist
+from .administration import management_networks
+from .health import Health
 
 BROWSER_COOKIE='__Host-accessgate-browser'
 SITE_COOKIE='__Host-accessgate-site'
@@ -30,6 +32,7 @@ def create_app(config=None):
                       SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax',
                       PERMANENT_SESSION_LIFETIME=dt.timedelta(hours=2),MAX_CONTENT_LENGTH=16384)
     store=Store(config['database'],config['pepper']); app.extensions['store']=store
+    health=Health(config,store); app.extensions['health']=health
     networks=[ipaddress.ip_network(n) for n in config.get('client_networks',['10.40.0.0/16','127.0.0.1/32','::1/128'])]
     portal_url=config.get('portal_url','https://10.40.22.5').rstrip('/')
 
@@ -57,7 +60,13 @@ def create_app(config=None):
             expected=config.get('acl_token','')
             if request.remote_addr not in ('127.0.0.1','::1') or not expected or not hmac.compare_digest(request.headers.get('X-Gate-Key','').encode(),expected.encode()): abort(403)
             return
-        client_ip()
+        address=client_ip()
+        if request.path=='/admin' or request.path.startswith('/admin/'):
+            g.admin_security=store.admin_security(config)
+            if not any(ipaddress.ip_address(address) in ipaddress.ip_network(n) for n in g.admin_security['networks']):
+                abort(403,'Administration is not available from this network. The code portal is still available.')
+            if session.get('admin') and not hmac.compare_digest(str(session.get('auth_version','')),g.admin_security['version']):
+                session.clear()
         if request.path not in DNS_FEED_PATHS and urlsplit('https://'+request.host).hostname!=urlsplit(portal_url).hostname:
             if request.method in ('GET','HEAD'):
                 return redirect(portal_url+request.full_path.rstrip('?'),code=308)
@@ -69,7 +78,7 @@ def create_app(config=None):
     def headers(response):
         response.headers.update({'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
             'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',
-            'Content-Security-Policy':"default-src 'none'; style-src 'self'; script-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"})
+            'Content-Security-Policy':"default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"})
         if getattr(g,'new_browser',False):
             response.set_cookie(BROWSER_COOKIE,g.browser_token,max_age=365*86400,secure=True,httponly=True,samesite='Lax',path='/')
         return response
@@ -129,9 +138,10 @@ def create_app(config=None):
             ip = client_ip()
             if not store.attempt('login:'+ip, 5):
                 error = 'Too many attempts. Please wait 15 minutes.'
-            elif check_password_hash(config['admin_hash'], request.form.get('password','')):
+            elif check_password_hash(g.admin_security['password_hash'], request.form.get('password','')):
                 session.clear()
                 session['admin'] = True
+                session['auth_version'] = g.admin_security['version']
                 session.permanent = True
                 return redirect('/admin')
             else:
@@ -143,6 +153,65 @@ def create_app(config=None):
     def logout():
         session.clear()
         return redirect('/admin/login')
+
+    @app.route('/admin/settings',methods=['GET','POST'])
+    @admin_only
+    def admin_settings():
+        security=g.admin_security
+        if request.method=='POST':
+            if not store.attempt('admin-settings:'+client_ip(),5): raise GateError('Too many attempts. Please wait 15 minutes.')
+            if not check_password_hash(security['password_hash'],request.form.get('current_password','')):
+                raise GateError('Current password is incorrect.')
+            action=request.form.get('action','')
+            changes={}
+            if action=='password':
+                password=request.form.get('new_password','')
+                if len(password)<8 or len(password)>256: raise GateError('Use a password between 8 and 256 characters.')
+                if password!=request.form.get('confirm_password',''): raise GateError('Passwords do not match.')
+                changes['password_hash']=generate_password_hash(password)
+            elif action=='networks':
+                changes['networks']=management_networks(request.form.get('networks',''))
+                if not any(ipaddress.ip_address(client_ip()) in ipaddress.ip_network(n) for n in changes['networks']):
+                    raise GateError('Keep your current management address in an allowed network to prevent lockout.')
+            else: raise GateError('Invalid settings action.')
+            store.save_admin_security(config,expected_version=request.form.get('version',''),**changes)
+            session.clear()
+            flash('Administrator settings saved. Sign in again. Other administrator sessions have been signed out.','success')
+            return redirect(url_for('login'))
+        return render_template('settings.html',security=security,csrf=csrf(),address=client_ip())
+
+    @app.get('/admin/sessions')
+    @admin_only
+    def active_sessions():
+        state=request.args.get('state','active')
+        result=store.session_overview(state,request.args.get('page','1'))
+        return render_template('sessions.html',result=result,state=state,csrf=csrf())
+
+    @app.get('/admin/api/sessions')
+    @admin_only
+    def sessions_data():
+        return jsonify(store.session_overview(request.args.get('state','active'),request.args.get('page','1')))
+
+    @app.route('/admin/access/<session_id>/terminate',methods=['GET','POST'])
+    @admin_only
+    def terminate_access(session_id):
+        grant=next((r for r in store.list_grants() if r['session_id']==session_id),None)
+        if not grant: raise GateError('Browser session not found.')
+        if request.method=='POST':
+            changed=store.terminate_session(session_id)
+            flash('Session terminated. The gateway will close its restricted connections on its next live check.' if changed else 'Session already ended.','success')
+            return redirect(url_for('active_sessions'))
+        return render_template('terminate.html',grant=grant,csrf=csrf())
+
+    @app.get('/admin/system')
+    @admin_only
+    def system_status():
+        return render_template('system.html',health=health.snapshot())
+
+    @app.get('/admin/api/health')
+    @admin_only
+    def health_data():
+        return jsonify(health.snapshot())
 
     @app.template_filter('duration')
     def duration(value):

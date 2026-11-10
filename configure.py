@@ -22,11 +22,13 @@ def change_admin_password(path,initial_login_path):
             confirmation=getpass.getpass('Confirm new admin password: ')
     except (EOFError,KeyboardInterrupt,getpass.GetPassWarning):
         raise SystemExit('Password change cancelled. Use an interactive terminal; nothing was changed.')
-    if len(password)<8: raise SystemExit('Use at least 8 characters. Nothing was changed.')
+    if not 8<=len(password)<=256: raise SystemExit('Use between 8 and 256 characters. Nothing was changed.')
     if password!=confirmation: raise SystemExit('Passwords do not match. Nothing was changed.')
     config['admin_hash']=generate_password_hash(password)
     # Flask sessions contain admin login/CSRF state. Browser grants use a separate pepper.
     config['secret']=secrets.token_hex(32)
+    store=Store(config['database'],config['pepper']); store.initialize()
+    store.save_admin_security(config,password_hash=config['admin_hash'])
     atomic_write(path,json.dumps(config,indent=2)+'\n')
     initial=Path(initial_login_path)
     if initial.exists():
@@ -39,7 +41,15 @@ def main(argv=None,config_path='/etc/access-gate/config.json',initial_login_path
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--check',action='store_true',help='Validate configuration and the database')
     parser.add_argument('--set-admin-password',action='store_true',help='Prompt for a new admin password and sign out existing admin sessions after restart')
+    parser.add_argument('--reset-admin-networks',action='store_true',help='Restore administration access from all configured client networks')
     args=parser.parse_args(argv)
+    if args.set_admin_password and args.reset_admin_networks: parser.error('Choose one recovery action at a time.')
+    if args.reset_admin_networks:
+        config=validate(json.loads(Path(config_path).read_text()))
+        store=Store(config['database'],config['pepper']); store.initialize()
+        store.save_admin_security(config,networks=config['client_networks'])
+        print('Management networks restored to the configured client networks. Sign in again; no restart is needed.')
+        return
     if args.set_admin_password:
         change_admin_password(config_path,initial_login_path)
         return

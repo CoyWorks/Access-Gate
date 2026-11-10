@@ -44,3 +44,19 @@ class AdminPasswordTests(unittest.TestCase):
                 with self.assertRaises(SystemExit): self.change(values)
                 self.assertEqual(self.path.read_bytes(),before)
                 self.assertEqual(self.initial.read_bytes(),initial)
+
+    def test_offline_password_recovery_overrides_portal_password_and_keeps_networks(self):
+        self.store.save_admin_security(self.config,password_hash=generate_password_hash('portal-password'),networks=['10.40.22.0/24'])
+        self.change(['recovered-password','recovered-password'])
+        security=self.store.admin_security(json.loads(self.path.read_text()))
+        self.assertTrue(check_password_hash(security['password_hash'],'recovered-password'))
+        self.assertEqual(security['networks'],['10.40.22.0/24'])
+    def test_network_recovery_preserves_password_and_browser_access(self):
+        self.store.save_admin_security(self.config,password_hash=generate_password_hash('portal-password'),networks=['192.0.2.0/24'])
+        before=self.store.browser_grant('a'*64)
+        with patch('configure.os.geteuid',return_value=0):
+            main(['--reset-admin-networks'],str(self.path),str(self.initial))
+        security=self.store.admin_security(self.config)
+        self.assertTrue(check_password_hash(security['password_hash'],'portal-password'))
+        self.assertIn('10.40.0.0/16',security['networks'])
+        self.assertEqual(before,self.store.browser_grant('a'*64))

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0
+
+- Add administrator Settings for current-password-confirmed password changes and independent management networks. Persist hashed credentials/network policy with transactional optimistic concurrency and a cross-worker authentication version. Reject immediate network lockout, retain CSRF/login limits, and invalidate existing/legacy administrator sessions without changing code grants.
+- Add offline management-network recovery and make the existing password command replace portal overrides. Preserve root-owned configuration and unprivileged service boundaries; runtime changes use schema-5 SQLite state.
+- Add live, filtered/paginated browser session administration with server-synchronized remaining time, extensions and confirmed/idempotent per-session termination. Keep full codes and authentication hashes out of APIs; same-IP browsers remain isolated. Termination closes real gateway streams through live grant checks.
+- Add sanitized admin-only system health: installed version, database, fixed service states, clock synchronization, verified local HTTPS, portal/issuer/root certificate expiry, bounded probes, 15-second cache and explicit stale/unknown/failure states. Local health does not claim remote Pi-hole/device/origin acceptance.
+- Permit same-origin fetches in CSP for live status/countdown polling while retaining the strict form-action policy. Render polled values as text and keep a no-JavaScript page/confirmation fallback.
+- Document the management screens, migration, recovery, session/enforcement semantics and health limits. Operator reports wired/Wi-Fi website flow and revocation working; automatic expiry and remaining device/VPN coverage are still target acceptance work.
+
 ## 0.5.3
 
 - Add a locked Pi-hole cron sync helper that downloads the DNS configuration from 10.40.22.5, skips unchanged exports, checks DNS syntax and rolls back failed validation/restarts. Document native Linux installation and a five-minute cron schedule.

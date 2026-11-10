@@ -6,6 +6,9 @@ Access Gate provides a code portal, managed DNS-domain exports and a local HTTPS
 
 | Issue | Status |
 | --- | --- |
+| [#4](https://github.com/CoyWorks/Access-Gate/issues/4) | Delivered in 0.6: Settings password/management networks, cross-worker admin-session invalidation, no-lockout validation and local recovery. |
+| [#10](https://github.com/CoyWorks/Access-Gate/issues/10) | Delivered in 0.6: live browser sessions, filters/pages/countdowns, extension links and confirmed per-browser termination. |
+| [#13](https://github.com/CoyWorks/Access-Gate/issues/13) | Delivered in 0.6: installed version, service/clock/verified HTTPS/certificate status with bounded cached probes and stale/unknown states. See ADMINISTRATION.md for probe limits. |
 | [#6](https://github.com/CoyWorks/Access-Gate/issues/6) | Configurable single-use code count, activation validity and access duration; retained in 0.4. |
 | [#7](https://github.com/CoyWorks/Access-Gate/issues/7) | Clear revoked without restoring consumed/revoked codes; retained in 0.4. |
 | [#8](https://github.com/CoyWorks/Access-Gate/issues/8) | Administrator-only active access extensions and idempotent submissions; retained in 0.4. |
@@ -19,9 +22,8 @@ The 0.3 mandatory FortiGate-reader, device enrollment and transparent-Squid appr
 
 | Issue | Remaining scope |
 | --- | --- |
-| [#5](https://github.com/CoyWorks/Access-Gate/issues/5) | Built-in dynamic-TLS gateway, installed service, portal return and verified origin forwarding implemented in 0.5 with real local TLS tests. Verify the actual srvaccess01/Pi-hole/VPN/Android path and transport/cache behavior. |
-| [#3](https://github.com/CoyWorks/Access-Gate/issues/3) | Live stream/WebSocket expiry, revocation, policy/API failure and extension handling implemented/tested on real local connections in 0.5. Capture the actual target-device result and enforcement latency. |
-| [#4](https://github.com/CoyWorks/Access-Gate/issues/4) | Strengthen administrator authentication/password management and management-network restrictions. Anonymous code users do not need accounts. |
+| [#5](https://github.com/CoyWorks/Access-Gate/issues/5) | Built-in dynamic-TLS gateway, installed service, portal return and verified origin forwarding implemented in 0.5 with real local TLS tests. Operator reports the selected-site flow tested over wired/Wi-Fi. Remaining: VPN/other devices and transport/cache coverage. |
+| [#3](https://github.com/CoyWorks/Access-Gate/issues/3) | Live stream/WebSocket expiry, revocation, policy/API failure and extension handling implemented/tested on real local connections in 0.5. Operator reports revocation working. Remaining: natural expiry, extensions, stream latency and restart/failure target evidence. |
 
 See [GATEWAY.md](docs/GATEWAY.md) for the installed gateway and [INTEGRATION.md](docs/INTEGRATION.md) for its private API. The historical Nginx alternative is not installed and must not occupy the built-in gateway's 443 listener.
 
@@ -29,10 +31,8 @@ See [GATEWAY.md](docs/GATEWAY.md) for the installed gateway and [INTEGRATION.md]
 
 | Issue | Scope |
 | --- | --- |
-| [#10](https://github.com/CoyWorks/Access-Gate/issues/10) | Improve active browser-session management, remaining time and termination controls. |
 | [#11](https://github.com/CoyWorks/Access-Gate/issues/11) | Future access profiles require coordination with externally managed domain scopes; not a prerequisite for the basic portal. |
 | [#12](https://github.com/CoyWorks/Access-Gate/issues/12) | Activity log and configurable retention. |
-| [#13](https://github.com/CoyWorks/Access-Gate/issues/13) | Portal/gateway health, clock/certificate status and useful errors. No obsolete keeper/reader dependency. |
 
 ## P2 — convenience
 
@@ -42,3 +42,5 @@ See [GATEWAY.md](docs/GATEWAY.md) for the installed gateway and [INTEGRATION.md]
 | [#15](https://github.com/CoyWorks/Access-Gate/issues/15) | Printable codes/PDFs and optional QR codes. |
 | [#16](https://github.com/CoyWorks/Access-Gate/issues/16) | Scheduled batches with secure one-time code delivery. |
 | [#17](https://github.com/CoyWorks/Access-Gate/issues/17) | Installed/available version display and controlled administration updates. |
+
+Administration details and recovery: [ADMINISTRATION.md](docs/ADMINISTRATION.md).

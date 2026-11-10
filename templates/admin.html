@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% block content %}
 <div class="page-heading"><div><p class="eyebrow">Administration</p><h1>Access overview</h1></div><a class="button" href="{{ url_for('new_batch') }}">Create batch</a></div>
-<section><h2>Active access</h2><div class="scroll"><table><thead><tr><th>Browser session</th><th>Activation address</th><th>Batch</th><th>Code ending</th><th>End time</th><th>State</th><th></th></tr></thead><tbody>
+<section><h2>Active access</h2><p><a href="{{ url_for('active_sessions') }}">Open live session management</a></p><div class="scroll"><table><thead><tr><th>Browser session</th><th>Activation address</th><th>Batch</th><th>Code ending</th><th>End time</th><th>State</th><th></th></tr></thead><tbody>
 {% for g in grants %}<tr><td>{{ g.session_id[:8] }}</td><td>{{ g.ip }}</td><td><a href="{{ url_for('batch_detail',batch_id=g.batch_id) }}">{{ g.batch_name }}</a></td><td>…{{ g.hint }}</td><td>{{ g.expires|localtime }}</td><td>{% if g.revoked or g.expires <= now %}Ended / revoked{% else %}Active{% endif %}</td><td>{% if not g.revoked and g.expires > now %}<a class="button secondary" href="{{ url_for('extend_access',session_id=g.session_id) }}">Extend access</a>{% endif %}</td></tr>{% else %}<tr><td colspan="7">No active access.</td></tr>{% endfor %}</tbody></table></div></section>
 <section><h2>Codes</h2><p>Full codes are only shown immediately after generation.</p>{% include '_codes.html' %}</section>
 {% include '_extensions.html' %}

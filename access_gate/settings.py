@@ -24,6 +24,10 @@ def validate(config):
     config['portal_url']=config['portal_url'].rstrip('/')
     if not isinstance(config['client_networks'],list) or not config['client_networks']: raise ValueError('At least one client network is required.')
     config['client_networks']=[str(ipaddress.ip_network(n)) for n in config['client_networks']]
+    if 'admin_networks' in config:
+        from .administration import management_networks
+        if not isinstance(config['admin_networks'],list): raise ValueError('admin_networks must be a list of networks.')
+        config['admin_networks']=management_networks('\n'.join(config['admin_networks']))
     for name in ('pilot_clients','require_identity','enforcement','control_socket','domains'):
         config.pop(name,None)
     return config

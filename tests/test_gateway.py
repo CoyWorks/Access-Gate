@@ -25,6 +25,7 @@ from access_gate.gateway import Gateway, BootstrapResolver, PublicResolver, publ
 from access_gate.gateway_tls import CertificateCache, server_context
 from access_gate.gateway_setup import prepare
 from access_gate.web import create_app
+from access_gate.health import Health
 from gateway_fixtures import settings, ca, leaf, write_pair
 
 
@@ -350,6 +351,26 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         response = await self.get('restricted.example', '/stream'); await response.content.readline()
         self.store.extend(self.grant['session_id'], '1', 'minutes', secrets.token_hex(16))
         self.assertEqual((await response.read()).count(b'chunk\n'), 19)
+
+    async def test_health_probe_verifies_actual_tls_listener_and_certificate_metadata(self):
+        provider=Health(dict(portal_url='https://portal.example'),self.store,
+            ca_file=str(self.root/'etc/access-gate/ca/root.crt'),gateway_address=('127.0.0.1',self.port))
+        checks=await asyncio.to_thread(provider.gateway,time.time())
+        self.assertEqual([c['state'] for c in checks],['healthy','warning','healthy','healthy'])
+        self.assertIn('Gateway issuing certificate',[c['name'] for c in checks])
+        provider.config['portal_url']='https://wrong.example'
+        with self.assertRaises((ssl.SSLError,ConnectionError,OSError)):
+            await asyncio.to_thread(provider.gateway,time.time())
+
+    async def test_session_termination_closes_stream_without_revoking_code_or_portal(self):
+        await self.activate()
+        response=await self.get('restricted.example','/stream'); await response.content.readline()
+        self.store.terminate_session(self.grant['session_id'])
+        with self.assertRaises(aiohttp.ClientPayloadError): await asyncio.wait_for(response.read(),1.5)
+        denied=await self.get('restricted.example'); self.assertEqual(denied.status,302); await denied.read()
+        portal=await self.get(); self.assertEqual(portal.status,200); await portal.read()
+        with self.store.connect() as db:
+            self.assertEqual(db.execute('SELECT revoked FROM codes WHERE id=?',(self.grant['code'],)).fetchone()[0],0)
 
     async def test_revocation_closes_real_websocket(self):
         await self.activate()

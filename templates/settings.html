@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% block content %}
+<p class="eyebrow">Administration</p><h1>Administrator settings</h1>
+<p>Changes require your current password and sign out every administrator session. Code redemption and active browser access are preserved.</p>
+<div class="form-grid"><section><h2>Change password</h2>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="version" value="{{ security.version }}"><input type="hidden" name="action" value="password">
+<label for="password-current">Current password</label><input type="password" id="password-current" name="current_password" autocomplete="current-password" maxlength="256" required>
+<label for="password-new">New password</label><input type="password" id="password-new" name="new_password" autocomplete="new-password" minlength="8" maxlength="256" required>
+<label for="password-confirm">Confirm new password</label><input type="password" id="password-confirm" name="confirm_password" autocomplete="new-password" minlength="8" maxlength="256" required>
+<button>Change password</button></form></section>
+<section><h2>Management networks</h2><p>Only these networks may open administration or its APIs. The public code portal keeps its existing client-network rules.</p><p>Your current address: <strong>{{ address }}</strong>.</p>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="version" value="{{ security.version }}"><input type="hidden" name="action" value="networks">
+<label for="networks">Allowed IPv4 / IPv6 networks, one per line</label><textarea id="networks" name="networks" rows="7" maxlength="4096" required>{{ security.networks|join('\n') }}</textarea>
+<small>Your current address must remain included. Keep access from a trusted recovery network before changing VPN settings.</small>
+<label for="networks-password">Current password</label><input id="networks-password" type="password" name="current_password" autocomplete="current-password" maxlength="256" required>
+<button>Save management networks</button></form>
+<p>Local recovery on the server: <code>python3 /opt/access-gate/configure.py --reset-admin-networks</code>.</p></section></div>
+{% endblock %}

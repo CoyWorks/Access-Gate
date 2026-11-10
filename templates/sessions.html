@@ -1,0 +1,11 @@
+{% extends 'base.html' %}{% block content %}
+<p class="eyebrow">Administration</p><h1>Browser sessions</h1>
+<p>Access belongs to a browser, not an IP address. An activation address is informational. Closing a browser does not stop its timer.</p>
+<noscript><p>Automatic refresh requires JavaScript. Reload this page for current results.</p></noscript><section id="sessions-panel" data-state="{{ state }}" data-page="{{ result.page }}">
+<div class="toolbar"><form method="get"><label for="session-state">Show</label><select id="session-state" name="state">{% for value in ['active','expired','terminated','revoked','all'] %}<option value="{{ value }}" {% if value==state %}selected{% endif %}>{{ value|capitalize }}</option>{% endfor %}</select><button class="secondary">Filter</button></form><p id="session-refresh" role="status">Refreshes every 5 seconds. Last checked {{ result.server_time|localtime }}.</p></div>
+<p id="session-counts">{{ result.total }} matching sessions.</p>
+<div class="scroll"><table><thead><tr><th>Session</th><th>Activation address</th><th>Batch</th><th>Started</th><th>Ends</th><th>Remaining</th><th>State</th><th>Actions</th></tr></thead><tbody id="session-rows">
+{% for row in result['items'] %}<tr><td>{{ row.session_id[:8] }}</td><td>{{ row.ip }}</td><td><a href="{{ url_for('batch_detail',batch_id=row.batch_id) }}">{{ row.batch_name }}</a></td><td>{{ row.started|localtime }}</td><td>{{ row.expires|localtime }}</td><td>{{ ((row.expires-result.server_time)|int)|duration if row.state=='active' else '—' }}</td><td>{{ row.state|capitalize }}</td><td>{% if row.state=='active' %}<a class="button secondary" href="{{ url_for('extend_access',session_id=row.session_id) }}">Extend</a> <a class="button danger" href="{{ url_for('terminate_access',session_id=row.session_id) }}">Terminate</a>{% endif %}</td></tr>{% else %}<tr><td colspan="8">No matching browser sessions.</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="pagination" id="session-pagination">{% if result.page>1 %}<a href="?state={{ state }}&page={{ result.page-1 }}">Previous</a>{% endif %}<span>Page {{ result.page }} of {{ result.pages }}</span>{% if result.page<result.pages %}<a href="?state={{ state }}&page={{ result.page+1 }}">Next</a>{% endif %}</div>
+</section>{% endblock %}
