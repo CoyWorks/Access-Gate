@@ -1,6 +1,6 @@
 # Roadmap
 
-Access Gate is a basic, vendor-independent code portal. Users enter a code; administrators manage batches and active grants. An optional DNS domain list produces Pi-hole exports; applying DNS/routing rules and actual website enforcement belong to the external FortiGate, Pi-hole or proxy setup. UI, messages and documentation remain English.
+Access Gate provides a code portal, managed DNS-domain exports and a local HTTPS enforcement gateway. Users enter a code; administrators manage batches, grants and restricted domains. External FortiGate/Pi-hole routing/DNS and device trust remain target-network configuration. UI, messages and documentation remain English.
 
 ## Delivered
 
@@ -19,11 +19,11 @@ The 0.3 mandatory FortiGate-reader, device enrollment and transparent-Squid appr
 
 | Issue | Remaining scope |
 | --- | --- |
-| [#5](https://github.com/CoyWorks/Access-Gate/issues/5) | Choose/configure the actual redirect/enforcement adapter. Verify the supplied entry/handoff/authorization contract, external-site certificates, real return flow and actual device/browser paths. |
-| [#3](https://github.com/CoyWorks/Access-Gate/issues/3) | Portal/API deadlines are implemented. Verify that the chosen gateway also stops existing restricted streams/connections at expiry and handles extensions/revocation correctly. |
+| [#5](https://github.com/CoyWorks/Access-Gate/issues/5) | Built-in dynamic-TLS gateway, installed service, portal return and verified origin forwarding implemented in 0.5 with real local TLS tests. Verify the actual srvaccess01/Pi-hole/VPN/Android path and transport/cache behavior. |
+| [#3](https://github.com/CoyWorks/Access-Gate/issues/3) | Live stream/WebSocket expiry, revocation, policy/API failure and extension handling implemented/tested on real local connections in 0.5. Capture the actual target-device result and enforcement latency. |
 | [#4](https://github.com/CoyWorks/Access-Gate/issues/4) | Strengthen administrator authentication/password management and management-network restrictions. Anonymous code users do not need accounts. |
 
-See [INTEGRATION.md](docs/INTEGRATION.md). A redirect alone is not website authorization. The optional Nginx example is not installed by the portal updater and does not claim strict open-stream expiry.
+See [GATEWAY.md](docs/GATEWAY.md) for the installed gateway and [INTEGRATION.md](docs/INTEGRATION.md) for its private API. The historical Nginx alternative is not installed and must not occupy the built-in gateway's 443 listener.
 
 ## P1 — administration
 

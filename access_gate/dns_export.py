@@ -26,6 +26,18 @@ def hostname(value):
 
 
 class DNSExports:
+    def restricted_host(self, value):
+        from .browser import origin
+        from .core import GateError
+        if not isinstance(value, str): raise GateError('Invalid restricted hostname.')
+        name = origin('https://' + value)[8:]
+        parts = name.split('.')
+        parents = ['.'.join(parts[i:]) for i in range(1, len(parts)-1)]
+        with self.connect() as db:
+            if db.execute('SELECT 1 FROM dns_export_domains WHERE domain=? AND enabled=1', (name,)).fetchone(): return True
+            if not parents: return False
+            return bool(db.execute('SELECT 1 FROM dns_export_domains WHERE enabled=1 AND include_subdomains=1 AND domain IN (' + ','.join('?' for _ in parents) + ') LIMIT 1', parents).fetchone())
+
     def dns_hosts_feed(self):
         lines = ['# Access Gate hosts feed: ' + TARGET_IP,
                  '# Enabled base/exact hostnames only; hosts files cannot express wildcards.',

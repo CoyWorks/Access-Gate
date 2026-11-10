@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+- Install the client-facing HTTPS gateway on 10.40.22.5:443. Generate short-lived exact-host certificates on demand only for currently restricted names, including deep subdomains, with a bounded in-memory TLS-context cache.
+- Preserve the root CA already trusted on devices. Provision/reuse a separate path-length-zero intermediate for the dedicated unprivileged gateway account; keep the root private key inaccessible to both application services and remove temporary leaf-key files immediately after loading.
+- Connect automatic portal challenge/code/ticket return to verified real HTTPS origins. Keep the managed DNS mappings stable and resolve upstream IPv4 independently through bootstrapped, verified public DNS-over-HTTPS, rejecting non-public origin addresses.
+- Revalidate each request and active HTTP stream/WebSocket against live grants and domain policy. Expiry, revocation, policy removal or API failure closes only the affected restricted connection; extensions update the checked deadline. Use a 0.5-second watcher with documented API/load/buffering limits.
+- Hide private APIs from browsers, verify HTTP Host against TLS SNI, reject unmanaged names, strip private cookies/headers and HTTP3 advertisements, and disable shared proxy cookie jars/access logging. Preserve normal request bodies, responses, website cookies, compressed HTTP and basic WebSocket relay.
+- Move Nginx to HTTP/feeds/CA handling, add the loopback HTTP gateway handler and isolated service with only the port-binding capability. Preserve code data, settings, schema 4 and existing grants; retain update backups, readiness diagnostics and known-service reset cleanup.
+- Document install/update, CA reuse, real-device verification, public DNS reachability, expiry timing, rollback and unsupported transports/apps. The source has real local TLS/Flask/origin/stream/WebSocket regression evidence; the target srvaccess01/Android network deployment still needs verification.
+
 ## 0.4.3
 
 - Add administrator-only Import from URL under DNS domains. Fetch public HTTPS hosts/domain lists, extract valid names, apply the chosen match scope and output the fixed target 10.40.22.5. No blocklist is preloaded.

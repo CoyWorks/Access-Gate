@@ -1,7 +1,7 @@
-# Optional client-facing gateway, separate from the basic portal.
+# Alternative manual gateway from 0.4; do not enable alongside the built-in 0.5 gateway.
 # Replace example.org, its certificate/key paths and REPLACE_WITH_ACL_TOKEN.
-# Never deploy this file unchanged. Select domains in the DNS/firewall/gateway,
-# not in Access Gate. Keep /internal/ on the portal unreachable by clients.
+# Never deploy this file unchanged. Keep the selected DNS policy consistent and
+# keep /internal/ on the portal unreachable by clients. This example has no dynamic TLS.
 server {
     listen 10.40.22.5:443 ssl;
     server_name example.org;

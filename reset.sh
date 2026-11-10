@@ -14,7 +14,7 @@ fi
 /usr/bin/python3 "$source_dir/scripts/reset_install.py" check
 /usr/bin/python3 "$source_dir/scripts/legacy_upgrade.py" check
 echo 'Resetting Access Gate on this dedicated VM. Installed dependency packages will remain.'
-for unit in access-gate.service access-gate-keeper.service access-gate-network.service squid.service nginx.service; do
+for unit in access-gate-gateway.service access-gate.service access-gate-keeper.service access-gate-network.service squid.service nginx.service; do
     if systemctl cat "$unit" >/dev/null 2>&1; then systemctl disable --now "$unit"; fi
 done
 /usr/bin/python3 "$source_dir/scripts/reset_install.py" purge

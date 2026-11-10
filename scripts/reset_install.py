@@ -18,6 +18,7 @@ APPARMOR_BLOCK = LEGACY_APPARMOR_BLOCK.replace('/opt/access-gate/access_gate/acl
 
 REMOVE = (
     'etc/systemd/system/access-gate.service',
+    'etc/systemd/system/access-gate-gateway.service',
     'etc/systemd/system/access-gate-keeper.service',
     'etc/systemd/system/access-gate-network.service',
     'etc/nginx/sites-enabled/access-gate',

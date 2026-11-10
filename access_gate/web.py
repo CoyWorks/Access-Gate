@@ -311,10 +311,16 @@ def create_app(config=None):
         return jsonify(result)
 
     @app.route('/internal/check',methods=['GET','POST'])
-    def check():
+    def check(require_domain=False):
         # An old ip= parameter can never authorize a browser or a proxied request.
         data=request.get_json(silent=True) if request.method=='POST' else {'token':request.cookies.get(SITE_COOKIE),'origin':request.headers.get('X-Gate-Origin')}
         if not isinstance(data,dict): return jsonify(active=False),401
+        if require_domain:
+            from .browser import origin
+            try:
+                target = origin(data.get('origin'))
+                if not store.restricted_host(target[8:]): return jsonify(active=False),403
+            except GateError: return jsonify(active=False),403
         try: grant=store.gateway_grant(data.get('token'),data.get('origin'))
         except GateError: grant=None
         if not grant: return jsonify(active=False),401
@@ -323,6 +329,16 @@ def create_app(config=None):
         reserved={BROWSER_COOKIE,SITE_COOKIE,CHALLENGE_COOKIE}
         response.headers['X-Gate-Upstream-Cookie']='; '.join(part.strip() for part in request.headers.get('Cookie','').split(';') if part.strip() and part.strip().split('=',1)[0] not in reserved)
         return response
+
+    @app.get('/internal/gateway/domain')
+    def gateway_domain():
+        try: allowed = store.restricted_host(request.args.get('host', ''))
+        except GateError: allowed = False
+        return jsonify(restricted=allowed)
+
+    @app.get('/internal/gateway/check')
+    def gateway_check():
+        return check(require_domain=True)
 
     @app.get('/internal/start')
     def start_gateway_browser():

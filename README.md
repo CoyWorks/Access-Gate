@@ -1,8 +1,8 @@
 # Access Gate
 
-**Version 0.4.3.** A small English-language code portal for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+**Version 0.5.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
-Select domains and send users to the portal through your external FortiGate, Pi-hole or proxy setup. Access Gate records and checks the browser's access deadline. The external gateway is responsible for applying that authorization to actual website requests. See [Integration](docs/INTEGRATION.md) for the supplied private API and optional Nginx gateway example.
+Keep selected DNS names pointed at `10.40.22.5` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
 
 ## Current deployment
 
@@ -18,7 +18,7 @@ cd /root/Access-Gate
 bash install.sh
 ```
 
-Use a dedicated server. The installer creates the portal certificate/CA, admin password, database and unprivileged Gunicorn service, then configures Nginx. Current deployment addresses remain explicit in the installer; it is not a general-purpose installer for arbitrary networks.
+Use a dedicated server. The installer creates the portal certificate/CA, admin password and database, configures Nginx for HTTP, and installs separate unprivileged portal and HTTPS gateway services. A dedicated intermediate CA signs on-demand site certificates; neither service receives the root CA private key. Current deployment addresses remain explicit in the installer; it is not a general-purpose installer for arbitrary networks.
 
 The initial admin URL/password is saved locally:
 
@@ -48,7 +48,11 @@ bash /root/Access-Gate/resume.sh
 
 Updates back up configuration and the database under `/root/access-gate-resume.*`, retain previous application files under `/opt/.access-gate-previous-*`, and replace the whole portal including templates/static assets. Existing admin credentials, certificates, HMAC pepper, code digests and consumed/revoked flags are retained. A reset is unnecessary.
 
-The final check waits up to 30 seconds for an actual verified HTTPS HTTP 200 response. Persistent failures print recent Gunicorn/Nginx logs and leave the backup available. This avoids reporting success merely because processes are `active`.
+The final check waits up to 30 seconds for an actual verified HTTPS HTTP 200 response through the gateway. Persistent failures print portal/gateway/Nginx diagnostics and leave the backup available. This avoids reporting success merely because processes are `active`.
+
+### Upgrading from 0.4.x
+
+The normal update installs the gateway and its isolated issuing CA while keeping schema version 4, existing browser grants, codes, credentials and the trusted root CA. Nginx releases its old 443 listener, and `access-gate-gateway` owns HTTPS on the same address. HTTP feeds and the CA download remain available. The existing root CA already installed on devices remains the trust anchor; keep selected DNS records pointed at this VM and perform the [restricted-host TLS/browser checks](docs/GATEWAY.md). No new VPN account mapping or remote firewall change is installed.
 
 ### Upgrading from 0.3.x or earlier
 
@@ -84,7 +88,7 @@ Times are displayed in Europe/Amsterdam. The server's persisted deadline is auth
 
 ## External redirects and website access
 
-A redirect reaches the code portal. A complete website gate also needs an enforcement component that checks the resulting authorization. The private integration API and an optional Nginx example support that separation without user registration. The optional DNS export below helps maintain your Pi-hole list; it does not activate website enforcement.
+Version 0.5 installs the enforcement gateway alongside the portal. An enabled domain rule plus the matching Pi-hole DNS mapping sends that site's browser traffic to the gateway. The device must trust the retained root CA. Public DNS-over-HTTPS is resolved independently of Pi-hole, actual origin certificates remain verified and browser grant deadlines apply to both new requests and live streams. See [GATEWAY.md](docs/GATEWAY.md) for supported transports and practical limits; [INTEGRATION.md](docs/INTEGRATION.md) remains the private API reference.
 
 ### Build your Pi-hole domain list
 
@@ -115,7 +119,7 @@ Two read-only feeds are available without login from the configured local/VPN cl
 | `http://10.40.22.5/domains.txt` | Hosts-format feed: `10.40.22.5 example.com`. Includes each enabled base/exact hostname. A hosts file cannot express the configured wildcard scopes. |
 | `http://10.40.22.5/pihole.conf` | dnsmasq configuration preserving the target IP and every configured subdomain scope. Use this for whole-domain DNS redirection. |
 
-These paths serve plain text over HTTP without an HTTPS/login redirect, even when the portal uses a canonical hostname. The administration pages still require HTTPS and administrator sign-in. Both feeds are also served over the existing portal HTTPS listener. They expose only enabled domain rules, not credentials, codes or sessions.
+These paths serve plain text over HTTP without an HTTPS/login redirect, even when the portal uses a canonical hostname. The administration pages still require HTTPS and administrator sign-in. Both feeds are also served through the gateway's portal HTTPS listener. They expose only enabled domain rules, not credentials, codes or sessions.
 
 **Download Pi-hole config** still produces a file snapshot. The strict hosts-file download is available only when all enabled entries are exact matches, while `/domains.txt` always publishes the explicitly listed base/exact names with a comment explaining the wildcard limitation.
 
@@ -123,24 +127,25 @@ Pi-hole's ordinary adlist import extracts domain names for blocking; it does not
 
 Follow [Pi-hole import, verification and rollback](docs/PIHOLE.md), including the Pi-hole 6 setting that enables `/etc/dnsmasq.d/`.
 
-Pi-hole changes DNS answers; a DNS record alone neither changes the browser's HTTPS hostname nor creates a trusted certificate for that website. HTTPS interception/forwarding, the selected domains, original-site certificates and bypass prevention remain part of the chosen external gateway configuration. Access Gate's portal certificate covers the portal, not every external website.
+Pi-hole changes DNS answers. The browser still requests the original HTTPS hostname. The gateway now provides a short-lived matching site certificate signed by its intermediate under the retained root CA; the portal certificate itself still covers only the portal. Browser CA trust, actual DNS/routing and alternate-transport bypass controls remain target-network responsibilities.
 
 For DNS-assisted proxying, leave selected domains pointing to the gateway throughout the access session. The gateway resolves the real upstream independently of those Pi-hole rewrites. Do not toggle DNS records every time a code activates/expires; DNS caches are not an authorization timer.
 
-The app does not automatically change FortiGate policies, Pi-hole configuration or certificates for external domains. The gateway integration has not been installed or tested on the user's network by this source release. Follow [INTEGRATION.md](docs/INTEGRATION.md) before claiming that a code unlocks a website or terminates an already-open stream.
+The updater installs certificate generation, forwarding and live gateway enforcement locally. It does not remotely change FortiGate policies, Pi-hole configuration or device trust. Real local-socket tests cover the TLS/code/forwarding flow and stream expiry; run the [target-device acceptance checks](docs/GATEWAY.md) before claiming the same result on the user's actual network.
 
 ## Server checks and startup errors
 
 ```bash
-systemctl is-active access-gate nginx
+systemctl is-active access-gate nginx access-gate-gateway
 curl --noproxy '*' --cacert /etc/access-gate/ca/root.crt -I https://10.40.22.5/
 ```
 
-Expected: two `active` results and HTTP 200. For a persistent 502:
+Expected: three `active` results and HTTP 200. For a persistent 502:
 
 ```bash
 curl --noproxy '*' -sS -H 'X-Real-IP: 10.40.22.5' -o /dev/null -w 'Backend HTTP: %{http_code}\n' http://127.0.0.1:8088/
 journalctl -u access-gate.service -n 60 --no-pager
+journalctl -u access-gate-gateway.service -n 60 --no-pager
 tail -n 20 /var/log/nginx/error.log
 ```
 
@@ -163,7 +168,7 @@ cd /opt/access-gate
 python3 configure.py --check
 ```
 
-The configured portal URL must have matching DNS and certificate coverage. Restart the portal/Nginx after changing network/TLS settings. Gunicorn binds only to loopback; Nginx overwrites the client-address header and hides `/internal/` from browsers. Do not expose the private API or upload config secrets, code exports, private keys or the runtime database to GitHub.
+The configured portal URL must have matching DNS and certificate coverage. Apply settings through the normal updater so gateway settings are regenerated and all services restart consistently. Gunicorn binds only to loopback. The gateway uses the actual HTTPS client peer address, trusts forwarded addresses only from the loopback HTTP proxy, strips private headers and hides `/internal/` from browsers. Do not expose the private API or upload config secrets, code exports, private keys or the runtime database to GitHub.
 
 ## Runtime paths
 
@@ -173,6 +178,8 @@ The configured portal URL must have matching DNS and certificate coverage. Resta
 | `/etc/access-gate/config.json` | Portal settings and secrets |
 | `/etc/access-gate/acl-token` | Root-only gateway integration key |
 | `/etc/access-gate/ca/` | Retained portal CA; private key remains root-only |
+| `/etc/access-gate/gateway/` | Dedicated issuing CA and private gateway settings |
+| `/run/access-gate-gateway/` | Private ephemeral certificate-loading files, removed immediately after loading |
 | `/var/lib/access-gate/data/` | SQLite database and WAL files |
 | `/root/access-gate-initial-login.txt` | Initial administrator credentials |
 
@@ -200,4 +207,4 @@ node --check static/gate.js
 
 Node is only needed for the optional JavaScript syntax check.
 
-Tests cover DNS export validation/match scope, atomic bulk additions, migration from older schemas, code/batch behavior, independent browsers sharing an IP, unchanged deadlines across network changes/restarts, CSRF/admin controls, gateway origin/nonce binding, handoff replay/concurrency, revocation/extension/expiry, legacy retirement, readiness, complete deployment, reset and Git updater behavior. The gateway browser flow is tested through HTTP requests to the Flask app. Real Nginx/gateway TLS, external firewall/DNS rules and device/browser behavior still need target-network verification.
+Tests cover DNS export/import, large lists, migration, code/batch behavior, independent browsers, CSRF/admin controls, private API/handoff integrity, legacy retirement, readiness, deployment, reset and Git updates. Gateway tests use real local TLS with a root/intermediate chain, the actual Flask API and an independently certified HTTPS origin. They exercise automatic code return, bodies, header/cookie isolation, failed upstream TLS, stream/WebSocket revocation and expiry, extensions, private DNS rejection and continued portal access. Real systemd/Nginx configuration, external firewall/DNS rules and Android/iOS/Windows behavior still need target-network verification.

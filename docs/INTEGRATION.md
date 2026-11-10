@@ -1,6 +1,6 @@
 # External redirect and authorization integration
 
-Access Gate 0.4 is a basic code portal and authorization backend without registered VPN users. Since 0.4.1 the optional **DNS domains** screen can build and export your own Pi-hole list, with base-domain/subdomain rules pointing to `10.40.22.5`. See [Pi-hole setup](PIHOLE.md). Your external FortiGate, Pi-hole or proxy configuration still applies the selected DNS/routing rules and website authorization; the app does not push changes automatically.
+Access Gate 0.5 includes the built-in HTTPS gateway described in [GATEWAY.md](GATEWAY.md). It consumes the private authorization API below, issues matching site certificates under the retained CA and enforces restricted-domain requests/streams. **DNS domains** manages the selected policy and Pi-hole export. External DNS/routing and device trust still need their matching configuration; the app does not push appliance changes automatically.
 
 ## Redirect versus authorization
 
@@ -20,13 +20,17 @@ Browser cookies cannot be shared directly across unrelated website domains. A cl
 
 ## Private API boundary
 
-Gunicorn listens on `127.0.0.1:8088`. Every `/internal/` endpoint requires loopback source **and** the `X-Gate-Key` header matching the retained `acl_token`. The installed portal Nginx configuration returns 404 for `/internal/` and removes any client-supplied key header. Keep these endpoints private.
+Gunicorn listens on `127.0.0.1:8088`. Every `/internal/` endpoint requires loopback source **and** the `X-Gate-Key` header matching the retained `acl_token`. The installed HTTPS gateway returns 404 for private portal paths and removes client-supplied private headers. Keep these endpoints private.
 
 The integration key is stored in `/etc/access-gate/acl-token` and configuration. Supply it securely to a trusted gateway; never put it in frontend JavaScript or commit it to a repository. Remote firewall/DNS appliances need a dedicated, restricted adapter; this release does not expose an unauthenticated remote API.
 
 The external gateway, which owns the selected domain configuration, supplies the HTTPS origin. Only normalized hostname origins are accepted: no IP literal, credentials, non-443 port, path, query, fragment, `.local` or `.internal` target. The public portal never trusts arbitrary `return=` URLs. A valid entry issued by the private gateway is required for automatic return.
 
+The built-in gateway additionally uses `GET /internal/gateway/domain?host=HOSTNAME` to query the current managed DNS-domain policy and `GET /internal/gateway/check` for authorization that requires both a managed hostname and an active origin-bound site token. These require the same private loopback/key boundary. The generic `/internal/check` remains available for alternative adapters with their own domain selection; it does not implicitly apply the managed DNS policy.
+
 ## Optional Nginx browser adapter
+
+This is an alternative/manual adapter retained from 0.4, not the installed 0.5 gateway. Do not enable it alongside the built-in gateway on the same address/443 listener. It does not generate dynamic site certificates or enforce existing-stream expiry.
 
 [examples/nginx-gateway.conf.example](../examples/nginx-gateway.conf.example) shows a client-facing gateway for **one reviewed domain**. It is not installed by the portal updater. Replace the hostname, external-site certificate/key paths and key placeholder; protect the resulting file and run `nginx -t` before reload. Enable Nginx's `http_auth_request` module if it is not present.
 
@@ -84,7 +88,7 @@ Do not authorize solely from an IP, session identifier, boolean from an old resp
 
 The portal and API deny new checks at the exact server deadline. Extensions modify that stored deadline and revocation is reflected immediately in subsequent checks. The browser countdown reconciles with the server; closing a tab does not pause access.
 
-The **gateway** owns open connections. An authorization subrequest is not automatically re-run while an already-open download, upgraded connection or stream continues. An ordinary Nginx `auth_request` example alone does not terminate those at expiry. Strict expiry for existing streams needs an adapter that tracks `session_id`/current deadline and closes its connections or periodically revalidates them, including extension/revocation changes. This remains part of issue #3/#5 acceptance; the portal no longer runs a privileged socket-killing worker. Already downloaded content cannot be removed remotely.
+The **gateway** owns open connections. The installed 0.5 gateway revalidates streams/WebSockets every 0.5 seconds and aborts the affected transport on expiry, revocation, policy removal or API failure; extensions are read from the current state. The practical latency and buffering limits are described in [GATEWAY.md](GATEWAY.md). An ordinary Nginx `auth_request` alternative alone does not recheck already-open streams. The portal has no privileged socket-killing worker. Already downloaded content cannot be removed remotely.
 
 The optional Python `expire(store, close, now)` maintenance hook calls `close(session_id)` transactionally before deleting expired/revoked records. It is not a daemon, does not execute operating-system commands and does not control a remote firewall or proxy. Prefer per-session connection ownership over IP-wide socket destruction.
 
@@ -99,6 +103,6 @@ The optional Python `expire(store, close, now)` maintenance hook calls `close(se
 - Check expiry, administrator extension and revocation for new requests **and actual open streams**.
 - Verify unrestricted sites, DNS cache behavior, IPv4/IPv6, HTTP3, ECH and pinned-app limitations on the selected devices.
 
-The backend redirects/cookies/API are tested through Flask HTTP flows, including nonce/origin binding and concurrency. The optional Nginx configuration and real firewall/Pi-hole/device paths require target-network validation. This release makes no claim that external website enforcement is already activated.
+The backend redirects/cookies/API are tested through Flask HTTP flows, including nonce/origin binding and concurrency. The built-in gateway also has real local TLS/origin/stream/WebSocket tests. Actual service deployment, firewall/Pi-hole/device paths and the manual Nginx alternative still require target-network validation; the source release is not a claim of remote activation on srvaccess01.
 
 References: [Nginx auth_request](https://nginx.org/en/docs/http/ngx_http_auth_request_module.html), [Nginx proxy module](https://nginx.org/en/docs/http/ngx_http_proxy_module.html), [host-only cookies and cookie prefixes](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Set-Cookie).

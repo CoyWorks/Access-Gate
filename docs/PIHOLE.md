@@ -132,7 +132,7 @@ To undo an import, restore the saved previous dedicated file, or remove **only**
 
 ## Website behavior
 
-DNS now points selected names at the gateway. The browser still requests the original site's HTTPS hostname. Trusted site certificates, forwarding to the true upstream, code-based authorization and open-stream expiry remain part of the external gateway setup in [INTEGRATION.md](INTEGRATION.md). DNS rewrites alone do not turn a portal code into website access. Keep these DNS mappings stable during sessions; DNS TTLs are not the access timer.
+DNS now points selected names at the gateway. The browser still requests the original site's HTTPS hostname. The installed 0.5 [HTTPS gateway](GATEWAY.md) generates a matching certificate under the retained device-trusted CA, forwards to the verified real origin after code authorization and checks open streams for expiry/revocation. Keep these DNS mappings stable during sessions; DNS TTLs are not the access timer. Device trust and actual DNS/routing/transport behavior must still be checked on the target network.
 
 This source release has automated coverage for export construction, validation, persistence, browser-grant preservation and administration controls. Pi-hole daemon/query behavior and real-device access still require the checks above on the target network.
 

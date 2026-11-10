@@ -17,7 +17,7 @@ bundle_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 if [[ $(readlink -f "$bundle_dir") == /opt/access-gate ]]; then
     echo 'Keep source files outside /opt/access-gate. Use /opt/access-gate-src for the Git checkout.' >&2; exit 1
 fi
-for required_item in access_gate templates static wsgi.py configure.py VERSION scripts/deploy_portal.py scripts/legacy_upgrade.py scripts/reset_install.py; do
+for required_item in access_gate access_gate/gateway.py access_gate/gateway_tls.py access_gate/gateway_setup.py templates static wsgi.py configure.py VERSION scripts/deploy_portal.py scripts/legacy_upgrade.py scripts/reset_install.py; do
     if [[ ! -e "$bundle_dir/$required_item" ]]; then
         echo "Missing source item: $required_item. Extract the complete repository archive first." >&2; exit 1
     fi
@@ -55,9 +55,9 @@ fi
 /usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" check
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y nginx python3-flask gunicorn openssl ca-certificates curl iproute2
+apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography gunicorn openssl ca-certificates curl iproute2
 if [[ $resume_install -eq 1 ]]; then
-    for unit in access-gate.service access-gate-keeper.service; do
+    for unit in access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
     done
     backup_dir=$(mktemp -d /root/access-gate-resume.XXXXXX)
@@ -71,6 +71,7 @@ if [[ $resume_install -eq 1 ]]; then
 fi
 /usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" retire
 id accessgate >/dev/null 2>&1 || useradd --system --home /var/lib/access-gate --shell /usr/sbin/nologin accessgate
+id accessgate-gateway >/dev/null 2>&1 || useradd --system --home /nonexistent --shell /usr/sbin/nologin accessgate-gateway
 install -d -m 0755 /etc/access-gate /var/lib/access-gate/public
 install -d -o accessgate -g accessgate -m 0700 /var/lib/access-gate/data
 install -d -o root -g root -m 0700 /etc/access-gate/ca
@@ -128,6 +129,7 @@ chmod 0640 /etc/access-gate/config.json
 chown root:root /etc/access-gate/acl-token
 chmod 0600 /etc/access-gate/acl-token
 chown -R accessgate:accessgate /var/lib/access-gate/data
+/usr/bin/python3 -m access_gate.gateway_setup
 
 cat > /etc/nginx/sites-available/access-gate <<'NGINX'
 server {
@@ -147,20 +149,8 @@ server {
         proxy_set_header X-Gate-Key "";
         access_log off;
     }
-    location / { return 302 https://10.40.22.5$request_uri; }
-}
-server {
-    listen 10.40.22.5:443 ssl;
-    server_name 10.40.22.5 toegang.coyseinri.nl;
-    ssl_certificate /etc/access-gate/portal.crt;
-    ssl_certificate_key /etc/access-gate/portal.key;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    include /etc/access-gate/client-networks.nginx;
-    access_log off;
-    client_max_body_size 16k;
-    location /internal/ { return 404; }
     location / {
-        proxy_pass http://127.0.0.1:8088;
+        proxy_pass http://127.0.0.1:8089;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For "";
@@ -189,15 +179,49 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 UNIT
+cat > /etc/systemd/system/access-gate-gateway.service <<'UNIT'
+[Unit]
+Description=Access Gate restricted-domain HTTPS gateway
+Requires=access-gate.service
+After=network.target access-gate.service
+PartOf=access-gate.service
+[Service]
+User=accessgate-gateway
+Group=accessgate-gateway
+WorkingDirectory=/opt/access-gate
+ExecStart=/usr/bin/python3 -m access_gate.gateway
+Restart=on-failure
+UMask=0077
+RuntimeDirectory=access-gate-gateway
+RuntimeDirectoryMode=0700
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/access-gate-gateway
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+[Install]
+WantedBy=multi-user.target
+UNIT
 nginx -t
 systemctl daemon-reload
-systemctl enable nginx access-gate.service
-systemctl restart nginx access-gate.service
-systemctl is-active access-gate.service nginx.service
+systemctl enable nginx access-gate.service access-gate-gateway.service
+# Nginx releases its former HTTPS listener before the new gateway binds port 443.
+systemctl restart nginx
+systemctl restart access-gate.service
+if ! systemctl restart access-gate-gateway.service; then
+    journalctl -u access-gate-gateway.service -n 60 --no-pager >&2 || true
+    echo 'HTTPS gateway startup failed. Existing data and the pre-update backup are retained; correct the reported error and rerun update.sh.' >&2
+    exit 1
+fi
+systemctl is-active access-gate.service nginx.service access-gate-gateway.service
 if ! /usr/bin/python3 -m access_gate.readiness; then
     echo 'Portal startup failed. Existing data and the pre-update backup remain available.' >&2
     echo 'Recent portal service logs:' >&2
     journalctl -u access-gate.service -n 40 --no-pager >&2 || true
+    journalctl -u access-gate-gateway.service -n 40 --no-pager >&2 || true
     echo 'Recent Nginx upstream errors:' >&2
     tail -n 20 /var/log/nginx/error.log >&2 || true
     echo 'Correct the reported backend/proxy error, then rerun update.sh. Do not reset the installation.' >&2
@@ -213,4 +237,4 @@ elif [[ -f /root/access-gate-initial-login.txt ]]; then
 else
     echo 'Admin portal: https://10.40.22.5/admin (existing password unchanged).'
 fi
-printf '\nStandalone code portal ready. No user/domain registration is required. Configure redirects and authorization enforcement in your external gateway; see docs/INTEGRATION.md.\n'
+printf '\nHTTPS gateway ready. Keep restricted DNS names pointing to 10.40.22.5 and trust the retained root CA on your browser devices. See docs/GATEWAY.md for verification and supported transports.\n'
