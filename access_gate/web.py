@@ -18,6 +18,7 @@ from .dns_export import TARGET_IP
 BROWSER_COOKIE='__Host-accessgate-browser'
 SITE_COOKIE='__Host-accessgate-site'
 CHALLENGE_COOKIE='__Host-accessgate-challenge'
+DNS_FEED_PATHS = frozenset(('/domains.txt', '/pihole.conf'))
 
 
 def create_app(config=None):
@@ -56,7 +57,7 @@ def create_app(config=None):
             if request.remote_addr not in ('127.0.0.1','::1') or not expected or not hmac.compare_digest(request.headers.get('X-Gate-Key','').encode(),expected.encode()): abort(403)
             return
         client_ip()
-        if urlsplit('https://'+request.host).hostname!=urlsplit(portal_url).hostname:
+        if request.path not in DNS_FEED_PATHS and urlsplit('https://'+request.host).hostname!=urlsplit(portal_url).hostname:
             if request.method in ('GET','HEAD'):
                 return redirect(portal_url+request.full_path.rstrip('?'),code=308)
             abort(400,'Open the canonical portal address and reload the form.')
@@ -81,6 +82,14 @@ def create_app(config=None):
             if not session.get('admin'): return redirect('/admin/login')
             return fn(*args,**kwargs)
         return wrapped
+
+    @app.get('/domains.txt')
+    def hosts_feed():
+        return app.response_class(store.dns_hosts_feed(), mimetype='text/plain')
+
+    @app.get('/pihole.conf')
+    def dnsmasq_feed():
+        return app.response_class(store.export_dns_domains('dnsmasq'), mimetype='text/plain')
 
     @app.route('/',methods=['GET','POST'])
     def index():
@@ -177,7 +186,7 @@ def create_app(config=None):
             except GateError as exc:
                 error = str(exc)
             else:
-                flash(f'Added {added} hostnames; {existing} already listed. Download and reapply the export in Pi-hole to use these changes.', 'success')
+                flash(f'Added {added} hostnames; {existing} already listed. Pi-hole must fetch and apply the updated feed to use these changes.', 'success')
                 return redirect(url_for('dns_domains'))
         rows = store.list_dns_domains()
         return render_template('dns_domains.html', domains=rows, target_ip=TARGET_IP,
@@ -190,7 +199,7 @@ def create_app(config=None):
     @admin_only
     def change_dns_domain():
         store.change_dns_domain(request.form.get('domain', ''), request.form.get('action', ''))
-        flash('Domain list updated. Download and reapply the export in Pi-hole to use this change.', 'success')
+        flash('Domain list updated. Pi-hole must fetch and apply the updated feed to use this change.', 'success')
         return redirect(url_for('dns_domains'))
 
     @app.get('/admin/dns-domains/export/<kind>')

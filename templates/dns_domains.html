@@ -1,6 +1,6 @@
 {% extends 'base.html' %}{% block content %}
 <div class="page-heading"><div><p class="eyebrow">Administration</p><h1>DNS domains</h1></div><span class="badge">Target: {{ target_ip }}</span></div>
-<p>Build your Pi-hole hostname list here. Each enabled hostname points to <strong>{{ target_ip }}</strong>. Changes take effect after you download and apply a new export in Pi-hole.</p>
+<p>Build your Pi-hole hostname list here. Each enabled hostname points to <strong>{{ target_ip }}</strong>. The feeds update immediately when you edit this list; Pi-hole uses changes after fetching and applying them.</p>
 <div class="form-grid">
 <section><h2>Add hostnames</h2>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
@@ -11,7 +11,11 @@
 <small id="domain-help">No https://, paths or ports. With all subdomains selected, example.com (or *.example.com) covers example.com, www.example.com and a.b.example.com. Duplicates keep their existing state and scope.</small>
 <label for="scope">Match scope</label><select id="scope" name="scope"><option value="subdomains"{% if scope == 'subdomains' %} selected{% endif %}>Domain + all subdomains</option><option value="exact"{% if scope == 'exact' %} selected{% endif %}>Exact hostname only</option></select>
 <p><button>Add hostnames</button></p></form></section>
-<section><h2>Export for Pi-hole</h2><p>{{ enabled_count }} enabled of {{ domains|length }} hostnames.</p>
+<section><h2>Feeds and exports</h2><p>{{ enabled_count }} enabled of {{ domains|length }} hostnames.</p>
+<p><strong>Live hosts feed</strong><br><a href="http://{{ target_ip }}/domains.txt">http://{{ target_ip }}/domains.txt</a></p>
+<small>Available without login on the allowed local/VPN networks. Includes each enabled base/exact hostname in hosts format. Wildcard scopes cannot be represented in this format.</small>
+<p><strong>Live Pi-hole config</strong><br><a href="http://{{ target_ip }}/pihole.conf">http://{{ target_ip }}/pihole.conf</a></p>
+<small>Preserves the target IP and all configured subdomain scopes. Fetch and apply as the dedicated local DNS configuration on Pi-hole.</small>
 <p><a class="button" href="{{ url_for('export_dns_domains', kind='dnsmasq') }}">Download Pi-hole config</a></p>
 {% if not wildcard_count %}<p><a class="button secondary" href="{{ url_for('export_dns_domains', kind='hosts') }}">Download hosts list</a></p>{% else %}<p>A hosts file cannot express wildcard rules. Use the Pi-hole config to include all subdomains.</p>{% endif %}
 <p>The config belongs in a dedicated <code>/etc/dnsmasq.d/99-access-gate.conf</code> file. Pi-hole 6 needs loading of that directory enabled. Each rule retains its selected match scope.</p>

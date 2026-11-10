@@ -139,6 +139,14 @@ server {
         default_type application/x-x509-ca-cert;
         add_header Cache-Control no-store;
     }
+    location ~ ^/(domains\.txt|pihole\.conf)$ {
+        proxy_pass http://127.0.0.1:8088;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header X-Gate-Key "";
+        access_log off;
+    }
     location / { return 302 https://10.40.22.5$request_uri; }
 }
 server {

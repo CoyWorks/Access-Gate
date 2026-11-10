@@ -26,6 +26,14 @@ def hostname(value):
 
 
 class DNSExports:
+    def dns_hosts_feed(self):
+        lines = ['# Access Gate hosts feed: ' + TARGET_IP,
+                 '# Enabled base/exact hostnames only; hosts files cannot express wildcards.',
+                 '# Use /pihole.conf for the configured subdomain scopes and DNS redirects.',
+                 '# Pi-hole adlists use domain names for blocking; they do not preserve this IP.']
+        lines += [f"{TARGET_IP} {row['domain']}" for row in self.list_dns_domains() if row['enabled']]
+        return '\n'.join(lines) + '\n'
+
     def initialize_dns_exports(self, db):
         db.execute('''CREATE TABLE IF NOT EXISTS dns_export_domains(
             domain TEXT PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),

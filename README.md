@@ -1,6 +1,6 @@
 # Access Gate
 
-**Version 0.4.1.** A small English-language code portal for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. An optional **DNS domains** screen builds your own Pi-hole redirect list.
+**Version 0.4.2.** A small English-language code portal for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. An optional **DNS domains** screen builds your own Pi-hole redirect list, with stable hosts/config feed URLs.
 
 Select domains and send users to the portal through your external FortiGate, Pi-hole or proxy setup. Access Gate records and checks the browser's access deadline. The external gateway is responsible for applying that authorization to actual website requests. See [Integration](docs/INTEGRATION.md) for the supplied private API and optional Nginx gateway example.
 
@@ -92,7 +92,18 @@ In administration, open **DNS domains** and paste one domain per line. **Domain 
 
 You can enable/disable, delete or change the match scope of each entry. Adding duplicates keeps their current state/scope. Up to 5,000 entries are stored in SQLite and survive updates/restarts; historical 0.3 rules are not silently reactivated. Code management and browser grants remain independent of this list.
 
-**Download Pi-hole config** produces `99-access-gate.conf` for local dnsmasq configuration, including wildcard coverage. A hosts-file download is available only when all enabled entries are exact matches; hosts files cannot express wildcards. Import this as local DNS configuration, **not a Pi-hole adlist**. Changes are not pushed automatically: download and replace the managed file in Pi-hole after editing the list.
+Two read-only feeds are available without login from the configured local/VPN client networks. Edits appear in their next response automatically:
+
+| URL | Content |
+| --- | --- |
+| `http://10.40.22.5/domains.txt` | Hosts-format feed: `10.40.22.5 example.com`. Includes each enabled base/exact hostname. A hosts file cannot express the configured wildcard scopes. |
+| `http://10.40.22.5/pihole.conf` | dnsmasq configuration preserving the target IP and every configured subdomain scope. Use this for whole-domain DNS redirection. |
+
+These paths serve plain text over HTTP without an HTTPS/login redirect, even when the portal uses a canonical hostname. The administration pages still require HTTPS and administrator sign-in. Both feeds are also served over the existing portal HTTPS listener. They expose only enabled domain rules, not credentials, codes or sessions.
+
+**Download Pi-hole config** still produces a file snapshot. The strict hosts-file download is available only when all enabled entries are exact matches, while `/domains.txt` always publishes the explicitly listed base/exact names with a comment explaining the wildcard limitation.
+
+Pi-hole's ordinary adlist import extracts domain names for blocking; it does not keep the IP mapping from a hosts list. Its DNS answer follows Pi-hole's blocking mode. For the requested `10.40.22.5` destination and whole-domain coverage, fetch `/pihole.conf` and apply it as local DNS configuration. The feeds update automatically in Access Gate, but Pi-hole still needs to fetch and apply a new copy; this release does not install a poller or change Pi-hole's global blocking mode.
 
 Follow [Pi-hole import, verification and rollback](docs/PIHOLE.md), including the Pi-hole 6 setting that enables `/etc/dnsmasq.d/`.
 

@@ -1,14 +1,32 @@
 # Pi-hole domain list
 
-The optional **DNS domains** screen creates your own list of domains pointing to `10.40.22.5`. This list is stored in the Access Gate database and preserved during updates. It is a DNS configuration export; the portal does not connect to or modify Pi-hole automatically.
+The optional **DNS domains** screen creates your own list of domains pointing to `10.40.22.5`. This list is stored in the Access Gate database and preserved during updates. It is available at stable feed URLs as well as file downloads; the portal does not connect to or modify Pi-hole automatically.
+
+## Live feed URLs
+
+- `http://10.40.22.5/domains.txt`: a conventional hosts-format list, one enabled base/exact hostname per line, such as `10.40.22.5 example.com`. It is available even if subdomain scopes are enabled, but the comments explicitly state that those scopes cannot be represented in this format. It does not enumerate or invent subdomains.
+- `http://10.40.22.5/pihole.conf`: the full dnsmasq configuration, preserving all enabled exact/subdomain rules and the target `10.40.22.5`. Use this for the actual whole-domain redirect setup.
+
+Both URLs update from the current saved list on every fetch and need no administrator login, session cookie or private API key. Access is limited to the configured client networks (by default `10.40.0.0/16` and loopback) and the existing trusted reverse-proxy boundary. The HTTP listener serves only these feed paths and the public CA without redirecting to HTTPS; the portal/admin still use HTTPS. HTTPS access to the feeds remains available through the existing listener and certificate.
+
+A hosts file follows the same text shape as lists such as StevenBlack/hosts. That shape alone does not tell Pi-hole to preserve its destination IP. Ordinary **adlist** import stores the extracted domains for blocking, and the DNS answer follows Pi-hole's global blocking mode. It also cannot infer all subdomains from one hosts row. Do not change global blocking settings merely to make this list redirect, since that affects unrelated blocked domains too. Use the local dnsmasq config feed for the requested mapping/scope.
+
+The portal does not install a Pi-hole polling job. List edits appear immediately at the URLs; Pi-hole uses them only after its fetch/apply workflow. For a simple manual fetch on the Pi-hole host:
+
+```bash
+curl --fail --silent --show-error --connect-timeout 5 --max-time 20 \
+  http://10.40.22.5/pihole.conf -o /tmp/99-access-gate.conf
+```
+
+Proceed only after a successful fetch, then apply and verify the dedicated file as described below. Do not pipe a downloaded config into a shell.
 
 ## Create and download
 
 1. Update the portal normally: `bash /root/Access-Gate/update.sh`.
 2. Sign in to `/admin` and open **DNS domains**.
 3. Paste one domain per line. Leave **Domain + all subdomains** selected to cover an entire domain, or choose **Exact hostname only**. Blank lines and whole-line `#` comments are ignored.
-4. Add the entries, review the target/match scope and preview, then select **Download Pi-hole config**.
-5. Copy `99-access-gate.conf` to the Pi-hole server. Apply the new file there after each list change; the previous downloaded file is a snapshot.
+4. Add the entries and review the target/match scope and preview. The live feed URLs now reflect the saved list.
+5. Fetch `/pihole.conf` on Pi-hole using the command above, or select **Download Pi-hole config** and copy `99-access-gate.conf` there. Apply the new file after each list change; installed/downloaded files are snapshots.
 
 `example.com` and `*.example.com` are equivalent in subdomain mode: both cover the base name and every subdomain level. The match respects DNS label boundaries, so `unrelatedexample.com` is not included. Exact mode accepts a hostname without `*.`. Duplicates retain their existing enabled state and match scope. Change that scope explicitly in the table when needed.
 
@@ -94,7 +112,7 @@ Pi-hole Local DNS/hosts entries and DHCP leases can override `address=` for indi
 
 ## Update or remove
 
-After an edit in Access Gate, download and replace the dedicated Pi-hole file, then repeat the syntax check and restart. Disabling a row only affects the next export; it does not change a previously installed copy. Keep one maintained copy rather than accumulating multiple exported files in the loaded directory.
+After an edit in Access Gate, fetch the live config feed again or download a new snapshot, replace the dedicated Pi-hole file, then repeat the syntax check and restart. Disabling a row affects the next feed response/export; it does not change a previously installed copy. Keep one maintained copy rather than accumulating multiple exported files in the loaded directory.
 
 To undo an import, restore the saved previous dedicated file, or remove **only** `/etc/dnsmasq.d/99-access-gate.conf` for a first import. Restore the previous Pi-hole 6 directory-loading setting if it was changed for this setup, run the syntax check and restart. Preserve unrelated local DNS entries and other custom configuration.
 
@@ -104,4 +122,4 @@ DNS now points selected names at the gateway. The browser still requests the ori
 
 This source release has automated coverage for export construction, validation, persistence, browser-grant preservation and administration controls. Pi-hole daemon/query behavior and real-device access still require the checks above on the target network.
 
-References: [Pi-hole configuration](https://docs.pi-hole.net/ftldns/configfile/), [Pi-hole FAQ/local DNS sources](https://docs.pi-hole.net/main/faq/), [dnsmasq address/local/host-record semantics](https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html).
+References: [Pi-hole configuration](https://docs.pi-hole.net/ftldns/configfile/), [Pi-hole blocking modes](https://docs.pi-hole.net/ftldns/blockingmode/), [Pi-hole domain database](https://docs.pi-hole.net/database/gravity/), [Pi-hole FAQ/local DNS sources](https://docs.pi-hole.net/main/faq/), [dnsmasq address/local/host-record semantics](https://thekelleys.org.uk/dnsmasq/docs/dnsmasq-man.html), [StevenBlack hosts-format example](https://github.com/StevenBlack/hosts).

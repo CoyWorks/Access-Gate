@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2
+
+- Publish a stable read-only hosts feed at http://10.40.22.5/domains.txt, with enabled base/exact names mapped to 10.40.22.5 and explicit comments that hosts files cannot express wildcard scopes.
+- Publish the complete redirect configuration at http://10.40.22.5/pihole.conf, preserving exact and all-subdomain rules. Both feeds reflect saved edits immediately without administrator login or HTTPS/canonical-host redirects, and remain restricted to the configured client networks.
+- Add the two feed paths to the HTTP Nginx listener while keeping the portal/admin on HTTPS and private APIs hidden. Expose only domain data; feeds set no browser/admin cookies and do not contain codes, credentials or grants.
+- Show both live URLs in DNS domains administration and retain strict downloadable exports. Document that Pi-hole adlists extract block domains rather than preserving hosts-file target addresses, and that Pi-hole still needs to fetch/apply the config for wildcard redirects.
+- Keep schema version 4 and preserve the existing update/data workflow. No appliance settings, poller or global blocking-mode changes are installed.
+
 ## 0.4.1
 
 - Add optional administrator-only DNS domains management for a custom Pi-hole list: bulk add, enable/disable, delete, per-entry match scope and live config preview.

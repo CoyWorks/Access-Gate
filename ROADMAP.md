@@ -11,7 +11,7 @@ Access Gate is a basic, vendor-independent code portal. Users enter a code; admi
 | [#8](https://github.com/CoyWorks/Access-Gate/issues/8) | Administrator-only active access extensions and idempotent submissions; retained in 0.4. |
 | [#9](https://github.com/CoyWorks/Access-Gate/issues/9) | Named batches, status totals, filtering/pagination and whole-batch revocation; retained in 0.4. |
 | [#2](https://github.com/CoyWorks/Access-Gate/issues/2) | Reworked in 0.4: automatic browser identity without user registration, IP-reuse isolation, unchanged deadlines across network changes and origin-bound gateway handoff. |
-| [#1](https://github.com/CoyWorks/Access-Gate/issues/1) | Historical local proxy administration delivered in 0.3, retired in 0.4. Optional DNS domains management/export added in 0.4.1 for Pi-hole: bulk add, enable/disable/delete, exact or base-domain/all-subdomains scope and fixed target 10.40.22.5. Historical database records are retained without automatic activation. |
+| [#1](https://github.com/CoyWorks/Access-Gate/issues/1) | Historical local proxy administration delivered in 0.3, retired in 0.4. Optional DNS domains management/export added in 0.4.1 for Pi-hole: bulk add, enable/disable/delete, exact or base-domain/all-subdomains scope and fixed target 10.40.22.5. Version 0.4.2 adds stable hosts/config feed URLs without login. Historical database records are retained without automatic activation. |
 
 The 0.3 mandatory FortiGate-reader, device enrollment and transparent-Squid approach is superseded. Those runtime components are removed, not presented as a successfully completed network rollout. An already-enabled old interception must be rolled back before migration.
 
