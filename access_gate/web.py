@@ -84,7 +84,7 @@ def create_app(config=None):
         address=client_ip()
         g.admin_security=store.admin_security(config)
         # Polling/static/feed requests validate but never renew an idle login.
-        activity=request.path not in DNS_FEED_PATHS and request.path!='/status' and not request.path.startswith(('/static/','/admin/api/'))
+        activity=request.path not in DNS_FEED_PATHS and request.path not in ('/status','/request-access/status') and not request.path.startswith(('/static/','/admin/api/'))
         g.admin_login=None
         admin_cookie=request.cookies.get(ADMIN_COOKIE,'')
         if admin_cookie:
@@ -221,11 +221,26 @@ def create_app(config=None):
         entry_id=request.values.get('entry','')
         entry=store.entry(entry_id) if entry_id else None
         requested_domain=entry['origin'][8:] if entry else ''
+        if request.method=='POST' and not entry and request.form.get('previous_request'):
+            requested_domain=store.own_request_status(request.form['previous_request'],browser())['domain']
         if request.method=='POST':
             rid,created=store.submit_request(browser(),client_ip(),requested_domain,request.form.get('label',''),request.form.get('reason',''))
             flash('Request sent. An administrator has been notified in the portal.' if created else 'You already have a pending request for this website.','success')
-            return redirect(url_for('request_access'),code=303)
-        return render_template('requests.html',result=store.requests_page(browser(),page=request.args.get('page','1')),visitor=True,requested_domain=requested_domain,entry_id=entry_id,csrf=csrf(),state='all')
+            return redirect(url_for('request_access',request=rid),code=303)
+        selected=store.own_request_status(request.args['request'],browser()) if request.args.get('request') else None
+        return render_template('requests.html',result=store.requests_page(browser(),page=request.args.get('page','1')),visitor=True,requested_domain=requested_domain,entry_id=entry_id,csrf=csrf(),state='all',selected=selected)
+
+    @app.get('/request-access/status')
+    def request_status():
+        item=store.own_request_status(request.args.get('request',''),browser())
+        item['continue_url']=url_for('continue_request',request_id=item['id']) if item['active'] else None
+        return jsonify(item)
+
+    @app.get('/request-access/<request_id>/continue')
+    def continue_request(request_id):
+        item=store.own_request_status(request_id,browser())
+        if not item['active']:return redirect(url_for('request_access',request=request_id))
+        return redirect('https://'+item['domain']+'/' if item['domain'] else '/',code=303)
 
     @app.get('/admin/requests')
     @admin_only
@@ -237,8 +252,14 @@ def create_app(config=None):
     @admin_only
     def access_request_detail(request_id):
         if request.method=='POST':
-            store.change_request(request_id,request.form.get('action',''))
-            flash('Request updated. This does not grant website access.','success')
+            action=request.form.get('action','')
+            if action in ('approve','deny'):
+                result=store.decide_request(request_id,action,request.form.get('value','15'),request.form.get('unit','minutes'))
+                flash(('Access approved until '+localtime(result['expires'])+'.' if result['changed'] else 'This request was already approved; no additional time was added.') if result['state']=='approved' else 'Request denied.','success')
+            elif action=='read':
+                store.change_request(request_id,action)
+                flash('Request marked read.','success')
+            else:raise GateError('Reload this request to choose Approve or Deny; the old Resolve/Dismiss form is no longer supported.')
             return redirect(url_for('access_request_detail',request_id=request_id))
         return render_template('request_detail.html',item=store.request_detail(request_id),csrf=csrf())
 

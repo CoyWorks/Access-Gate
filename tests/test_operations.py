@@ -189,10 +189,10 @@ class OperationsWebTests(BrowserWebFixture,unittest.TestCase):
         self.login();self.assertEqual(self.request('/admin/api/notifications').json['unread'],1)
         self.assertIn(b'example.org',self.request('/admin/requests').data)
         path='/admin/requests/'+rid
-        self.assertIn(b'No code or access is issued automatically',self.request(path).data)
-        self.assertEqual(self.request(path,'POST',dict(csrf=self.csrf(),action='resolve')).status_code,302)
+        self.assertIn(b'>Approve</button>',self.request(path).data)
+        self.assertEqual(self.request(path,'POST',dict(csrf=self.csrf(),action='deny')).status_code,302)
         self.assertEqual(self.request('/admin/api/notifications').json['unread'],0)
-        self.assertEqual(self.store.requests_page('a'*64)['items'][0]['state'],'resolved')
+        self.assertEqual(self.store.requests_page('a'*64)['items'][0]['state'],'denied')
         self.assertIsNone(self.store.browser_grant('a'*64))
     def test_code_links_history_and_retained_removed_batch_views(self):
         batch,codes=self.store.create_batch();self.store.redeem(codes[0],'10.40.22.99',browser_token='a'*64)

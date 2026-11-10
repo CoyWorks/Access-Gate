@@ -377,6 +377,30 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn('NEVER-STORE',dump)
         self.assertEqual(self.gateway.activity_dropped,0)
 
+    async def test_approved_request_returns_through_fresh_tls_handoff_without_code(self):
+        first=await self.get('restricted.example');self.assertEqual(first.status,302)
+        entry=first.headers['Location'].split('entry=')[1];await first.read()
+        form=await self.get(path='/request-access?entry='+entry)
+        csrf=re.search(r'name="csrf" value="([^"]+)"',await form.text()).group(1)
+        sent=await self.get(path='/request-access',method='POST',data=dict(csrf=csrf,entry=entry,reason='Please approve'))
+        self.assertEqual(sent.status,303);rid=sent.headers['Location'].split('request=')[1];await sent.read()
+        pending=await self.get(path='/request-access/status?request='+rid)
+        self.assertEqual((await pending.json())['state'],'pending')
+        # The original five-minute gateway challenge may expire while waiting.
+        with self.store.connect() as db:db.execute('UPDATE gateway_entries SET expires=?',(time.time()-10,))
+        decision=self.store.decide_request(rid,'approve',15,'minutes')
+        status=await self.get(path='/request-access/status?request='+rid);data=await status.json();self.assertTrue(data['active'])
+        resume=await self.get(path=data['continue_url']);self.assertEqual(resume.headers['Location'],'https://restricted.example/');await resume.read()
+        target=await self.get('restricted.example');self.assertEqual(target.status,302)
+        fresh=target.headers['Location'].split('entry=')[1];await target.read()
+        handoff=await self.get(path='/?entry='+fresh);self.assertEqual(handoff.status,303)
+        callback=handoff.headers['Location'].split('https://restricted.example')[1];await handoff.read()
+        completed=await self.get('restricted.example',callback);self.assertEqual(completed.status,303);await completed.read()
+        website=await self.get('restricted.example');self.assertEqual(website.status,200);await website.read()
+        await self.gateway.activity_queue.join()
+        self.assertEqual(self.store.history('domains',code_id=decision['code_id'])['items'][0]['domain'],'restricted.example')
+        self.assertEqual(self.store.code_detail(decision['code_id'])['hint'],'AUTO')
+
     async def test_visit_delivery_failure_does_not_interrupt_authorized_browsing(self):
         await self.activate()
         with patch.object(self.gateway,'activity_post',side_effect=OSError('Metadata unavailable')):

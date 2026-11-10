@@ -1,16 +1,30 @@
 # Requests, activity history, batch cleanup and device setup
 
-Version 0.8 adds the Requests inbox, Activity log, per-code website history, safe batch removal and a public CA-download link. Update normally; the transactional schema-7 migration keeps codes, active grants, administrator logins/exclusions, domain rules and the existing CA. No extra packages, DNS changes or device enrollment are required.
+Version 0.9 provides the Requests inbox, Activity log, per-code website history, safe batch removal and a public CA-download link. Update normally; the transactional schema-8 migration keeps codes, active grants, administrator logins/exclusions, domain rules and the existing CA. No extra packages, DNS changes or device enrollment are required.
 
-## Request access
+## Request access: Approve / Deny
 
-The ordinary portal has a **Request access** link next to the existing code/login options. A request reached through a valid gateway entry carries that entry's hostname; direct portal requests are labelled General access. Visitors can optionally provide a label (80 characters) and reason (500 characters), and can revisit the page to see only their own browser's requests. A supplied display label, address or domain is not an authorization identity.
+The ordinary portal has **Request access**. A request reached through a valid gateway entry carries that hostname; direct requests are General access. Visitors can provide an optional label/reason and leave the waiting page open. The page checks their own request every three seconds and continues automatically after approval, with a visible Continue to website link and manual-refresh fallback when JavaScript is disabled.
 
-Requests are persisted in SQLite. Administration shows an unread count in **Requests**, refreshed every 10 seconds while signed in, plus an inbox filtered by Pending/Resolved/Dismissed/Expired/All. Open a request and explicitly **Mark read**, **Resolve request** or **Dismiss**. Reading the detail page alone does not change its state. Notification/read state survives service restarts and is shared across admin tabs/workers.
+Administration shows a persistent unread count and Requests inbox. Open a pending request to:
 
-This first delivery is the notification workflow: submitting, reading or resolving a request does **not** issue a code or grant access. Administrators can create a normal code and give it to the visitor. Automatic approval/grant delivery is a separate future decision; no email, external push or chat message is sent by this feature.
+- **Approve**: choose a positive duration in minutes/hours, up to seven days. Grant the requesting browser direct access without copying or entering a code.
+- **Deny**: close the request without granting access. This does not revoke unrelated access the browser already had.
+- **Mark read**: acknowledge the notification without deciding or granting anything.
 
-Pending requests expire after 24 hours. Duplicate pending requests from the same browser for the same hostname return the existing request without adding another notification. Submissions are limited to three per browser and five per source address per 15 minutes. Visitors sharing a source IP cannot see one another's requests. Stored text is escaped; requests do not collect passwords, form payloads or private browsing paths from the gateway. Notification polls do not renew an idle admin login.
+The timer starts when the administrator approves. Approval has the same scope as a normal code session: all currently managed restricted websites, rather than only the requested hostname. Separate domain profiles remain future work (#11). If the browser already has active access, the chosen time is added once to that existing session; its previous deadline is not shortened. The same 365-day maximum resulting window as administrator extensions applies.
+
+An approval is transactionally bound to the browser hash stored with the request, not to its display label or IP. Changing networks does not transfer access to another device sharing the address. Sending, reading, polling or knowing a request ID cannot grant or claim access. Administrator authentication, management-network checks and CSRF are required for decisions. Only the requesting browser can retrieve its decision or use the continuation route; the destination comes from validated stored request context, not a supplied return URL.
+
+For a new session the app creates an already-activated, unexported **Approval token** in the existing grant/history system. No redeemable code is sent or stored in plaintext. The session appears in Sessions, and the request links directly to its token/history plus active extension/termination actions. When approval extends an existing code session, the request links to that same token. Approval/denial and resulting activation/extension are recorded in Activity. Existing code deadlines and one-use checks remain unchanged for ordinary code entry.
+
+The original five-minute website challenge is not kept alive while waiting. On approval the browser opens the stored hostname again and performs a fresh origin-bound gateway handoff if needed. This allows approval after the original challenge expired. A general request returns to the portal's active-access page. Closing the waiting tab does not stop the granted timer; the same browser can open the website or portal later.
+
+Requests are terminal decisions: repeated Approve with the same duration does not create another session or extend again, and changing the duration on an already approved request is rejected. Deny cannot overwrite an approval. Concurrent decisions serialize into one outcome. Expired/denied/previously closed requests cannot later be approved; send a new request instead. After approval, use the normal session controls to extend or terminate access. Replaying approval after termination/expiry does not reopen it.
+
+Pending requests expire after 24 hours. Duplicate pending requests from one browser/hostname reuse the existing item. Limits remain three requests per browser and five per source address per 15 minutes. Stored text is escaped, and other browsers at the same IP cannot see the request or inherit approval. Re-requesting from an owned previous request preserves its hostname without accepting a client-supplied destination.
+
+Read/decision state survives service restarts and is shared across administrator tabs. Notification/status polling does not renew an idle admin login or the approved access deadline. Requests age out under the configured activity retention, independently from the underlying approval-token/grant integrity. Legacy Resolved/Dismissed rows from 0.8 remain readable and closed; new decisions use Approved/Denied. Submitting an old Resolve/Dismiss form is rejected with an instruction to reload. No email, external push or chat integration is required.
 
 ## Activity log and per-code history
 
@@ -67,3 +81,7 @@ After installing/trusting the CA on the device, use the HTTPS portal link normal
 ## Validation
 
 The 0.8 release passes 267 Python tests, including real local TLS code-to-page-history delivery, query redaction, logging failure without access interruption, excluded traffic scope and stream closure on batch removal. Store/web tests cover request isolation/concurrency/rate limits/persistence, notification actions, activity filters/pagination/retention, transactional rollback, preserved code state, cleared-code history discovery, schema migration and actual public-certificate download. Dependency-free Node tests verify notification polling/staleness and existing admin UI behavior; Python, JavaScript and shell syntax checks pass. These are source/local-integration checks; update srvaccess01 and validate actual device traffic there.
+
+### Approval validation (0.9)
+
+The 0.9 source passes 282 Python tests plus the Node UI checks. The approval update covers direct browser grants, one-time duration application, same-IP isolation, network changes, denied/expired/replayed requests, concurrent admin decisions, existing-session extensions, normal revocation/history integration and no administrator privilege granted to visitors. A real local TLS test returns an approved request through a fresh gateway challenge without code entry, including expiry of the original entry. Node checks cover automatic continuation, denial and rejection of an external continuation URL.

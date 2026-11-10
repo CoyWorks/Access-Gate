@@ -7,16 +7,24 @@ class Element {
   replaceChildren(...items){this.children=items;}
 }
 async function scenario(ids,answer){
-  const elements=Object.fromEntries(ids.map(id=>[id,new Element()])),intervals=[];
+  const elements=Object.fromEntries(ids.map(id=>[id,new Element()])),intervals=[],navigations=[];
+  if(elements['request-decision'])elements['request-decision'].dataset.requestId='a'.repeat(32);
   if(elements['sessions-panel'])Object.assign(elements['sessions-panel'].dataset,{state:'active',page:'1'});
   const document={getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),querySelectorAll:()=>[]};
   let fail=false;
-  const context={document,Intl,Date,URLSearchParams,AbortSignal,fetch:async()=>{if(fail)throw Error();return {ok:true,json:async()=>answer};},setInterval:fn=>intervals.push(fn),window:{location:{replace:()=>{}}}};
+  const context={document,Intl,Date,URL,URLSearchParams,AbortSignal,fetch:async()=>{if(fail)throw Error();return {ok:true,json:async()=>answer};},setInterval:fn=>intervals.push(fn),window:{location:{href:'https://portal.example/request-access',origin:'https://portal.example',replace:url=>navigations.push(url)}}};
   vm.runInNewContext(fs.readFileSync('static/gate.js','utf8'),context);
   await new Promise(resolve=>setImmediate(resolve));
-  return {elements,intervals,fail:()=>{fail=true;}};
+  return {elements,intervals,navigations,fail:()=>{fail=true;}};
 }
 (async()=>{
+ const approved=await scenario(['request-decision','request-decision-status','request-continue'],{state:'approved',active:true,expires:Date.now()/1000+900,continue_url:'/request-access/'+'a'.repeat(32)+'/continue'});
+ assert.equal(approved.navigations[0],'https://portal.example/request-access/'+'a'.repeat(32)+'/continue');
+ assert.equal(approved.elements['request-continue'].hidden,false);
+ const denied=await scenario(['request-decision','request-decision-status','request-continue'],{state:'denied',active:false});
+ assert.match(denied.elements['request-decision-status'].textContent,/denied/);assert.equal(denied.navigations.length,0);
+ const foreign=await scenario(['request-decision','request-decision-status','request-continue'],{state:'approved',active:true,continue_url:'https://evil.example/'});
+ assert.equal(foreign.navigations.length,0);assert.match(foreign.elements['request-decision-status'].textContent,/Could not refresh/);
  const excluded=await scenario(['access-countdown'],{active:true,kind:'ip',expires:null,server_time:Date.now()/1000});
  assert.match(excluded.elements['access-countdown'].textContent,/IP exclusion active/);
  const notifications=await scenario(['request-notifications'],{unread:3});

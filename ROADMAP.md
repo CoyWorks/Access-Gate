@@ -10,7 +10,7 @@ Version 0.7 additionally delivers administrator-browser and CIDR access exclusio
 | --- | --- |
 | [#12](https://github.com/CoyWorks/Access-Gate/issues/12) | Delivered in 0.8: activity/filtering/retention and per-code domain or opt-in navigation-path history, with bounded gateway delivery and health indicators. |
 | [#18](https://github.com/CoyWorks/Access-Gate/issues/18) | Delivered in 0.8: confirmed per-batch and reviewed revoked-batch removal with retained invalid codes/history. |
-| [#19](https://github.com/CoyWorks/Access-Gate/issues/19) | Delivered in 0.8: browser-owned Request access, persistent admin inbox/unread notifications and read/resolve/dismiss. Direct approval/grant delivery remains a future product decision. |
+| [#19](https://github.com/CoyWorks/Access-Gate/issues/19) | Delivered in 0.8/0.9: browser-owned requests, persistent notifications and explicit timed Approve / Deny. Approved visitors continue automatically without a code; sessions reuse normal expiry, extension, revocation and token history. |
 | [#20](https://github.com/CoyWorks/Access-Gate/issues/20) | Delivered in 0.8: public home-page CA download link and retained HTTP trust-bootstrap path. |
 | [#4](https://github.com/CoyWorks/Access-Gate/issues/4) | Delivered in 0.6: Settings password/management networks, cross-worker admin-session invalidation, no-lockout validation and local recovery. |
 | [#10](https://github.com/CoyWorks/Access-Gate/issues/10) | Delivered in 0.6: live browser sessions, filters/pages/countdowns, extension links and confirmed per-browser termination. |

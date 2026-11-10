@@ -7,7 +7,7 @@ import secrets
 import time
 from urllib.parse import urlsplit
 
-EVENTS=frozenset(('batch.created','batch.revoked','batch.removed','codes.cleared','code.activated','code.failed','code.revoked','session.extended','session.terminated','session.expired','admin.login','admin.login_failed','admin.logout','admin.policy_changed','domains.merged','domain.changed','request.created','request.read','request.resolved','request.dismissed','request.expired','activity.settings'))
+EVENTS=frozenset(('batch.created','batch.revoked','batch.removed','codes.cleared','code.activated','code.failed','code.revoked','session.extended','session.terminated','session.expired','admin.login','admin.login_failed','admin.logout','admin.policy_changed','domains.merged','domain.changed','request.created','request.read','request.resolved','request.dismissed','request.expired','request.approved','request.denied','activity.settings'))
 
 
 def page_path(value):
@@ -41,6 +41,9 @@ class Operations:
             'CREATE INDEX IF NOT EXISTS request_owner ON access_requests(browser_hash,created)',
             'CREATE INDEX IF NOT EXISTS request_state ON access_requests(status,read_at,created)',
         ):db.execute(sql)
+        request_columns={r['name'] for r in db.execute('PRAGMA table_info(access_requests)')}
+        for name,kind in (('approval_seconds','INTEGER'),('approval_expires','REAL'),('approval_session_id','TEXT'),('approval_code_id','TEXT REFERENCES codes(id)')):
+            if name not in request_columns:db.execute('ALTER TABLE access_requests ADD COLUMN '+name+' '+kind)
         db.execute("INSERT OR IGNORE INTO activity_policy(id,mode,retention_days,version) VALUES(1,'domains',30,?)",(secrets.token_hex(16),))
 
     @staticmethod
@@ -192,13 +195,13 @@ class Operations:
     def requests_page(self,browser_token=None,state='all',page=1,now=None):
         from .core import GateError,positive_int
         now=time.time() if now is None else now;page=positive_int(page,'Page',1000000)
-        if state not in ('all','pending','resolved','dismissed','expired'):raise GateError('Invalid request state.')
+        if state not in ('all','pending','approved','denied','resolved','dismissed','expired'):raise GateError('Invalid request state.')
         cutoff=now-self.activity_settings()['retention_days']*86400
         expression="CASE WHEN status='pending' AND created<=:expired THEN 'expired' ELSE status END"
         where=' WHERE created>=:cutoff';params=dict(cutoff=cutoff,expired=now-86400)
         if browser_token:where+=' AND browser_hash=:owner';params['owner']=self.browser_digest(browser_token)
         if state!='all':where+=' AND ('+expression+')=:state';params['state']=state
-        fields='id,domain,label,reason,created,read_at,resolved_at,'+expression+' AS state'+('' if browser_token else ',address')
+        fields='id,domain,label,reason,created,read_at,resolved_at,approval_expires,'+expression+' AS state'+('' if browser_token else ',address')
         with self.connect() as db:
             db.execute('BEGIN')
             total=db.execute('SELECT count(*) FROM access_requests'+where,params).fetchone()[0]
@@ -254,8 +257,72 @@ class Operations:
     def request_detail(self,request_id):
         from .core import GateError
         with self.connect() as db:
-            row=db.execute('SELECT id,domain,label,reason,address,created,status,read_at,resolved_at FROM access_requests WHERE id=?',(request_id,)).fetchone()
+            row=db.execute('SELECT id,domain,label,reason,address,created,status,read_at,resolved_at,approval_seconds,approval_expires,approval_session_id,approval_code_id FROM access_requests WHERE id=?',(request_id,)).fetchone()
             if not row or row['created']<time.time()-self.activity_settings()['retention_days']*86400:raise GateError('Request not found.')
             item=dict(row)
+            active=db.execute('SELECT g.expires FROM grants g JOIN codes c ON c.id=g.code JOIN batches b ON b.id=c.batch WHERE g.session_id=? AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0',(item['approval_session_id'],time.time())).fetchone() if item['status']=='approved' else None
+            item['session_active']=bool(active);item['current_expires']=active['expires'] if active else item['approval_expires']
             if item['status']=='pending' and item['created']<=time.time()-86400:item['status']='expired'
             return item
+
+    def decide_request(self,request_id,decision,value=15,unit='minutes',now=None):
+        from .core import GateError,duration_seconds,TZ
+        import datetime as dt
+        if decision not in ('approve','deny'):raise GateError('Choose Approve or Deny.')
+        seconds=duration_seconds(value,unit,'access') if decision=='approve' else 0
+        live_clock=now is None
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            now=time.time() if live_clock else now
+            row=db.execute('SELECT * FROM access_requests WHERE id=?',(request_id,)).fetchone()
+            if not row:raise GateError('Request not found.')
+            if row['status']=='approved' and decision=='approve':
+                if row['approval_seconds']!=seconds:raise GateError('This request was already approved with a different duration.')
+                return dict(state='approved',changed=False,expires=row['approval_expires'],session_id=row['approval_session_id'],code_id=row['approval_code_id'])
+            if row['status']=='denied' and decision=='deny':return dict(state='denied',changed=False)
+            if row['status']!='pending':raise GateError('This request has already been decided. Reload the inbox.')
+            if row['created']<=now-86400:raise GateError('This request expired. The visitor must send a new request.')
+            if decision=='deny':
+                db.execute("UPDATE access_requests SET status='denied',read_at=coalesce(read_at,?),resolved_at=? WHERE id=?",(now,now,request_id))
+                self._event(db,'request.denied',details=dict(state='denied'),now=now)
+                db.commit()
+                return dict(state='denied',changed=True)
+            old=db.execute('SELECT * FROM grants WHERE browser_hash=?',(row['browser_hash'],)).fetchone()
+            active=db.execute('''SELECT g.*,c.batch FROM grants g JOIN codes c ON c.id=g.code JOIN batches b ON b.id=c.batch
+                WHERE g.browser_hash=? AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0 AND c.used IS NOT NULL''',(row['browser_hash'],now)).fetchone()
+            if active:
+                end=active['expires']+seconds
+                if end-now>365*86400:raise GateError('The resulting access window cannot exceed 365 days.')
+                sid=active['session_id'];code_id=active['code'];batch=active['batch']
+                db.execute('UPDATE grants SET expires=? WHERE session_id=?',(end,sid))
+                db.execute('INSERT INTO extensions VALUES(?,?,?,?,?,?,?,?,?)',(secrets.token_hex(16),sid,code_id,active['ip'],seconds,active['expires'],end,now,'Administrator (request approval)'))
+                self._event(db,'session.extended',code_id=code_id,batch_id=batch,session_id=sid,details=dict(seconds=seconds,reason='request_approval'),now=now)
+            else:
+                if old:db.execute('UPDATE grants SET browser_hash=NULL WHERE session_id=?',(old['session_id'],))
+                sid=secrets.token_hex(16);code_id=secrets.token_hex(8);batch=secrets.token_hex(8);end=now+seconds
+                name='Approved request '+request_id[:8]
+                week=dt.datetime.fromtimestamp(now,TZ).date().isoformat()
+                db.execute('''INSERT INTO batches(id,week,starts,ends,minutes,created,name,access_seconds,validity_seconds,timing_mode)
+                    VALUES(?,?,?,?,?,?,?,?,?,?)''',(batch,week,now,end,seconds//60,now,name,seconds,seconds,'approval'))
+                # An already-consumed approval token reuses normal grant/history/revocation machinery.
+                # Its unexported random digest can never be entered as an unused access code.
+                db.execute('INSERT INTO codes(id,batch,digest,hint,used,used_ip) VALUES(?,?,?,?,?,?)',(code_id,batch,self.digest(secrets.token_hex(32)),'AUTO',now,row['address']))
+                db.execute('INSERT INTO grants(session_id,ip,code,expires,started,browser_hash) VALUES(?,?,?,?,?,?)',(sid,row['address'],code_id,end,now,row['browser_hash']))
+                self._event(db,'batch.created',batch_id=batch,details=dict(count=1,reason='request_approval'),now=now)
+                self._event(db,'code.activated',code_id=code_id,batch_id=batch,session_id=sid,details=dict(reason='request_approval'),now=now)
+            db.execute("UPDATE access_requests SET status='approved',read_at=coalesce(read_at,?),resolved_at=?,approval_seconds=?,approval_expires=?,approval_session_id=?,approval_code_id=? WHERE id=?",(now,now,seconds,end,sid,code_id,request_id))
+            self._event(db,'request.approved',code_id=code_id,batch_id=batch,session_id=sid,details=dict(seconds=seconds,state='approved'),now=now)
+            db.commit()
+        return dict(state='approved',changed=True,expires=end,session_id=sid,code_id=code_id)
+
+    def own_request_status(self,request_id,browser_token,now=None):
+        from .core import GateError
+        now=time.time() if now is None else now
+        owner=self.browser_digest(browser_token)
+        with self.connect() as db:
+            row=db.execute('SELECT id,domain,created,status,approval_session_id,approval_expires FROM access_requests WHERE id=? AND browser_hash=?',(request_id,owner)).fetchone()
+            if not row or row['created']<now-self.activity_settings()['retention_days']*86400:raise GateError('Request not found.')
+        state='expired' if row['status']=='pending' and row['created']<=now-86400 else row['status']
+        grant=self.browser_grant(browser_token,now)
+        active=bool(state=='approved' and grant and grant['session_id']==row['approval_session_id'])
+        return dict(id=row['id'],domain=row['domain'],state=state,active=active,expires=grant['expires'] if active else row['approval_expires'])

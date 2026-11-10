@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo('Europe/Amsterdam')
 ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
 CODE_LENGTH = 8
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 STATUSES = ('unused', 'redeemed', 'revoked', 'expired', 'future')
 STATUS_SQL = "CASE WHEN c.revoked=1 THEN 'revoked' WHEN c.used IS NOT NULL THEN 'redeemed' WHEN b.ends<=:now THEN 'expired' WHEN b.starts>:now THEN 'future' ELSE 'unused' END"
 
@@ -119,7 +119,7 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions, Operations)
             self.initialize_administration(db)
             self.initialize_exclusions(db)
             self.initialize_operations(db)
-            db.execute('PRAGMA user_version=7')
+            db.execute('PRAGMA user_version=8')
             db.commit()
 
     def digest(self, code):

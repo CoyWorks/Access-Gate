@@ -303,7 +303,7 @@ class MigrationTests(unittest.TestCase):
         detail=self.store.batch_detail('legacy',300)
         self.assertEqual((detail['name'],detail['starts'],detail['ends'],detail['access_seconds'],detail['timing_mode']),('Week starting 2026-11-09',100,10000,900,'legacy-week'))
         with self.store.connect() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],7)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],8)
             self.assertEqual(db.execute('SELECT digest FROM codes WHERE id=?',('UNUSED',)).fetchone()[0],self.store.digest('UNUSED'))
             self.assertEqual(db.execute('SELECT used FROM codes WHERE id=?',('USED',)).fetchone()[0],200)
             self.assertEqual(db.execute('SELECT revoked FROM codes WHERE id=?',('REVOKED',)).fetchone()[0],1)

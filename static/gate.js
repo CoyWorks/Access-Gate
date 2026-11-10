@@ -117,3 +117,28 @@ if(requestNotifications){
   };
   refresh();setInterval(refresh,10000);
 }
+
+const requestDecision=document.getElementById('request-decision');
+if(requestDecision){
+  let busy=false,finished=false;
+  const refresh=async()=>{
+    if(busy||finished)return;busy=true;
+    const status=document.getElementById('request-decision-status'),next=document.getElementById('request-continue');
+    try{
+      const response=await fetch('/request-access/status?'+new URLSearchParams({request:requestDecision.dataset.requestId}),{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw Error();const item=await response.json();
+      if(item.active&&item.continue_url){
+        const target=new URL(item.continue_url,window.location.href);
+        if(target.origin!==window.location.origin||!target.pathname.startsWith('/request-access/'))throw Error();
+        next.href=target.href;next.hidden=false;status.textContent='Approved until '+formatTime(item.expires)+'. Opening your website…';
+        finished=true;window.location.replace(target.href);
+      }else{
+        next.hidden=true;
+        status.textContent=item.state==='pending'?'Waiting for administrator approval…':item.state==='approved'?'Approved, but this session has ended. Send a new request if needed.':item.state==='denied'?'Your request was denied.':item.state==='expired'?'This request expired. Send a new request if needed.':'This request is closed.';
+        finished=item.state!=='pending';
+      }
+    }catch(_){status.textContent='Could not refresh the decision. Retry or reload this page.';}
+    finally{busy=false;}
+  };
+  refresh();setInterval(refresh,3000);
+}

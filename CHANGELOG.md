@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.0
+
+- Add Approve / Deny to pending access requests. Administrators choose minutes/hours; approval atomically grants the requesting browser a session without manual code entry. The waiting page polls its private decision and continues automatically through a fresh website challenge, with a manual link fallback.
+- Reuse normal grant/token, expiry, extension, revocation and visit-history machinery. New approvals create an already-consumed, unexported Approval token; existing active access receives the selected duration once. Display links from the request to its session token, history and controls. All restricted-domain scope follows the existing code-session model.
+- Enforce terminal/idempotent decisions, expired-request rejection, same-browser ownership and single-outcome concurrent approval/denial. Denial does not revoke unrelated access; repeated approval cannot reopen an ended session. Record approval/denial and resulting grants/extensions in Activity.
+- Preserve legacy resolved/dismissed requests while migrating transactionally to schema 8. Keep passwords, codes, active grants, sessions/exclusions, CA and history. Update the request UI/docs to replace the 0.8 notification-only workflow.
+
 ## 0.8.0
 
 - Add persistent browser-owned access requests, duplicate suppression/rate limits, visitor status and an authenticated admin inbox with unread notifications, mark-read/resolve/dismiss and 24-hour pending expiry. Notifications remain in the portal; handling a request does not issue access automatically.
