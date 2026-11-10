@@ -1,0 +1,14 @@
+{% extends 'base.html' %}{% block content %}<h1>Manage weekly codes</h1>
+<form method="post" action="/admin/logout"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary">Sign out</button></form>
+<section><h2>Create a batch</h2><p>Each code can be redeemed once for 15 minutes of access. Unused codes expire the following Monday at 00:00.</p>
+<form method="post" action="/admin/batch"><input type="hidden" name="csrf" value="{{ csrf }}">
+<label>Monday of the valid week<input type="date" name="week" value="{{ monday }}" required></label>
+<label>Number of codes<input type="number" name="count" min="1" max="100" value="10" required></label><button>Generate codes</button></form></section>
+<section><h2>Active access</h2>{% for g in grants %}<p>{{ g.ip }} · until {{ g.expires|localtime }}{% if g.revoked or g.expires <= now %} · closing{% endif %}</p>{% else %}<p>No active access.</p>{% endfor %}</section>
+<section><h2>Codes</h2><p>Full codes are only shown immediately after generation.</p><div class="scroll"><table>
+<thead><tr><th>Week starting</th><th>Code ending</th><th>Status</th><th>Redeemed</th><th>Device</th><th></th></tr></thead><tbody>
+{% for c in codes %}<tr><td>{{ c.week }}</td><td>…{{ c.hint }}</td><td>{% if c.revoked %}Revoked{% elif c.used %}Redeemed{% elif now >= c.ends %}Expired{% elif now < c.starts %}Not yet valid{% else %}Unused{% endif %}</td>
+<td>{{ c.used|localtime }}</td><td>{{ c.used_ip or '—' }}</td><td>{% if not c.revoked %}<form method="post" action="/admin/revoke"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="id" value="{{ c.id }}"><button class="secondary">Revoke</button></form>{% endif %}</td></tr>{% endfor %}
+</tbody></table></div></section>
+<section><h2>Pilot settings</h2><p>Source addresses: {{ pilot|join(', ') }}</p><p>Domains: {{ domains|join(', ') or 'No domains configured yet' }}</p>
+<p>This version binds access to the source IP. Automatic VPN session identification has not been connected yet.</p></section>{% endblock %}

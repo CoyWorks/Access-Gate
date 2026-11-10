@@ -1,0 +1,30 @@
+# Python and local development
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.env
+.env.*
+!.env.example
+
+# Runtime data and secrets belong outside the repository
+*.sqlite
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.csr
+config.json
+acl-token
+access-gate-initial-login.txt
+domains.txt
+access-codes-*.txt
+
+# Distribution archives
+*.tar.gz
+*.zip

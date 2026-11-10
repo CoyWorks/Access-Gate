@@ -1,0 +1,14 @@
+{% extends 'base.html' %}{% block content %}
+<h1>{% if grant %}Access active{% else %}Unlock access{% endif %}</h1>
+{% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+{% if grant %}<p>You have access to the restricted websites until <strong>{{ grant.expires|localtime }}</strong>.</p>
+<p>The timer keeps running when you close this page or the website.</p>
+{% if target %}<a class="button" href="{{ target }}">Continue to website</a>{% endif %}
+<p><a href="/">Refresh status</a></p>
+{% elif eligible %}<p>Enter an unused weekly code for 15 minutes of access.</p>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="return" value="{{ target or '' }}">
+<label for="code">Access code</label><input id="code" name="code" placeholder="XXXX-XXXX-XXXX" autocomplete="off" maxlength="32" required>
+<button>Unlock for 15 minutes</button></form>
+{% else %}<p>This device has not been registered for the pilot yet.</p>{% endif %}
+<p class="muted">Device address: {{ ip }} · Time zone: Europe/Amsterdam</p>
+{% endblock %}

@@ -1,0 +1,5 @@
+{% extends 'base.html' %}{% block content %}<h1>{{ codes|length }} codes generated</h1>
+<p>Valid for the week starting {{ week }}. Each code gives 15 minutes of access, once.</p>
+<p><strong>Save these codes now.</strong> They cannot be retrieved after you close this page.</p>
+<textarea id="codes" rows="12" readonly>{{ codes|join('\n') }}</textarea>
+<button id="download" data-week="{{ week }}">Download codes as text</button><p><a href="/admin">Back to administration</a></p>{% endblock %}
