@@ -1,3 +1,8 @@
+# 0.10.0
+
+- Add encrypted consistent backups, private restore preflight and confirmed fail-closed recovery through a fixed-action maintenance worker (#14).
+- Preserve the retained CA and settings; restore revokes all saved codes/sessions and validates service readiness with encrypted rollback.
+
 # Changelog
 
 ## 0.9.0

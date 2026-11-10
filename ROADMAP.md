@@ -51,3 +51,6 @@ See [GATEWAY.md](docs/GATEWAY.md) for the installed gateway and [INTEGRATION.md]
 Administration details and recovery: [ADMINISTRATION.md](docs/ADMINISTRATION.md).
 
 Requests, code history and cleanup: [OPERATIONS.md](docs/OPERATIONS.md).
+
+### 0.10.0 — #14 delivered
+Encrypted SQLite/CA/configuration backup, preflight and confirmed fail-closed restore are implemented. #3 and #5 signed off by the operator on 11 November 2026. See docs/RECOVERY.md for the recovery exercise and target checks.

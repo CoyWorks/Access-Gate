@@ -231,3 +231,7 @@ node --check static/gate.js
 Node is only needed for the optional JavaScript syntax check.
 
 Tests cover DNS export/import, large lists, migration, code/batch behavior, independent browsers, CSRF/admin controls, private API/handoff integrity, legacy retirement, readiness, deployment, reset and Git updates. Gateway tests use real local TLS with a root/intermediate chain, the actual Flask API and an independently certified HTTPS origin. They exercise automatic code return, bodies, header/cookie isolation, failed upstream TLS, stream/WebSocket revocation and expiry, extensions, private DNS rejection and continued portal access. Real systemd/Nginx configuration, external firewall/DNS rules and Android/iOS/Windows behavior still need target-network verification.
+
+## Backup and restore
+
+Administration now provides encrypted backups and validated restore jobs. Restoring revokes all saved codes and sessions. See [recovery instructions](docs/RECOVERY.md).

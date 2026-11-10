@@ -175,7 +175,7 @@ UMask=0077
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/lib/access-gate/data
+ReadWritePaths=/var/lib/access-gate/data /var/lib/access-gate/jobs/inbox
 PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
@@ -206,8 +206,28 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 [Install]
 WantedBy=multi-user.target
 UNIT
+/usr/bin/python3 - <<'WORKER'
+from access_gate.maintenance_worker import Worker
+Worker().setup()
+WORKER
+cat > /etc/systemd/system/access-gate-maintenance.service <<'UNIT'
+[Unit]
+Description=Access Gate fixed-action maintenance worker
+After=network.target
+[Service]
+User=root
+WorkingDirectory=/opt/access-gate
+ExecStart=/usr/bin/python3 -m access_gate.maintenance_worker
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target
+UNIT
 nginx -t
 systemctl daemon-reload
+systemctl enable --now access-gate-maintenance.service
 systemctl enable nginx access-gate.service access-gate-gateway.service
 systemctl reset-failed access-gate-gateway.service
 # Nginx releases its former HTTPS listener before the new gateway binds port 443.

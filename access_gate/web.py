@@ -19,6 +19,8 @@ from .administration import management_networks
 from .health import Health
 from .exclusions import exclusion_networks,ADMIN_IDLE_SECONDS
 from .operations import EVENTS
+from .maintenance import Jobs,MAX_ARCHIVE,read_regular
+from .recovery import password_check
 
 BROWSER_COOKIE='__Host-accessgate-browser'
 SITE_COOKIE='__Host-accessgate-site'
@@ -34,9 +36,10 @@ def create_app(config=None):
     app=Flask(__name__,template_folder='../templates',static_folder='../static')
     app.config.update(SECRET_KEY=config['secret'],SESSION_COOKIE_SECURE=True,
                       SESSION_COOKIE_HTTPONLY=True,SESSION_COOKIE_SAMESITE='Lax',
-                      PERMANENT_SESSION_LIFETIME=dt.timedelta(days=7),MAX_CONTENT_LENGTH=16384)
+                      PERMANENT_SESSION_LIFETIME=dt.timedelta(days=7),MAX_CONTENT_LENGTH=MAX_ARCHIVE+16384)
     store=Store(config['database'],config['pepper']); app.extensions['store']=store
     health=Health(config,store); app.extensions['health']=health
+    jobs=Jobs(config.get('maintenance_jobs','/var/lib/access-gate/jobs'));app.extensions['jobs']=jobs
     networks=[ipaddress.ip_network(n) for n in config.get('client_networks',['10.40.0.0/16','127.0.0.1/32','::1/128'])]
     portal_url=config.get('portal_url','https://10.40.22.5').rstrip('/')
 
@@ -81,6 +84,7 @@ def create_app(config=None):
             expected=config.get('acl_token','')
             if request.remote_addr not in ('127.0.0.1','::1') or not expected or not hmac.compare_digest(request.headers.get('X-Gate-Key','').encode(),expected.encode()): abort(403)
             return
+        if request.path!='/admin/recovery' and request.content_length and request.content_length>16384:abort(413)
         address=client_ip()
         g.admin_security=store.admin_security(config)
         # Polling/static/feed requests validate but never renew an idle login.
@@ -372,6 +376,52 @@ def create_app(config=None):
             flash('Session terminated. The gateway will close its restricted connections on its next live check.' if changed else 'Session already ended.','success')
             return redirect(url_for('active_sessions'))
         return render_template('terminate.html',grant=grant,csrf=csrf())
+
+    def verify_maintenance_password():
+        if not store.attempt('admin-maintenance:'+client_ip(),5):raise GateError('Too many attempts. Please wait 15 minutes.')
+        if not check_password_hash(g.admin_security['password_hash'],request.form.get('current_password','')):raise GateError('Current password is incorrect.')
+
+    @app.route('/admin/recovery',methods=['GET','POST'])
+    @admin_only
+    def recovery():
+        if request.method=='POST':
+            verify_maintenance_password()
+            action=request.form.get('action','')
+            if action in ('backup','preflight'):
+                password=request.form.get('passphrase','');password_check(password)
+                if action=='backup' and password!=request.form.get('confirm_passphrase',''):raise GateError('Backup passphrases do not match.')
+                archive=None
+                if action=='preflight':
+                    upload=request.files.get('archive')
+                    if not upload:raise GateError('Choose an encrypted backup file.')
+                    archive=upload.stream.read(MAX_ARCHIVE+1)
+                job=jobs.submit(action,passphrase=password,**({'archive':archive} if archive is not None else {}))
+            elif action=='restore':
+                if request.form.get('confirm')!='REVOKE':raise GateError('Type REVOKE to confirm the restore policy.')
+                preview=jobs.status(request.form.get('preview',''))
+                if not preview.get('confirm') or preview.get('state')!='complete':raise GateError('A successful preflight is required.')
+                job=jobs.submit('restore',preview=preview['id'])
+            else:raise GateError('Invalid recovery action.')
+            return redirect(url_for('maintenance_job',job_id=job),code=303)
+        return render_template('recovery.html',jobs=jobs.recent(),csrf=csrf())
+
+    @app.get('/admin/maintenance/<job_id>')
+    @admin_only
+    def maintenance_job(job_id):
+        return render_template('maintenance.html',job=jobs.status(job_id),csrf=csrf())
+
+    @app.get('/admin/api/maintenance/<job_id>')
+    @admin_only
+    def maintenance_status(job_id):return jsonify(jobs.status(job_id))
+
+    @app.get('/admin/maintenance/<job_id>/download')
+    @admin_only
+    def maintenance_download(job_id):
+        state=jobs.status(job_id)
+        if not state.get('download') or state.get('state')!='complete':raise GateError('Backup is not available.')
+        import io
+        data=read_regular(jobs.root/'downloads'/(job_id+'.agbackup'),MAX_ARCHIVE)
+        return send_file(io.BytesIO(data),mimetype='application/octet-stream',as_attachment=True,download_name='access-gate-'+job_id[:8]+'.agbackup',max_age=0)
 
     @app.get('/admin/system')
     @admin_only
