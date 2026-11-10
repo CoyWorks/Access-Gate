@@ -1,37 +1,19 @@
 # Roadmap
 
-Planning only. Items below are not claims of implemented functionality. Keep the application interface, messages and documentation in English.
+The completed section records shipped portal features. All other items remain planned. Keep the application interface, messages and documentation in English.
 
-## Requested next: flexible code batches and revoked-code cleanup
+## Completed in 0.2.0
 
-These two items are at the top of P1 for the next portal iteration. Implementation issues: [#6](https://github.com/CoyWorks/Access-Gate/issues/6) (flexible single-use code batches), [#7](https://github.com/CoyWorks/Access-Gate/issues/7) (Clear revoked), and [#8](https://github.com/CoyWorks/Access-Gate/issues/8) (administrator-only extensions after activation).
+| Issue | Delivered |
+| --- | --- |
+| [#6](https://github.com/CoyWorks/Access-Gate/issues/6) | Configurable single-use batches: count, validity in hours/days, access in minutes/hours, one-time export and a repeatable legacy migration. |
+| [#7](https://github.com/CoyWorks/Access-Gate/issues/7) | Clear revoked, scoped globally or to one batch, retaining internal revocation and consumption records. |
+| [#8](https://github.com/CoyWorks/Access-Gate/issues/8) | Active-session administrator extensions, duplicate-operation protection, minimal extension history and refreshed client countdown. |
+| [#9](https://github.com/CoyWorks/Access-Gate/issues/9) | Named batch overview/detail pages, status counts/filters, pagination and whole-batch revocation. |
 
-### Flexible code batches
+Resolved behavior: unused-code validity starts at generation; an eligible activation receives the full configured access duration even near the deadline. New validity days are fixed 24-hour periods. Existing weekly batches keep their calendar windows and 15-minute access. Extensions apply only to active, non-revoked access and never reset a code. Clear revoked archives rows rather than deleting their underlying records. Current limits and update instructions are in [README.md](README.md).
 
-- Choose how many codes to generate.
-- Configure the code validity period in hours or days.
-- Configure access duration for the single activation in minutes or hours.
-- Every code remains strictly single-use. Redemption consumes the code permanently; the user cannot reactivate it.
-- After activation, an administrator may extend the resulting access session by a chosen number of minutes or hours.
-- An extension changes the session end time; it never resets the code to unused or permits another redemption.
-- Expose an **Extend access** action to administrators and record the added duration and updated end time.
-- Keep validity and access duration as separate settings: validity controls whether a code may be activated; access duration controls the resulting session.
-- Example: generate 10 codes, valid for 7 days, with one activation per code giving 30 minutes of access. An administrator can subsequently add, for example, 1 hour to an activated session.
-- Replace the fixed calendar-week and 15-minute restrictions with configurable values; existing weekly codes must retain their original behavior during migration.
-- Validate quantities and duration values and show the validity and access duration clearly in administration.
-- Keep activation, consumption and expiry enforcement server-side.
-
-Decisions to confirm before implementation:
-- Does the validity countdown start on generation, a chosen start time or first activation?
-- How should an activation near the validity deadline behave: full configured session duration or a session capped by that deadline?
-
-### Clear revoked
-
-- Add a **Clear revoked** button to code administration.
-- Remove revoked code entries from the visible code list without touching unused, active or merely expired codes.
-- Clearing revoked entries must never restore access, make a consumed code reusable or interfere with active grants.
-- Handle database references consistently; decide whether minimal revocation/audit records need to be retained internally.
-- Show the number of affected entries and the operation result.
+These portal features do not complete the pending VPN identity, interception, full expiry or administration-security work. Batches currently share the Default global domain list. Extension history is a minimal event record, not the complete activity log.
 
 ## P0 — reliable core behavior
 
@@ -47,9 +29,6 @@ Decisions to confirm before implementation:
 
 | Order | Feature | Scope | Issue |
 | --- | --- | --- | --- |
-| 1 | Flexible code batches | Configurable code count, validity in hours/days, single-use access in minutes/hours, and admin-only extension after activation; see requested-next details above. | [#6](https://github.com/CoyWorks/Access-Gate/issues/6) |
-| 2 | Clear revoked | Dedicated cleanup action for revoked entries, preserving revocation and grant integrity. | [#7](https://github.com/CoyWorks/Access-Gate/issues/7) |
-| 3 | Batch overview and controls | Name batches, show unused/redeemed/expired/revoked counts and revoke whole batches. | [#9](https://github.com/CoyWorks/Access-Gate/issues/9) |
 | 4 | Active sessions | Live device/session overview, remaining time, terminate access and admin-only extensions in minutes/hours without reusing the code. | [#10](https://github.com/CoyWorks/Access-Gate/issues/10) |
 | 5 | Access profiles | Separate restricted-domain lists and associate code batches with a profile. | [#11](https://github.com/CoyWorks/Access-Gate/issues/11) |
 | 6 | Activity log | Record activation, expiry and administrator changes with configurable retention. | [#12](https://github.com/CoyWorks/Access-Gate/issues/12) |
@@ -64,4 +43,4 @@ Decisions to confirm before implementation:
 | 3 | Automatic batches | Prepare batches on a schedule using configurable defaults. | [#16](https://github.com/CoyWorks/Access-Gate/issues/16) |
 | 4 | Updates in administration | Display installed/available versions and expose an update action with progress/results. | [#17](https://github.com/CoyWorks/Access-Gate/issues/17) |
 
-Priority levels indicate importance. The requested code-management changes are the next requested portal iteration; network integration and reliable identity remain prerequisites for broader deployment.
+Priority levels indicate importance. The requested code-management iteration is delivered in 0.2.0; network integration and reliable identity remain prerequisites for broader deployment.

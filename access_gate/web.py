@@ -9,9 +9,9 @@ import time
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
-from flask import Flask, abort, redirect, render_template, request, session
+from flask import Flask, abort, redirect, render_template, request, session, flash, jsonify, url_for
 from werkzeug.security import check_password_hash
-from .core import Store, GateError, TZ, domains, matches
+from .core import Store, GateError, TZ, STATUSES, domains, matches
 
 
 def create_app(config=None):
@@ -124,31 +124,110 @@ def create_app(config=None):
         session.clear()
         return redirect('/admin/login')
 
+    @app.template_filter('duration')
+    def duration(value):
+        seconds = int(value or 0)
+        amount,unit = (seconds//86400,'day') if seconds and seconds % 86400 == 0 else ((seconds//3600,'hour') if seconds and seconds % 3600 == 0 else (seconds//60,'minute'))
+        return f'{amount} {unit}' + ('' if amount==1 else 's')
+
+    @app.errorhandler(GateError)
+    def gate_error(error):
+        return render_template('error.html', error=str(error)), 400
+
+    def page_number():
+        return request.args.get('page', '1')
+
+    def list_context(batch_id=None):
+        return dict(codes=store.list_codes(batch_id,request.args.get('status',''),page_number()),
+                    code_status=request.args.get('status',''),statuses=STATUSES,
+                    clear_count=store.revoked_visible(batch_id),batch_id=batch_id,
+                    csrf=csrf(),now=time.time())
+
+    def back(batch_id):
+        return redirect(url_for('batch_detail',batch_id=batch_id) if batch_id else url_for('admin'))
+
+    @app.get('/status')
+    def access_status():
+        ip = client_ip()
+        grant = store.grant(ip) if eligible(ip) else None
+        return jsonify(active=bool(grant),expires=grant['expires'] if grant else None,server_time=time.time())
+
     @app.get('/admin')
     @admin_only
     def admin():
-        codes, grants = store.dashboard()
-        today = dt.datetime.now(TZ).date()
-        monday = today - dt.timedelta(days=today.weekday())
-        return render_template('admin.html', csrf=csrf(), codes=codes, grants=grants,
-                               monday=monday.isoformat(), now=time.time(),
-                               domains=domains(config['domains']), pilot=config['pilot_clients'])
+        return render_template('admin.html',**list_context(),grants=store.list_grants(),
+                               extensions=store.extension_history(),
+                               domains=domains(config['domains']),pilot=config['pilot_clients'])
+
+    @app.get('/admin/batches')
+    @admin_only
+    def batches():
+        return render_template('batches.html',batches=store.list_batches(page=page_number()),
+                               csrf=csrf(),now=time.time())
+
+    @app.get('/admin/batches/new')
+    @admin_only
+    def new_batch():
+        return render_template('new_batch.html',csrf=csrf(),values={},error=None)
 
     @app.post('/admin/batch')
     @admin_only
     def batch():
         try:
-            count = int(request.form.get('count','10'))
-            _, codes = store.new_batch(request.form.get('week',''), count, 15)
-        except (ValueError, GateError):
-            abort(400, 'Choose a valid Monday and 1–100 codes.')
-        return render_template('batch.html', codes=codes, week=request.form['week'])
+            if 'week' in request.form and 'validity_value' not in request.form:
+                raise GateError('This form is from an older version. Reload Create batch before generating codes.')
+            batch_id,codes = store.create_batch(name=request.form.get('name',''),
+                count=request.form.get('count','10'),validity_value=request.form.get('validity_value','7'),
+                validity_unit=request.form.get('validity_unit','days'),access_value=request.form.get('access_value','15'),
+                access_unit=request.form.get('access_unit','minutes'))
+        except GateError as exc:
+            return render_template('new_batch.html',csrf=csrf(),values=request.form,error=str(exc)),400
+        return render_template('batch.html',codes=codes,batch=store.batch_detail(batch_id))
+
+    @app.get('/admin/batches/<batch_id>')
+    @admin_only
+    def batch_detail(batch_id):
+        return render_template('batch_detail.html',batch=store.batch_detail(batch_id),
+                               extensions=store.extension_history(batch_id),**list_context(batch_id))
+
+    @app.route('/admin/batches/<batch_id>/revoke',methods=['GET','POST'])
+    @admin_only
+    def revoke_batch(batch_id):
+        batch = store.batch_detail(batch_id)
+        if request.method=='POST':
+            count,active = store.revoke_batch(batch_id)
+            flash(f'Batch revoked: {count} codes and {active} active sessions affected.','success')
+            return back(batch_id)
+        return render_template('confirm_revoke.html',batch=batch,csrf=csrf())
 
     @app.post('/admin/revoke')
     @admin_only
     def revoke():
         store.revoke(request.form.get('id',''))
-        return redirect('/admin')
+        flash('Code revoked. Any associated access will be closed.','success')
+        return back(request.form.get('batch_id',''))
+
+    @app.post('/admin/codes/clear-revoked')
+    @admin_only
+    def clear_revoked():
+        batch_id = request.form.get('batch_id') or None
+        if batch_id: store.batch_detail(batch_id)
+        count = store.clear_revoked(batch_id)
+        flash(f'Cleared {count} revoked codes from this list. Revocation records remain protected.','success')
+        return back(batch_id)
+
+    @app.route('/admin/access/<session_id>/extend',methods=['GET','POST'])
+    @admin_only
+    def extend_access(session_id):
+        grant = next((g for g in store.list_grants() if g['session_id']==session_id),None)
+        if not grant or not eligible(grant['ip']) or not store.grant(grant['ip']):
+            raise GateError('Only active access for a registered pilot address can be extended.')
+        if request.method=='POST':
+            event = store.extend(session_id,request.form.get('value',''),request.form.get('unit',''),
+                                 request.form.get('request_id',''),actor=f'Administrator ({client_ip()})')
+            flash('Access extended. New end time: '+localtime(event['new_expires'])+'.','success')
+            return back(None)
+        return render_template('extend.html',grant=grant,request_id=secrets.token_hex(16),csrf=csrf())
 
     @app.get('/internal/check')
     def check():

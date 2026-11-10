@@ -1,8 +1,8 @@
 # Access Gate
 
-A local pilot for temporary access to selected websites using single-use weekly codes. The interface, installer messages and documentation are in English.
+A local pilot for temporary access to selected websites using configurable single-use codes. The interface, installer messages and documentation are in English.
 
-**Version:** 0.1.4. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
+**Version:** 0.2.0. **Current deployment:** Ubuntu Server 24.04, `10.40.22.5/24`, gateway `10.40.22.1`, portal `toegang.coyseinri.nl`.
 
 ## Download and run from /root
 
@@ -60,6 +60,12 @@ Deployment settings, restricted domains, code records, the admin password, HMAC 
 
 Services restart during update. In this pilot, restarting the keeper invalidates active grants; used codes remain used and unused codes retain their original validity window. Previously loaded browser content cannot be removed remotely. If a later configuration or service check fails, the installer stops and shows the error; backups remain available, but a complete automatic service/configuration rollback is not implemented.
 
+## Updating existing code data to 0.2.0
+
+Run the normal updater; a reset is unnecessary. Installation/resume/update automatically run the transactional, versioned SQLite migration before starting services. The migration is repeatable, preserves code digests, consumption/revocation state and original weekly activation windows, and gives older batches a `Week starting YYYY-MM-DD` name. Existing weekly codes retain their 15-minute access duration. Newly created batches use the configurable form.
+
+The installer makes its normal pre-update database/configuration backup. Keeper startup still invalidates active grants as described above, so plan updates between access sessions. If you roll back after migration, restore the matching previous application **and its database backup**; running old code against the upgraded schema is unsupported. Restoring data may restore consumed codes: revoke affected codes before allowing use again.
+
 ## Direct source and Git workflows
 
 The repository root contains `install.sh`, `resume.sh`, `update.sh` and `access-gate.sh`.
@@ -97,12 +103,16 @@ When upgrading from version 0.1.3 or earlier, run `git pull --ff-only` once to o
 
 ## Current feature scope
 
-- Generate a batch of 10 codes by default, or choose 1–100 codes.
-- Select the Monday of the valid week. Unused codes expire the next Monday at 00:00, **Europe/Amsterdam**, including daylight-saving changes.
-- Redeem each code once for 15 minutes from redemption. Sunday 23:55 gives access until Monday 00:10.
-- The timer continues when the browser closes. A second code cannot be stacked while access is active and is not consumed by that attempt.
-- Download full codes as text immediately after generation. They cannot be retrieved later; the database stores keyed HMAC digests.
-- Revoke individual codes and their active grants.
+- Create named batches of 1–1,000 codes (10 by default).
+- Choose unused-code validity in whole hours or days, starting at generation, up to 365 days. A day is exactly 24 hours; absolute dates use **Europe/Amsterdam**.
+- Choose access per single activation in whole minutes or hours, up to 7 days. Activating just before the code deadline grants the full configured access duration.
+- Each code is permanently single-use. The timer continues when the browser closes, and another code cannot be stacked onto active access.
+- Download full codes as text immediately after generation, including the batch name and validity/access details. Full codes cannot be retrieved later; only keyed HMAC digests are stored.
+- Browse paginated batches and code lists with unused, redeemed, revoked, expired and future status filters. Batch totals include archived revoked records. All batches currently use the Default global domain list; configurable profiles remain planned.
+- Revoke individual codes or a whole batch, including its active grants. Whole-batch revocation shows an impact preview and result counts.
+- **Clear revoked** hides revoked code rows while preserving their consumption/revocation records and references. From Overview it affects all batches; from a batch detail page it affects only that batch, across all status filters/pages. It never deletes unused or merely expired codes.
+- **Extend access** adds whole minutes or hours to the current deadline of still-active, non-revoked access. Expired access cannot be reopened. Each extension allows up to 7 days and the resulting remaining window cannot exceed 365 days. Repeating the same submitted operation adds time only once.
+- See the latest 20 extension events, including added time, old/new deadlines and the administrator's source IP. The portal countdown refreshes the persisted deadline every five seconds. There is currently one shared administrator account; individual accounts and a full activity log remain planned.
 - Use selective Squid HTTPS inspection for restricted domains; other domains pass through without HTTPS decryption.
 - On expiry, close that client's proxy TCP connections. Ordinary websites on the same device may briefly reconnect too.
 
@@ -198,8 +208,9 @@ bash -n resume.sh
 bash -n update.sh
 bash -n access-gate.sh
 bash -n reset.sh
+node --check static/gate.js
 ```
 
-There are 47 tests covering code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Updater integration tests use temporary local Git repositories to cover fast-forward updates, new updater execution, offline failures, dirty checkouts and diverged history. Git must be installed to run those integration tests. Live Squid, Android and FortiGate integration must still be verified on the target network.
+There are 83 tests covering code redemption, concurrency, exact expiry, week and DST boundaries, revocation, persistence, rate limits, CSRF, redirects and full application deployment. Deployment tests check obsolete-file removal, external-state preservation and recovery from a failed directory activation. Reset tests cover state removal, original Squid configuration restoration, preservation of unrelated files and refusal to purge when restoration checks fail. Updater integration tests use temporary local Git repositories to cover fast-forward updates, new updater execution, offline failures, dirty checkouts and diverged history. Git must be installed to run those integration tests. Code-management tests additionally cover legacy migration/rollback, independent durations, malformed forms, scoped archival, batch counts/pagination, extension idempotency, expiry under writer-lock contention and concurrent revocation/redemption/keeper actions. HTTP tests render and submit the administration flows. Live browser, Squid, Android and FortiGate integration must still be verified on the target network.
 
 References: [Squid SSL Bump](https://www.squid-cache.org/Doc/config/ssl_bump/), [external ACLs](https://www.squid-cache.org/Doc/config/external_acl_type/), [redirects](https://www.squid-cache.org/Doc/config/deny_info/), [Ubuntu squid-openssl](https://packages.ubuntu.com/noble/squid-openssl), [Flask security](https://flask.palletsprojects.com/en/stable/web-security/).

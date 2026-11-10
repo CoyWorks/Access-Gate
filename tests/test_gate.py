@@ -162,7 +162,7 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code,302)
         response=self.request('/admin')
         self.assertEqual(response.status_code,200)
-        self.assertIn(b'Manage weekly codes',response.data)
+        self.assertIn(b'Access overview',response.data)
 
     def test_internal_endpoint_requires_key_and_is_fail_closed(self):
         self.assertEqual(self.request('/internal/check?ip=10.40.135.11').status_code,403)
