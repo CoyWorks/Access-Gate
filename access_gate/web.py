@@ -14,6 +14,7 @@ from werkzeug.security import check_password_hash
 from .core import Store,GateError,TZ,STATUSES
 from .browser import TOKEN
 from .dns_export import TARGET_IP
+from .blocklist import download_blocklist
 
 BROWSER_COOKIE='__Host-accessgate-browser'
 SITE_COOKIE='__Host-accessgate-site'
@@ -188,12 +189,31 @@ def create_app(config=None):
             else:
                 flash(f'Added {added} hostnames; {existing} already listed. Pi-hole must fetch and apply the updated feed to use these changes.', 'success')
                 return redirect(url_for('dns_domains'))
-        rows = store.list_dns_domains()
-        return render_template('dns_domains.html', domains=rows, target_ip=TARGET_IP,
-                               enabled_count=sum(r['enabled'] for r in rows),
-                               wildcard_count=sum(r['enabled'] and r['include_subdomains'] for r in rows),
-                               preview=store.export_dns_domains('dnsmasq'), value=value, scope=scope,
-                               error=error, csrf=csrf()), 400 if error else 200
+        return dns_page(error=error, value=value, scope=scope)
+
+    def dns_page(error=None, value='', scope='subdomains', import_error=None, import_url='', import_scope='subdomains'):
+        page = store.dns_domain_page(request.args.get('q', ''), request.args.get('page', '1'))
+        summary = store.dns_summary()
+        return render_template('dns_domains.html', domains=page['items'], domain_page=page, summary=summary,
+                               target_ip=TARGET_IP, enabled_count=summary['enabled'], wildcard_count=summary['wildcard'],
+                               preview=store.export_dns_domains('dnsmasq', limit=50), value=value, scope=scope,
+                               error=error, csrf=csrf(), import_error=import_error,
+                               import_url=import_url, import_scope=import_scope), 400 if error or import_error else 200
+
+    @app.post('/admin/dns-domains/import')
+    @admin_only
+    def import_dns_domains():
+        source = request.form.get('url', '').strip()
+        scope = request.form.get('scope', 'subdomains')
+        try:
+            if scope not in ('subdomains', 'exact'): raise GateError('Choose a valid domain match scope.')
+            result = store.import_dns_blocklist(download_blocklist(source), scope)
+        except GateError as exc:
+            return dns_page(import_error=str(exc), import_url=source, import_scope=scope)
+        flash(f"Imported {result['added']:,} new domains; {result['existing']:,} already listed, "
+              f"{result['duplicates']:,} source duplicates and {result['skipped']:,} unsupported/local entries skipped. "
+              'Existing rules kept their state and scope. The live feeds are updated; Pi-hole must fetch and apply them.', 'success')
+        return redirect(url_for('dns_domains'))
 
     @app.post('/admin/dns-domains/change')
     @admin_only

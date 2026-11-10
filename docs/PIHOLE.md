@@ -28,6 +28,20 @@ Proceed only after a successful fetch, then apply and verify the dedicated file 
 4. Add the entries and review the target/match scope and preview. The live feed URLs now reflect the saved list.
 5. Fetch `/pihole.conf` on Pi-hole using the command above, or select **Download Pi-hole config** and copy `99-access-gate.conf` there. Apply the new file after each list change; installed/downloaded files are snapshots.
 
+## Import domains from an external blocklist
+
+Instead of entering domains manually, use **DNS domains → Import a blocklist URL**. Paste a public HTTPS raw-file URL, choose the match scope and click **Import from URL**. A source such as `https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts` is an input to Access Gate: the portal extracts its domains and adds them to your own restricted list, always using `10.40.22.5` in the output. It does not copy the source's destination IPs or modify Pi-hole directly.
+
+Supported input formats are IPv4/IPv6 hosts records with one or more hostnames, plain domain lines and simple `||domain^` entries. Comments, blank lines, local host boilerplate and IP literals used as hostnames are ignored. Unsupported filter syntax, options and allowlist exceptions are skipped and counted, rather than being turned into potentially broader restriction rules. In exact mode, `*.domain` entries are skipped; in subdomain mode they are normalized to the base name. No base/registrable domain is guessed from a source hostname.
+
+New domains use the selected exact or all-subdomains scope. Existing entries retain their enabled/disabled state and scope. The import result reports added, already listed, duplicate and skipped counts. Reimporting is additive: deleting a domain upstream does not remove it from your saved list, and a repeated import never re-enables a disabled row.
+
+The maximum download is 32 MiB, with up to 500,000 stored domains. A failed fetch, unsupported/empty result or exceeded limit leaves the saved list unchanged. Downloading requires a public HTTPS destination and certificate verification; private/loopback/link-local/metadata destinations are refused at each redirect, and the approved connection address is pinned to prevent DNS rebinding. Compressed/HTML/non-UTF-8 responses are rejected; use the raw text URL rather than a repository's HTML file view.
+
+Nothing is preloaded or downloaded automatically on page loads or feed fetches. Import is a one-time administrator action. To pick up later additions, submit the URL again. After a successful import the live output feeds update immediately; Pi-hole still needs to fetch/apply the resulting `/pihole.conf` as described below.
+
+The table has search and pages of 100 rows. Its config preview is limited to 50 enabled rules. These display limits never truncate downloads or live feeds, including after a large import. Imported domains and existing browser grants survive the normal update/restart workflow.
+
 `example.com` and `*.example.com` are equivalent in subdomain mode: both cover the base name and every subdomain level. The match respects DNS label boundaries, so `unrelatedexample.com` is not included. Exact mode accepts a hostname without `*.`. Duplicates retain their existing enabled state and match scope. Change that scope explicitly in the table when needed.
 
 Example export:

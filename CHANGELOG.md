@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.3
+
+- Add administrator-only Import from URL under DNS domains. Fetch public HTTPS hosts/domain lists, extract valid names, apply the chosen match scope and output the fixed target 10.40.22.5. No blocklist is preloaded.
+- Support hosts aliases, plain domains, IDNs and simple ||domain^ records. Ignore source IPs/comments/local boilerplate; count duplicates and unsupported entries. Merge atomically while preserving existing enabled states/scopes, codes and browser grants. Reimport adds new names without deleting source removals or creating a scheduled subscription.
+- Bound downloads to 32 MiB with verified TLS, checked/pinned public destinations, validated redirects and socket/download time limits. Reject local/private targets, credentials, custom ports, HTML, compressed responses and invalid UTF-8. Install ca-certificates for public TLS validation.
+- Raise the stored list limit to 500,000 names. Add search, 100-row pages and a 50-rule preview while keeping full live feeds/downloads. Keep schema version 4 and normal install/resume/update behavior.
+- Add parser/download/admin/atomicity regressions plus an 80,000-domain fixture covering import, bounded administration and complete output feeds. Real external-source connectivity and Pi-hole/gateway behavior still require the target deployment.
+
 ## 0.4.2
 
 - Publish a stable read-only hosts feed at http://10.40.22.5/domains.txt, with enabled base/exact names mapped to 10.40.22.5 and explicit comments that hosts files cannot express wildcard scopes.

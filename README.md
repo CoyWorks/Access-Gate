@@ -1,6 +1,6 @@
 # Access Gate
 
-**Version 0.4.2.** A small English-language code portal for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. An optional **DNS domains** screen builds your own Pi-hole redirect list, with stable hosts/config feed URLs.
+**Version 0.4.3.** A small English-language code portal for temporary browser access. Users enter a single-use code; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
 Select domains and send users to the portal through your external FortiGate, Pi-hole or proxy setup. Access Gate records and checks the browser's access deadline. The external gateway is responsible for applying that authorization to actual website requests. See [Integration](docs/INTEGRATION.md) for the supplied private API and optional Nginx gateway example.
 
@@ -90,7 +90,23 @@ A redirect reaches the code portal. A complete website gate also needs an enforc
 
 In administration, open **DNS domains** and paste one domain per line. **Domain + all subdomains** is selected by default: `example.com` or `*.example.com` covers the base domain, `www.example.com` and deeper names such as `a.b.example.com`. Choose **Exact hostname only** when needed. Every enabled record points to the fixed target `10.40.22.5`.
 
-You can enable/disable, delete or change the match scope of each entry. Adding duplicates keeps their current state/scope. Up to 5,000 entries are stored in SQLite and survive updates/restarts; historical 0.3 rules are not silently reactivated. Code management and browser grants remain independent of this list.
+You can enable/disable, delete or change the match scope of each entry. Adding duplicates keeps their current state/scope. Up to 500,000 entries are stored in SQLite and survive updates/restarts; historical 0.3 rules are not silently reactivated. Search and 100-row pages keep large lists manageable. The preview shows the first 50 enabled rules; feeds/downloads always contain every enabled rule. Code management and browser grants remain independent of this list.
+
+### Import an existing blocklist URL
+
+Under **DNS domains → Import a blocklist URL**, paste a public HTTPS raw-text URL, select the match scope for new domains and click **Import from URL**. For example:
+
+```text
+https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
+```
+
+The server downloads and parses the list only when submitted by an administrator. It supports hosts rows (`0.0.0.0 example.com`, including multiple aliases), one-domain-per-line lists and simple `||example.com^` rules. Comments, source IPs and local host boilerplate are ignored. Unsupported filters/options/exceptions are skipped and counted. The chosen scope applies to new domains, with **Domain + all subdomains** as the default; existing rows retain their state and scope. Every enabled imported domain uses our fixed target `10.40.22.5`, regardless of the original file's addresses.
+
+The result reports new domains, existing entries, source duplicates and skipped entries. Imports are additive and atomic: fetching/parsing/limit failures do not modify the saved list. Reimport a URL to add newly listed domains; source removals do not delete saved entries. No list is preloaded, and no source subscription or periodic synchronization is installed.
+
+Downloads are limited to 32 MiB and use verified HTTPS with bounded socket timeouts and a download time budget. Each redirect is validated, the resolved destination must be public, and the connection is pinned to that checked IP while preserving TLS hostname/SNI validation. Private/local/metadata targets, custom ports and URL credentials are refused. The source must be reachable directly from the portal server. Internationalized URL hosts are normalized; non-ASCII URL paths must be percent-encoded.
+
+### Fetch the managed feeds
 
 Two read-only feeds are available without login from the configured local/VPN client networks. Edits appear in their next response automatically:
 
