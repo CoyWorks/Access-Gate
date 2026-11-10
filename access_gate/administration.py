@@ -47,6 +47,7 @@ class Administration:
             version=secrets.token_hex(32)
             saved_exclusions=json.dumps(exclusions) if exclusions is not None else (row['exclusions'] if row else '[]')
             db.execute('INSERT OR REPLACE INTO administrator_policy(id,password_hash,version,networks,exclusions) VALUES(1,?,?,?,?)',(saved_hash,version,saved_networks,saved_exclusions))
+            self._event(db,'admin.policy_changed',details=dict(reason='password' if password_hash is not None else ('exclusions' if exclusions is not None else 'networks')))
             db.commit()
         return version
 
@@ -58,6 +59,7 @@ class Administration:
             row=db.execute('SELECT session_id FROM grants WHERE session_id=?',(session_id,)).fetchone()
             if not row: raise GateError('Browser session not found.')
             changed=db.execute('UPDATE grants SET revoked=1 WHERE session_id=? AND revoked=0 AND expires>?',(session_id,now)).rowcount
+            if changed:self._event(db,'session.terminated',session_id=session_id,code_id=db.execute('SELECT code FROM grants WHERE session_id=?',(session_id,)).fetchone()[0],now=now)
             db.commit()
         return bool(changed)
 

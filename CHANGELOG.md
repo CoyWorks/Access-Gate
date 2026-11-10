@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+- Add persistent browser-owned access requests, duplicate suppression/rate limits, visitor status and an authenticated admin inbox with unread notifications, mark-read/resolve/dismiss and 24-hour pending expiry. Notifications remain in the portal; handling a request does not issue access automatically.
+- Add structured application activity with date/event/actor/batch filtering and per-code details. Record core code/batch mutations transactionally, redact submitted secrets and link events to retained codes/batches.
+- Add per-code hostname history and opt-in navigation paths through the real gateway, with bounded asynchronous delivery, idempotent retry, health/drop reporting and code-only attribution. Strip querystrings/fragments/callbacks and exclude bodies/cookies/credentials. Default to domain-only logging, disclose the policy on the portal and offer Off/Pages plus 1–365-day retention (default 30).
+- Add gateway maintenance for bounded retention cleanup, pending request expiry and once-only observed grant-expiry events. Preserve code consumption/revocation and existing grant/extension records independently of activity retention.
+- Add confirmed individual batch removal and bulk cleanup of reviewed revoked batches. Transactionally revoke codes/grants, hide removed batches from normal lists, retain a Removed view and code history, and prevent reuse/revival across retries/restarts.
+- Add an unauthenticated client-network-scoped HTTPS download of the existing public CA certificate and a home-page link. Retain the direct HTTP bootstrap URL; never expose private key material or regenerate device trust.
+- Migrate transactionally to schema 7 while preserving active grants, administrator sessions/exclusions, domain rules and root CA. Document workflow, history/privacy scope and best-effort delivery limits.
+
 ## 0.7.0
 
 - Add administrator-browser and configurable CIDR access exclusions without changing global DNS behavior. Keep management networks separate, validate aligned CIDRs and empty-list removal, require current password/CSRF/fresh policy version, and preserve existing code grants and CA.

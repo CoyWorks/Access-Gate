@@ -12,4 +12,5 @@
 <section><h2>Portal login</h2>
 {% if session.get('admin') %}<p>You are signed in. <a href="{{ url_for('admin') }}">Open administration</a></p><form method="post" action="{{ url_for('portal_logout') }}"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary">Sign out</button></form>
 {% else %}<p>Administrators can sign in for access without a code.</p><a class="button secondary" href="{{ url_for('login',portal='1',entry=entry_id) }}">Sign in</a>{% endif %}</section>
+{% if not exclusion and history_policy.mode!='off' %}<p class="muted">Access under a code is recorded by {{ 'domain and page path' if history_policy.mode=='pages' else 'domain' }} for up to {{ history_policy.retention_days }} days. Querystrings and form data are not recorded.</p>{% endif %}<section><h2>Need access?</h2><a class="button secondary" href="{{ url_for('request_access',entry=entry_id) }}">Request access</a><p><a href="{{ url_for('ca_certificate') }}">Download CA certificate</a> to trust Access Gate on this device.</p></section>
 {% endblock %}

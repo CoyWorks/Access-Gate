@@ -50,7 +50,8 @@ class Health:
             if data.get('gateway')!='ready': raise ValueError('Gateway not ready.')
             issuer=dt.datetime.fromisoformat(data['issuer_expires'])
             if issuer.tzinfo is None: raise ValueError('Invalid issuer time.')
-            return [self.item('Gateway HTTPS','healthy','Verified HTTPS listener and issuing-key setup respond. This does not test a restricted website or Pi-hole.'),
+            activity=self.item('Activity delivery','warning' if data.get('activity_dropped',0) else 'healthy',f"Queued: {data.get('activity_queue',0)}; dropped since gateway start: {data.get('activity_dropped',0)}.",'Inspect portal/gateway availability; lost visit metadata cannot be recovered.' if data.get('activity_dropped',0) else '')
+            return [activity,self.item('Gateway HTTPS','healthy','Verified HTTPS listener and issuing-key setup respond. This does not test a restricted website or Pi-hole.'),
                     self.certificate('Portal certificate',cert.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now),
                     self.certificate('Gateway issuing certificate',issuer.timestamp(),now),
                     self.certificate('Device root CA',root.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now)]

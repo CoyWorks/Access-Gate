@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode,urlsplit
 
-from flask import Flask,abort,redirect,render_template,request,session,flash,jsonify,url_for,g
+from flask import Flask,abort,redirect,render_template,request,session,flash,jsonify,url_for,g,send_file
 from werkzeug.security import check_password_hash,generate_password_hash
 from .core import Store,GateError,TZ,STATUSES
 from .browser import TOKEN
@@ -18,11 +18,13 @@ from .blocklist import download_blocklist
 from .administration import management_networks
 from .health import Health
 from .exclusions import exclusion_networks,ADMIN_IDLE_SECONDS
+from .operations import EVENTS
 
 BROWSER_COOKIE='__Host-accessgate-browser'
 SITE_COOKIE='__Host-accessgate-site'
 CHALLENGE_COOKIE='__Host-accessgate-challenge'
 ADMIN_COOKIE='__Host-accessgate-admin'
+PUBLIC_CA=Path('/var/lib/access-gate/public/ca.crt')
 DNS_FEED_PATHS = frozenset(('/domains.txt', '/pihole.conf'))
 
 
@@ -69,6 +71,7 @@ def create_app(config=None):
 
     def end_login():
         store.end_admin_login(request.cookies.get(ADMIN_COOKIE,''),browser())
+        if getattr(g,'admin_login',None):store.audit('admin.logout')
         session.clear();g.admin_login=None;g.new_admin_cookie=None;g.clear_admin_cookie=True
 
 
@@ -126,6 +129,10 @@ def create_app(config=None):
             return fn(*args,**kwargs)
         return wrapped
 
+    @app.get('/ca.crt')
+    def ca_certificate():
+        return send_file(PUBLIC_CA,mimetype='application/x-x509-ca-cert',as_attachment=True,download_name='ca.crt',max_age=0)
+
     @app.get('/domains.txt')
     def hosts_feed():
         return app.response_class(store.dns_hosts_feed(), mimetype='text/plain')
@@ -144,7 +151,9 @@ def create_app(config=None):
             if not store.attempt('redeem:'+ip,10): error='Too many attempts. Please wait 15 minutes.'
             else:
                 try: store.redeem(request.form.get('code',''),ip,browser_token=token)
-                except GateError as exc: error=str(exc)
+                except GateError as exc:
+                    store.audit('code.failed',actor='Visitor',details=dict(reason='invalid_or_unavailable'))
+                    error=str(exc)
                 else:
                     if entry:
                         # End the form navigation on a portal document before leaving
@@ -153,7 +162,7 @@ def create_app(config=None):
                     return redirect('/')
         grant=current_grant();exclusion=current_exclusion()
         if entry and (grant or exclusion):return website_handoff(entry_id,token,entry)
-        return render_template('index.html',error=error,grant=grant,exclusion=exclusion,csrf=csrf(),entry_id=entry_id)
+        return render_template('index.html',error=error,grant=grant,exclusion=exclusion,csrf=csrf(),entry_id=entry_id,history_policy=store.activity_settings())
 
     @app.get('/continue')
     def continue_access():
@@ -181,9 +190,11 @@ def create_app(config=None):
                 session['admin'] = True
                 session['auth_version'] = g.admin_security['version']
                 session.permanent = True
+                store.audit('admin.login')
                 if portal:return redirect(url_for('continue_access',entry=entry_id) if entry_id else '/',code=303)
                 return redirect('/admin')
             else:
+                store.audit('admin.login_failed',actor='Visitor',details=dict(reason='incorrect_password'))
                 error = 'Incorrect password.'
         return render_template('login.html', csrf=csrf(), error=error,portal=portal,entry_id=entry_id)
 
@@ -197,6 +208,98 @@ def create_app(config=None):
     def portal_logout():
         end_login()
         return redirect('/')
+
+    @app.context_processor
+    def notifications_context():
+        def page_link(page):
+            params=request.args.to_dict();params['page']=page
+            return request.path+'?'+urlencode(params)
+        return dict(page_link=page_link,request_notifications=store.notifications()['unread'] if getattr(g,'admin_login',None) else 0)
+
+    @app.route('/request-access',methods=['GET','POST'])
+    def request_access():
+        entry_id=request.values.get('entry','')
+        entry=store.entry(entry_id) if entry_id else None
+        requested_domain=entry['origin'][8:] if entry else ''
+        if request.method=='POST':
+            rid,created=store.submit_request(browser(),client_ip(),requested_domain,request.form.get('label',''),request.form.get('reason',''))
+            flash('Request sent. An administrator has been notified in the portal.' if created else 'You already have a pending request for this website.','success')
+            return redirect(url_for('request_access'),code=303)
+        return render_template('requests.html',result=store.requests_page(browser(),page=request.args.get('page','1')),visitor=True,requested_domain=requested_domain,entry_id=entry_id,csrf=csrf(),state='all')
+
+    @app.get('/admin/requests')
+    @admin_only
+    def access_requests():
+        state=request.args.get('state','pending')
+        return render_template('requests.html',result=store.requests_page(state=state,page=page_number()),visitor=False,state=state)
+
+    @app.route('/admin/requests/<request_id>',methods=['GET','POST'])
+    @admin_only
+    def access_request_detail(request_id):
+        if request.method=='POST':
+            store.change_request(request_id,request.form.get('action',''))
+            flash('Request updated. This does not grant website access.','success')
+            return redirect(url_for('access_request_detail',request_id=request_id))
+        return render_template('request_detail.html',item=store.request_detail(request_id),csrf=csrf())
+
+    @app.get('/admin/api/notifications')
+    @admin_only
+    def notifications_data():
+        return jsonify(store.notifications())
+
+    def history_options():
+        values={}
+        for field in ('since','until'):
+            text=request.args.get(field,'')
+            if text:
+                try:
+                    date=dt.date.fromisoformat(text)
+                    if field=='until':date+=dt.timedelta(days=1)
+                except (ValueError,OverflowError):raise GateError('Use valid dates for the activity range.')
+                values[field]=dt.datetime.combine(date,dt.time(),TZ).timestamp()
+        if values.get('since',0)>=values.get('until',float('inf')):raise GateError('The activity end date must not be before the start date.')
+        values.update(event=request.args.get('event',''),actor=request.args.get('actor',''),domain=request.args.get('domain',''),page=page_number())
+        return values
+
+    @app.get('/admin/activity')
+    @admin_only
+    def activity():
+        return render_template('activity.html',history=store.history(**history_options(),batch_id=request.args.get('batch') or None),events=sorted(EVENTS),csrf=csrf(),policy=store.activity_settings(),batches=store.list_batches(per_page=100,view='all')['items'],now=time.time())
+
+    @app.post('/admin/activity/settings')
+    @admin_only
+    def activity_settings():
+        if not store.attempt('admin-settings:'+client_ip(),5):raise GateError('Too many attempts. Please wait 15 minutes.')
+        if not check_password_hash(g.admin_security['password_hash'],request.form.get('current_password','')):raise GateError('Current password is incorrect.')
+        store.save_activity_settings(request.form.get('mode',''),request.form.get('retention_days',''),request.form.get('version',''))
+        flash('Activity settings saved. Code consumption and revocation records are preserved.','success')
+        return redirect(url_for('activity'))
+
+    @app.get('/admin/codes/<code_id>')
+    @admin_only
+    def code_detail(code_id):
+        kind=request.args.get('view','domains')
+        return render_template('code_detail.html',code=store.code_detail(code_id),history=store.history(kind=kind,code_id=code_id,**history_options()),events=sorted(EVENTS),policy=store.activity_settings())
+
+    @app.route('/admin/batches/<batch_id>/remove',methods=['GET','POST'])
+    @admin_only
+    def remove_batch(batch_id):
+        batch=store.batch_detail(batch_id)
+        if request.method=='POST':
+            store.remove_batches([batch_id])
+            flash('Batch removed from the normal list. Its codes and grants remain revoked.','success')
+            return redirect(url_for('batches'))
+        return render_template('remove_batches.html',items=[batch],bulk=False,csrf=csrf())
+
+    @app.route('/admin/batches/clear-revoked',methods=['GET','POST'])
+    @admin_only
+    def clear_revoked_batches():
+        if request.method=='POST':
+            ids=request.form.get('ids','').split(',')
+            count=store.remove_batches(ids,revoked_only=True)
+            flash(f'Removed {count} reviewed revoked batches.','success')
+            return redirect(url_for('batches'))
+        return render_template('remove_batches.html',items=store.removable_batches(),bulk=True,csrf=csrf())
 
     @app.route('/admin/settings',methods=['GET','POST'])
     @admin_only
@@ -273,7 +376,7 @@ def create_app(config=None):
         return request.args.get('page', '1')
 
     def list_context(batch_id=None):
-        return dict(codes=store.list_codes(batch_id,request.args.get('status',''),page_number()),
+        return dict(codes=store.list_codes(batch_id,request.args.get('status',''),page_number(),include_cleared=bool(batch_id and (store.batch_detail(batch_id)['removed_at'] or request.args.get('cleared')=='1'))),
                     code_status=request.args.get('status',''),statuses=STATUSES,
                     clear_count=store.revoked_visible(batch_id),batch_id=batch_id,
                     csrf=csrf(),now=time.time())
@@ -297,7 +400,7 @@ def create_app(config=None):
     @app.get('/admin/batches')
     @admin_only
     def batches():
-        return render_template('batches.html',batches=store.list_batches(page=page_number()),
+        return render_template('batches.html',batches=store.list_batches(page=page_number(),view=request.args.get('view','active')),view=request.args.get('view','active'),
                                csrf=csrf(),now=time.time())
 
     @app.route('/admin/dns-domains', methods=['GET', 'POST'])
@@ -458,9 +561,22 @@ def create_app(config=None):
         if not grant: return jsonify(active=False),401
         response=jsonify(active=True,expires=grant['expires'],session_id=grant['session_id'])
         response.headers['X-Gate-Expires']=str(grant['expires'])
+        if grant.get('kind','code')=='code':
+            response.headers['X-Gate-Code-Session']=grant['session_id']
+            response.headers['X-Gate-Visit-Mode']=store.activity_settings()['mode']
         reserved={BROWSER_COOKIE,SITE_COOKIE,CHALLENGE_COOKIE,ADMIN_COOKIE}
         response.headers['X-Gate-Upstream-Cookie']='; '.join(part.strip() for part in request.headers.get('Cookie','').split(';') if part.strip() and part.strip().split('=',1)[0] not in reserved)
         return response
+
+    @app.post('/internal/activity/visit')
+    def record_visit():
+        store.record_visit(request.get_json(silent=True))
+        return jsonify(ok=True)
+
+    @app.post('/internal/activity/cleanup')
+    def cleanup_activity():
+        store.cleanup_activity()
+        return jsonify(ok=True)
 
     @app.get('/internal/gateway/domain')
     def gateway_domain():

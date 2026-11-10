@@ -1,6 +1,6 @@
 # Administration
 
-Version 0.6 introduced **Settings**, **Sessions** and **System status** to the signed-in navigation. Use the normal updater; no reset or replacement CA is needed. The transactional schema-6 migration preserves existing codes, grants, domain rules and administrator credentials. Version 0.7 adds revocable server-side logins; older Flask-only administrator cookies require a fresh login. See [EXCLUSIONS.md](EXCLUSIONS.md) for seven-day rolling sessions and IP exceptions.
+Version 0.6 introduced **Settings**, **Sessions** and **System status** to the signed-in navigation. Use the normal updater; no reset or replacement CA is needed. The transactional schema-7 migration preserves existing codes, grants, domain rules and administrator credentials. Version 0.7 adds revocable server-side logins; older Flask-only administrator cookies require a fresh login. See [EXCLUSIONS.md](EXCLUSIONS.md) for seven-day rolling sessions and IP exceptions.
 
 ## Password and management access
 
@@ -50,3 +50,5 @@ These checks do not inspect remote Pi-hole cron state, test public DoH/origin re
 ## Validation
 
 The 0.6 release passes 217 Python tests, including actual local HTTPS gateway/stream enforcement and certificate-health probes, cross-worker password invalidation, policy migration/recovery, concurrent settings updates, session isolation, API filtering/pagination and health timeout/staleness cases. `node tests/test_admin_ui.js` checks polling, safe text rendering, action links and failed/stale refresh states without external DOM dependencies. Python, shell and JavaScript syntax checks pass. These are local source/integration checks, not a claim that the new screens are deployed on srvaccess01.
+
+Version 0.8 adds Requests, Activity, code-detail history, batch removal and the portal CA link. See [OPERATIONS.md](OPERATIONS.md). Activity delivery/drop status supplements the existing health checks.

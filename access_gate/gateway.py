@@ -20,6 +20,7 @@ from multidict import CIMultiDict
 from yarl import URL
 
 from .browser import origin
+from .gateway_activity import GatewayActivity
 from .gateway_tls import CertificateCache, expires
 
 HOP = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
@@ -102,7 +103,7 @@ class PublicResolver(AbstractResolver):
         if self.session is not None: await self.session.close()
 
 
-class Gateway:
+class Gateway(GatewayActivity):
     def __init__(self, config, *, upstream_connector=None, upstream_port=443, poll_interval=0.5):
         self.config = config
         api = urlsplit(config['api_url'])
@@ -143,7 +144,10 @@ class Gateway:
             skip_auto_headers={'Accept-Encoding'},
             timeout=aiohttp.ClientTimeout(total=None, connect=10, sock_read=60))
 
+        self.start_activity()
+
     async def stop(self, app):
+        await self.stop_activity()
         if self.upstream: await self.upstream.close()
         if self.resolver: await self.resolver.close()
         if self.local: await self.local.close()
@@ -223,7 +227,7 @@ class Gateway:
                 if sni is not None: raise web.HTTPMisdirectedRequest(text='TLS hostname mismatch.')
                 if request.path.startswith('/internal'): raise web.HTTPNotFound()
                 if request.path == '/__access_gate/health':
-                    return web.json_response({'gateway': 'ready', 'issuer_expires': expires(self.tls.issuer).isoformat()})
+                    return web.json_response({'gateway': 'ready', 'issuer_expires': expires(self.tls.issuer).isoformat(),'activity_queue':self.activity_queue.qsize(),'activity_dropped':self.activity_dropped,'activity_last_success':self.activity_last_success})
                 return await self.portal(request, address)
             if sni != host: raise web.HTTPMisdirectedRequest(text='TLS hostname mismatch.')
             if not await asyncio.to_thread(self.is_restricted_sync, host): raise web.HTTPMisdirectedRequest(text='This hostname is not managed.')
@@ -283,6 +287,7 @@ class Gateway:
                 headers=self.website_headers(request, host, auth),
                 data=request.content.iter_chunked(65536) if request.can_read_body else None,
                 allow_redirects=False) as upstream:
+            self.queue_visit(request,host,auth,upstream.status)
             response = web.StreamResponse(status=upstream.status, headers=safe_headers(upstream.headers, upstream=True))
             request[STARTED] = True
             await response.prepare(request)
@@ -297,6 +302,7 @@ class Gateway:
         protocols = [value.strip() for value in request.headers.get('Sec-WebSocket-Protocol', '').split(',') if value.strip()]
         async with self.upstream.ws_connect(self.upstream_url(request, host), headers=headers,
                 protocols=protocols, autoclose=True, autoping=True) as upstream:
+            self.queue_visit(request,host,auth,101)
             client = web.WebSocketResponse(protocols=[upstream.protocol] if upstream.protocol else [], autoclose=True, autoping=True)
             request[STARTED] = True
             await client.prepare(request)

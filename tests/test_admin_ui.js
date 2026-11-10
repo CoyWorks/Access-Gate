@@ -19,6 +19,9 @@ async function scenario(ids,answer){
 (async()=>{
  const excluded=await scenario(['access-countdown'],{active:true,kind:'ip',expires:null,server_time:Date.now()/1000});
  assert.match(excluded.elements['access-countdown'].textContent,/IP exclusion active/);
+ const notifications=await scenario(['request-notifications'],{unread:3});
+ assert.equal(notifications.elements['request-notifications'].textContent,'(3)');
+ notifications.fail();await notifications.intervals[0]();assert.match(notifications.elements['request-notifications'].title,/stale/);
  const sessions=await scenario(['sessions-panel','session-refresh','session-counts','session-rows','session-pagination'],{
   server_time:1000,total:1,counts:{active:1},page:1,pages:1,
   items:[{session_id:'a'.repeat(32),ip:'10.40.22.99',batch_id:'b'.repeat(16),batch_name:'<script>unsafe()</script>',started:900,expires:1900,state:'active'}]

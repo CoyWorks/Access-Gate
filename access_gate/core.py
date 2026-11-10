@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 TZ = ZoneInfo('Europe/Amsterdam')
 ALPHABET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'
 CODE_LENGTH = 8
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
 STATUSES = ('unused', 'redeemed', 'revoked', 'expired', 'future')
 STATUS_SQL = "CASE WHEN c.revoked=1 THEN 'revoked' WHEN c.used IS NOT NULL THEN 'redeemed' WHEN b.ends<=:now THEN 'expired' WHEN b.starts>:now THEN 'future' ELSE 'unused' END"
 
@@ -53,9 +53,10 @@ from .browser import BrowserSessions
 from .dns_export import DNSExports
 from .administration import Administration
 from .exclusions import Exclusions
+from .operations import Operations
 
 
-class Store(BrowserSessions, DNSExports, Administration, Exclusions):
+class Store(BrowserSessions, DNSExports, Administration, Exclusions, Operations):
     def __init__(self, path, pepper):
         self.path, self.pepper = str(path), pepper.encode()
 
@@ -117,7 +118,8 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions):
             self.initialize_dns_exports(db)
             self.initialize_administration(db)
             self.initialize_exclusions(db)
-            db.execute('PRAGMA user_version=6')
+            self.initialize_operations(db)
+            db.execute('PRAGMA user_version=7')
             db.commit()
 
     def digest(self, code):
@@ -143,6 +145,7 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions):
                 db.execute('INSERT INTO codes(id,batch,digest,hint) VALUES(?,?,?,?)',
                            (secrets.token_hex(8),batch,self.digest(raw),raw[-4:]))
                 raw_codes.append('-'.join(raw[i:i+4] for i in range(0,CODE_LENGTH,4)))
+            self._event(db,'batch.created',batch_id=batch,details=dict(count=count),now=now)
             db.commit()
         return batch, raw_codes
 
@@ -195,16 +198,19 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions):
             if old: db.execute('UPDATE grants SET browser_hash=NULL WHERE session_id=?',(old['session_id'],))
             expires=now+item['access_seconds']
             db.execute('UPDATE codes SET used=?,used_ip=? WHERE id=?',(now,ip,item['id']))
+            session_id=secrets.token_hex(16)
             db.execute('INSERT INTO grants(session_id,ip,code,expires,started,browser_hash) VALUES(?,?,?,?,?,?)',
-                       (secrets.token_hex(16),ip,item['id'],expires,now,browser_hash))
+                       (session_id,ip,item['id'],expires,now,browser_hash))
+            self._event(db,'code.activated',actor='Visitor',code_id=item['id'],batch_id=item['batch'],session_id=session_id,now=now)
             db.commit()
         return expires
 
     def revoke(self, code_id):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            db.execute('UPDATE codes SET revoked=1 WHERE id=?',(code_id,))
+            changed=db.execute('UPDATE codes SET revoked=1 WHERE id=? AND revoked=0',(code_id,)).rowcount
             db.execute('UPDATE grants SET revoked=1 WHERE code=?',(code_id,))
+            if changed:self._event(db,'code.revoked',code_id=code_id)
             db.commit()
 
     def revoke_batch(self, batch_id, now=None):
@@ -218,6 +224,7 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions):
             db.execute('UPDATE batches SET revoked=1 WHERE id=?',(batch_id,))
             db.execute('UPDATE codes SET revoked=1 WHERE batch=?',(batch_id,))
             db.execute('UPDATE grants SET revoked=1 WHERE code IN(SELECT id FROM codes WHERE batch=?)',(batch_id,))
+            self._event(db,'batch.revoked',batch_id=batch_id,details=dict(count=count,active=active),now=now)
             db.commit()
         return count, active
 
@@ -225,8 +232,9 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions):
         now = time.time() if now is None else now
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            clause, params = (' AND batch=?',[now,batch_id]) if batch_id else ('',[now])
+            clause, params = (' AND batch=?',[now,batch_id]) if batch_id else (' AND batch IN(SELECT id FROM batches WHERE removed_at IS NULL)',[now])
             count = db.execute('UPDATE codes SET cleared_at=? WHERE revoked=1 AND cleared_at IS NULL'+clause,params).rowcount
+            if count:self._event(db,'codes.cleared',batch_id=batch_id,details=dict(count=count),now=now)
             db.commit()
         return count
 
@@ -253,6 +261,7 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions):
             db.execute('INSERT INTO extensions VALUES(?,?,?,?,?,?,?,?,?)',
                        (request_id,session_id,grant['code'],grant['ip'],seconds,grant['expires'],expires,now,actor))
             event = dict(db.execute('SELECT * FROM extensions WHERE request_id=?',(request_id,)).fetchone())
+            self._event(db,'session.extended',code_id=grant['code'],session_id=session_id,details=dict(seconds=seconds),now=now)
             db.commit()
         return event
 
@@ -274,23 +283,25 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions):
             if not row: raise GateError('Batch not found.')
             return dict(row)
 
-    def list_batches(self, page=1, per_page=10, now=None):
+    def list_batches(self, page=1, per_page=10, now=None, view='active'):
         now = time.time() if now is None else now
         page = positive_int(page,'Page',1000000)
+        if view not in ('active','removed','all'):raise GateError('Invalid batch view.')
+        where='' if view=='all' else (' WHERE b.removed_at IS NULL' if view=='active' else ' WHERE b.removed_at IS NOT NULL')
         with self.connect() as db:
             db.execute('BEGIN')
-            total = db.execute('SELECT count(*) FROM batches').fetchone()[0]
+            total = db.execute('SELECT count(*) FROM batches b'+where).fetchone()[0]
             pages = max(1,(total+per_page-1)//per_page)
             page = min(page,pages)
-            rows = db.execute(self._batch_query()+' GROUP BY b.id ORDER BY b.created DESC,b.id LIMIT :limit OFFSET :offset',
+            rows = db.execute(self._batch_query()+where+' GROUP BY b.id ORDER BY b.created DESC,b.id LIMIT :limit OFFSET :offset',
                               {'now':now,'limit':per_page,'offset':(page-1)*per_page}).fetchall()
             return {'items':[dict(r) for r in rows],'total':total,'page':page,'pages':pages}
 
-    def list_codes(self, batch_id=None, status='', page=1, per_page=25, now=None):
+    def list_codes(self, batch_id=None, status='', page=1, per_page=25, now=None,include_cleared=False):
         now = time.time() if now is None else now
         page = positive_int(page,'Page',1000000)
         if status and status not in STATUSES: raise GateError('Invalid code status filter.')
-        where = ' WHERE c.cleared_at IS NULL'
+        where = (' WHERE 1=1' if include_cleared else ' WHERE c.cleared_at IS NULL')+(' AND b.removed_at IS NULL' if not batch_id else '')
         params = {'now':now,'limit':per_page}
         if batch_id:
             where+=' AND c.batch=:batch'
@@ -320,7 +331,7 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions):
 
     def revoked_visible(self, batch_id=None):
         with self.connect() as db:
-            return db.execute('SELECT count(*) FROM codes WHERE revoked=1 AND cleared_at IS NULL'+(' AND batch=?' if batch_id else ''),[batch_id] if batch_id else []).fetchone()[0]
+            return db.execute('SELECT count(*) FROM codes WHERE revoked=1 AND cleared_at IS NULL'+(' AND batch=?' if batch_id else ' AND batch IN(SELECT id FROM batches WHERE removed_at IS NULL)'),[batch_id] if batch_id else []).fetchone()[0]
 
     def dashboard(self):
         # Compatibility for existing callers; the web UI uses paginated queries.

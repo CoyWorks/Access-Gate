@@ -105,6 +105,7 @@ class DNSExports:
             created = time.time()
             db.executemany('INSERT INTO dns_export_domains(domain,include_subdomains,created) VALUES(?,?,?)',
                            ((name, int(scope == 'subdomains'), created) for name in sorted(additions)))
+            self._event(db,'domains.merged',details=dict(count=len(additions)))
             db.commit()
         return len(additions), len(names & existing)
 
@@ -121,6 +122,7 @@ class DNSExports:
             else:
                 changed = db.execute('UPDATE dns_export_domains SET enabled=? WHERE domain=?', (int(action == 'enable'), name))
             if not changed.rowcount: raise GateError('That hostname is no longer in the list. Reload the page.')
+            self._event(db,'domain.changed',details=dict(reason=action,domain=name))
             db.commit()
 
     def export_dns_domains(self, kind, limit=None):

@@ -365,6 +365,44 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         completed=await self.get('restricted.example',callback); self.assertEqual(completed.status,303); await completed.read()
         self.assertEqual(self.store.list_batches()['total'],0)
 
+    async def test_code_visit_metadata_reaches_token_history_without_query_or_cookie_data(self):
+        await self.activate()
+        policy=self.store.activity_settings();self.store.save_activity_settings('pages',30,policy['version'])
+        response=await self.client.get(f'https://restricted.example:{self.port}/article?password=NEVER-STORE',headers={'Host':'restricted.example','Accept':'text/html','Sec-Fetch-Dest':'document'},allow_redirects=False)
+        self.assertEqual(response.status,200);await response.read()
+        await asyncio.wait_for(self.gateway.activity_queue.join(),2)
+        pages=self.store.history('pages',code_id=self.grant['code'])['items']
+        self.assertEqual(pages[0]['domain'],'restricted.example');self.assertEqual(pages[0]['path'],'/article')
+        with self.store.connect() as db:dump=' '.join(db.iterdump())
+        self.assertNotIn('NEVER-STORE',dump)
+        self.assertEqual(self.gateway.activity_dropped,0)
+
+    async def test_visit_delivery_failure_does_not_interrupt_authorized_browsing(self):
+        await self.activate()
+        with patch.object(self.gateway,'activity_post',side_effect=OSError('Metadata unavailable')):
+            response=await self.get('restricted.example');self.assertEqual(response.status,200);await response.read()
+            await asyncio.wait_for(self.gateway.activity_queue.join(),2)
+        self.assertEqual(self.gateway.activity_dropped,1)
+        health=await self.get(path='/__access_gate/health');self.assertEqual((await health.json())['activity_dropped'],1)
+
+    async def test_removed_batch_stops_existing_restricted_stream(self):
+        await self.activate()
+        response=await self.get('restricted.example','/stream');await response.content.readline()
+        batch=self.store.code_detail(self.grant['code'])['batch_id']
+        self.store.remove_batches([batch])
+        with self.assertRaises(aiohttp.ClientPayloadError):await asyncio.wait_for(response.read(),1.5)
+        denied=await self.get('restricted.example');self.assertEqual(denied.status,302);await denied.read()
+        self.assertEqual(self.store.list_batches(view='removed')['total'],1)
+
+    async def test_administrator_and_ip_exclusions_are_not_attributed_to_a_code(self):
+        await self.admin_activate()
+        response=await self.get('restricted.example');self.assertEqual(response.status,200);await response.read()
+        await self.gateway.activity_queue.join()
+        self.assertEqual(self.store.history('domains')['total'],0)
+        self.store.save_admin_security(dict(secret='secret',admin_hash='bootstrap'),exclusions=['127.0.0.1/32'])
+        response=await self.get('restricted.example');self.assertEqual(response.status,200);await response.read()
+        self.assertEqual(self.store.history('domains')['total'],0)
+
     async def test_admin_login_bypasses_code_and_logout_closes_real_stream(self):
         await self.admin_activate()
         origin=await self.get('restricted.example'); self.assertEqual(origin.status,200); await origin.read()
@@ -407,7 +445,7 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         provider=Health(dict(portal_url='https://portal.example'),self.store,
             ca_file=str(self.root/'etc/access-gate/ca/root.crt'),gateway_address=('127.0.0.1',self.port))
         checks=await asyncio.to_thread(provider.gateway,time.time())
-        self.assertEqual([c['state'] for c in checks],['healthy','warning','healthy','healthy'])
+        self.assertEqual([c['state'] for c in checks],['healthy','healthy','warning','healthy','healthy'])
         self.assertIn('Gateway issuing certificate',[c['name'] for c in checks])
         provider.config['portal_url']='https://wrong.example'
         with self.assertRaises((ssl.SSLError,ConnectionError,OSError)):

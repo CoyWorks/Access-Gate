@@ -102,3 +102,18 @@ if(systemHealth){
   };
   refresh();setInterval(refresh,15000);
 }
+
+const requestNotifications=document.getElementById('request-notifications');
+if(requestNotifications){
+  let busy=false;
+  const refresh=async()=>{
+    if(busy)return;busy=true;
+    try{
+      const response=await fetch('/admin/api/notifications',{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});
+      if(!response.ok)throw Error();const data=await response.json();
+      requestNotifications.textContent=`(${data.unread})`;requestNotifications.title='Unread access requests';
+    }catch(_){requestNotifications.title='Notification count is stale. Refresh or sign in again.';}
+    finally{busy=false;}
+  };
+  refresh();setInterval(refresh,10000);
+}
