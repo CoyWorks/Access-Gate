@@ -17,7 +17,7 @@ from .deployment import normalize,FIELDS,names,render_http
 from .settings import validate,atomic_write
 from .installer import local_addresses,ask
 
-FILES=('etc/access-gate/config.json','etc/access-gate/portal.crt','etc/access-gate/portal.key',
+FILES=('etc/access-gate/dns.json','etc/access-gate/config.json','etc/access-gate/portal.crt','etc/access-gate/portal.key',
        'etc/access-gate/gateway/gateway.json','etc/access-gate/gateway/issuer.crt','etc/access-gate/gateway/issuer.key',
        'etc/access-gate/client-networks.nginx','etc/nginx/sites-available/access-gate')
 SERVICES=('nginx.service','access-gate.service','access-gate-gateway.service','access-gate-scheduler.service','access-gate-push.service')
@@ -57,6 +57,7 @@ def apply(root,c,runner=command,gid=None):
     """Caller owns maintenance lock. Staged crypto validation precedes service changes."""
     from .gateway_setup import prepare
     root=Path(root);current=normalize(json.loads((root/'etc/access-gate/config.json').read_text()))
+    services=SERVICES+(('access-gate-dns.service','access-gate-dns-rules.service') if c['dns_mode']=='builtin' else ())
     private=root/'var/lib/access-gate/reconfigure';private.mkdir(parents=True,exist_ok=True,mode=0o700);private.chmod(0o700)
     backup=Path(tempfile.mkdtemp(prefix='rollback-',dir=private));backup.chmod(0o700)
     for relative in FILES:
@@ -70,6 +71,9 @@ def apply(root,c,runner=command,gid=None):
         atomic_write(base/'config.json',json.dumps(c,indent=2)+'\n')
         if names(c)!=names(current):portal_certificate(base,c)
         prepare(stage,gid=gid)
+        if c['dns_mode']=='builtin':
+            from .dns_setup import public_config
+            atomic_write(base/'dns.json',json.dumps(public_config(c))+'\n')
         atomic_write(stage/'nginx.conf',render_http(c),0o644)
         # Syntax-test an isolated nginx config before touching the running server.
         testconf=stage/'test-nginx.conf'
@@ -78,7 +82,7 @@ def apply(root,c,runner=command,gid=None):
         testconf.write_text('pid '+str(stage/'nginx.pid')+';\nevents {}\nhttp { access_log off; error_log stderr; default_type application/octet-stream; '+http+' }\n')
         runner(['/usr/sbin/nginx','-t','-c',str(testconf)])
         try:
-            runner(['/usr/bin/systemctl','stop',*SERVICES[1:]])
+            runner(['/usr/bin/systemctl','stop',*services[1:]])
             for relative in FILES:
                 if relative.startswith('etc/access-gate/'):
                     source=stage/relative
@@ -86,16 +90,18 @@ def apply(root,c,runner=command,gid=None):
             atomic_write(root/'etc/access-gate/client-networks.nginx',''.join('allow '+n+';\n' for n in c['client_networks'])+'deny all;\n',0o644)
             atomic_write(root/'etc/nginx/sites-available/access-gate',render_http(c),0o644)
             runner(['/usr/sbin/nginx','-t'])
-            runner(['/usr/bin/systemctl','restart',*SERVICES])
+            runner(['/usr/bin/systemctl','restart',*services])
             runner(['/usr/bin/python3','-m','access_gate.readiness'])
+            if c['dns_mode']=='builtin':runner(['/usr/bin/python3','-m','access_gate.dns_service','--probe'])
         except Exception as original:
             try:
                 for relative in FILES:
                     previous=backup/relative
                     if previous.exists():atomic_write(root/relative,previous.read_text(),previous.stat().st_mode&0o777)
                     else:(root/relative).unlink(missing_ok=True)
-                runner(['/usr/bin/systemctl','restart',*SERVICES])
+                runner(['/usr/bin/systemctl','restart',*services])
                 runner(['/usr/bin/python3','-m','access_gate.readiness'])
+                if current['dns_mode']=='builtin':runner(['/usr/bin/python3','-m','access_gate.dns_service','--probe'])
             except Exception:raise RuntimeError('Reconfiguration and rollback readiness failed. Retained private backup: '+str(backup)) from original
             raise RuntimeError('Reconfiguration failed; previous configuration restored. Backup: '+str(backup)) from original
     # Database security policy is applied only after the new listeners pass readiness.

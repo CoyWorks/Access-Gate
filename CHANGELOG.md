@@ -1,3 +1,10 @@
+# 0.19.0
+
+- Offer optional built-in DNS in the installation wizard and unattended profiles (#24).
+- Use dnspython for bounded UDP/TCP forwarding, source-CIDR access checks, exact/subdomain mappings and local NODATA for non-A restricted queries.
+- Publish rule changes automatically through an unprivileged snapshot worker; preserve last known-good rules and expose synchronization health.
+- Add isolated DNS service identity, selected-only dependency installation, restore/reconfigure/reset integration and DNS verification guidance.
+
 # 0.18.0
 
 - Add root-only deployment reconfiguration with private staging, retained CA, generated portal certificate SANs and nginx validation (#23).

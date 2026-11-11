@@ -87,9 +87,11 @@ fi
 /usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" check
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y nginx python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
+extra_packages=()
+if [[ $GATE_DNS_MODE == builtin ]]; then extra_packages=(python3-dnspython); fi
+apt-get install -y "${extra_packages[@]}" nginx python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
 if [[ $resume_install -eq 1 ]]; then
-    for unit in access-gate-push.service access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
+    for unit in access-gate-dns.service access-gate-dns-rules.service access-gate-push.service access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
     done
     backup_dir=$(mktemp -d /root/access-gate-resume.XXXXXX)
@@ -282,6 +284,53 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 UNIT
+if [[ $GATE_DNS_MODE == builtin ]]; then
+    id accessgate-dns >/dev/null 2>&1 || useradd --system --home /nonexistent --shell /usr/sbin/nologin accessgate-dns
+    /usr/bin/python3 -m access_gate.dns_setup
+    cat > /etc/systemd/system/access-gate-dns-rules.service <<'UNIT'
+[Unit]
+Description=Access Gate DNS rule publisher
+Requires=access-gate.service
+After=access-gate.service
+PartOf=access-gate.service
+[Service]
+User=accessgate
+Group=accessgate
+SupplementaryGroups=accessgate-dns
+WorkingDirectory=/opt/access-gate
+ExecStart=/usr/bin/python3 -m access_gate.dns_publisher
+Restart=on-failure
+UMask=0027
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/access-gate/data /var/lib/access-gate/dns
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target
+UNIT
+    cat > /etc/systemd/system/access-gate-dns.service <<'UNIT'
+[Unit]
+Description=Access Gate optional DNS forwarder
+After=network-online.target access-gate-dns-rules.service
+[Service]
+User=accessgate-dns
+Group=accessgate-dns
+WorkingDirectory=/opt/access-gate
+ExecStart=/usr/bin/python3 -m access_gate.dns_service
+Restart=on-failure
+UMask=0077
+NoNewPrivileges=true
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+[Install]
+WantedBy=multi-user.target
+UNIT
+fi
 nginx -t
 systemctl daemon-reload
 systemctl enable --now access-gate-maintenance.service
@@ -297,6 +346,12 @@ if ! systemctl restart access-gate-gateway.service; then
     exit 1
 fi
 systemctl restart access-gate-scheduler.service access-gate-push.service
+if [[ $GATE_DNS_MODE == builtin ]]; then
+    systemctl enable access-gate-dns-rules.service access-gate-dns.service
+    systemctl restart access-gate-dns-rules.service access-gate-dns.service
+    systemctl is-active access-gate-dns-rules.service access-gate-dns.service
+    /usr/bin/python3 -m access_gate.dns_service --probe
+fi
 systemctl is-active access-gate.service nginx.service access-gate-gateway.service access-gate-scheduler.service access-gate-push.service
 if ! /usr/bin/python3 -m access_gate.readiness; then
     echo 'Portal startup failed. Existing data and the pre-update backup remain available.' >&2
@@ -327,3 +382,6 @@ echo 'Configure portal hostname DNS (if used) and permit selected client network
 install -d -m 0700 /var/lib/access-gate/installation
 touch /var/lib/access-gate/installation/complete
 chmod 0600 /var/lib/access-gate/installation/complete
+if [[ $GATE_DNS_MODE == builtin ]]; then
+    printf 'Built-in DNS: configure DHCP/VPN/client DNS to %s and allow selected clients to UDP/TCP 53.\n' "$GATE_SERVER_IP"
+fi

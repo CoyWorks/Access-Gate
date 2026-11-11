@@ -4,7 +4,7 @@ Use a dedicated Ubuntu 24.04 server with a stable IPv4 address (static or DHCP r
 
 ## Interactive installation
 
-Run `sudo bash install.sh` from the cloned source. Choose existing Pi-hole or external DNS (or customize that integration), select the detected server address, enter the portal hostname/IP and client/management CIDRs, review the plan and type INSTALL. Then choose or generate the administrator password. Built-in DNS is tracked in #24 and is not selectable yet.
+Run `sudo bash install.sh` from the cloned source. Choose existing Pi-hole, external DNS or built-in DNS (or customize that integration), select the detected server address, enter the portal hostname/IP and client/management CIDRs, review the plan and type INSTALL. Then choose or generate the administrator password. Built-in DNS is also available as its own preset or custom component choice. Enter one to three upstream DNS IPv4 addresses when selecting it.
 
 Installation preflight checks local addresses and TCP 80/443/8088/8089 before apt or service changes. Initial deployment choices are checkpointed privately under /var/lib/access-gate/installation. Use `sudo bash resume.sh` after correcting an interrupted installation; it reuses the checkpoint rather than asking for another environment. Existing complete installations use update.sh. Service choices persist across resume/update.
 
@@ -60,3 +60,5 @@ Review the changes and type RECONFIGURE. Assign a new server IP in Ubuntu first;
 The command uses the shared maintenance lock, privately stages certificate/gateway/nginx configuration, tests nginx syntax, backs up managed files and verifies HTTPS readiness after restart. On activation failure it restores previous files and verifies rollback readiness; if that also fails, use the printed root-only rollback directory and inspect systemd logs. Existing CA and code records are preserved. Root rollback copies contain private keys and are retained for deliberate operator cleanup.
 
 A changed portal origin clears admin logins and push subscriptions. Sign in again and reinstall/re-enroll the phone app as necessary. Visitor cookies belong to an origin; users who lose their portal browser identity may need a fresh code. IP changes require external DNS, Pi-hole sync URL/target and firewall changes; those are never applied remotely by this command. A successful local readiness check does not prove external clients have been updated.
+
+For the optional DNS component, see [Built-in DNS](DNS.md). In unattended profiles set `dns_mode` to `builtin` and supply `dns_upstreams`, for example `["1.1.1.1", "9.9.9.9"]`. External modes install no DNS listener or extra DNS package.

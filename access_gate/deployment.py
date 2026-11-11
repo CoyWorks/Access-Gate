@@ -52,8 +52,17 @@ def normalize(config, legacy=True):
         values=c.get(name,c.get('client_networks'))
         if not isinstance(values,list) or not values or len(values)>64: raise ValueError(name+' requires 1 to 64 CIDRs.')
         c[name]=list(dict.fromkeys(str(ipaddress.ip_network(n)) for n in values))
-    if c.get('dns_mode','external-pihole') not in ('external-pihole','external'): raise ValueError('Unsupported DNS component selection.')
+    if c.get('dns_mode','external-pihole') not in ('external-pihole','external','builtin'): raise ValueError('Unsupported DNS component selection.')
     c.setdefault('dns_mode','external-pihole')
+    if c['dns_mode']=='builtin':
+        upstreams=c.get('dns_upstreams')
+        if not isinstance(upstreams,list) or not 1<=len(upstreams)<=3: raise ValueError('Built-in DNS requires 1 to 3 upstream IPv4 addresses.')
+        checked=[]
+        for value in upstreams:
+            address=ipaddress.IPv4Address(value)
+            if str(address)==c['listen_ipv4'] or address.is_loopback or address.is_unspecified or address.is_multicast or address.is_reserved: raise ValueError('DNS upstream must not be this resolver, loopback or an unusable address.')
+            checked.append(str(address))
+        c['dns_upstreams']=list(dict.fromkeys(checked))
     c['deployment_version']=1
     return c
 
@@ -84,10 +93,10 @@ def main():
     parser.add_argument('--new',action='store_true')
     args=parser.parse_args()
     c=normalize(json.loads(Path(args.path).read_text()),legacy=not args.new)
-    if args.action=='plan': print(json.dumps({k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode',)},indent=2))
+    if args.action=='plan': print(json.dumps({k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams') if k in c},indent=2))
     elif args.action=='certificate': print(certificate_extensions(c),end='')
     else:
-        for name,value in dict(GATE_SERVER_IP=c['server_ipv4'],GATE_PORTAL_URL=c['portal_url'],GATE_PORTAL_HOST=urlsplit(c['portal_url']).hostname,GATE_NAMES=' '.join(names(c))).items():
+        for name,value in dict(GATE_SERVER_IP=c['server_ipv4'],GATE_PORTAL_URL=c['portal_url'],GATE_PORTAL_HOST=urlsplit(c['portal_url']).hostname,GATE_NAMES=' '.join(names(c)),GATE_DNS_MODE=c['dns_mode']).items():
             print(name+'='+shlex.quote(value))
 
 

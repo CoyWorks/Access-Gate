@@ -17,6 +17,8 @@ LEGACY_APPARMOR_BLOCK = '''# Access Gate local pilot
 APPARMOR_BLOCK = LEGACY_APPARMOR_BLOCK.replace('/opt/access-gate/access_gate/acl_helper.py r,', '/opt/access-gate/access_gate/acl_helper.py r,\n/opt/access-gate/access_gate/tls_helper.py r,')
 
 REMOVE = (
+    'etc/systemd/system/access-gate-dns.service',
+    'etc/systemd/system/access-gate-dns-rules.service',
     'etc/systemd/system/access-gate-push.service',
     'etc/systemd/system/access-gate-scheduler.service',
     'etc/systemd/system/access-gate-maintenance.service',

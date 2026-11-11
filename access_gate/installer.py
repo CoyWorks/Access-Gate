@@ -20,7 +20,7 @@ def local_addresses():
 def profile(config):
     c=normalize(config,legacy=False)
     mode=config.get('dns_mode','external-pihole')
-    if mode not in ('external-pihole','external'): raise ValueError('Built-in DNS is not available yet; choose external-pihole or external.')
+    if mode not in ('external-pihole','external','builtin'): raise ValueError('Choose builtin, external-pihole or external.')
     c['dns_mode']=mode
     return c
 
@@ -38,13 +38,18 @@ def password_file(path):
 
 
 def preflight(c,addresses=None, listeners=None):
+    if not any(ipaddress.ip_address(c['listen_ipv4']) in ipaddress.ip_network(n) for n in c['client_networks']):raise ValueError('Include the server IPv4 (or its /32) in client networks for local HTTPS/DNS verification.')
     if c['listen_ipv4'] not in (local_addresses() if addresses is None else addresses): raise ValueError('The selected IPv4 address is not assigned to this server.')
     if listeners is None:
-        result=subprocess.run(['ss','-H','-lnt'],check=True,capture_output=True,text=True)
-        listeners=[row.split()[3] for row in result.stdout.splitlines() if row.split()]
+        result=subprocess.run(['ss','-H','-lntu'],check=True,capture_output=True,text=True)
+        listeners=[row.split()[4] for row in result.stdout.splitlines() if row.split()]
+    if c['dns_mode']=='builtin' and set(c['dns_upstreams'])&set(local_addresses() if addresses is None else addresses):raise ValueError('DNS upstream must not be another local address of this host.')
     ports={80,443,8088,8089}
+    if c['dns_mode']=='builtin':
+        ports.add(53)
+        if listeners is None: raise ValueError('Unable to inspect DNS listeners.')
     for endpoint in listeners:
-        if int(endpoint.rsplit(':',1)[-1]) in ports: raise ValueError('A required TCP port is occupied ('+endpoint+'). Use a dedicated address/host; existing services were not changed.')
+        if int(endpoint.rsplit(':',1)[-1]) in ports: raise ValueError('A required TCP/UDP port is occupied ('+endpoint+'). Use a dedicated address/host; existing services were not changed.')
 
 
 def ask(label,default=None):
@@ -53,23 +58,24 @@ def ask(label,default=None):
 
 
 def wizard():
-    print('Access Gate installation\n1. Existing Pi-hole\n2. External DNS configured separately\n3. Custom (portal and gateway with external DNS)\nBuilt-in DNS will be offered when that component is available.')
+    print('Access Gate installation\n1. Existing Pi-hole\n2. External DNS configured separately\n3. Custom\n4. Access Gate with built-in DNS')
     choice=ask('Installation type','1')
-    if choice not in ('1','2','3'): raise ValueError('Choose 1, 2 or 3.')
+    if choice not in ('1','2','3','4'): raise ValueError('Choose 1, 2, 3 or 4.')
     if choice=='3':
-        selection=ask('DNS integration: pihole or external','external')
-        if selection not in ('pihole','external'): raise ValueError('Choose pihole or external.')
-        choice='1' if selection=='pihole' else '2'
+        selection=ask('DNS integration: pihole, external or builtin','external')
+        if selection not in ('pihole','external','builtin'): raise ValueError('Choose pihole, external or builtin.')
+        choice={'pihole':'1','external':'2','builtin':'4'}[selection]
     addresses=local_addresses()
     print('Detected IPv4 addresses: '+', '.join(addresses))
     address=ask('Server IPv4',addresses[0] if len(addresses)==1 else None)
     portal=ask('Portal hostname or IPv4',address)
     networks=ask('Client networks (comma-separated CIDRs)')
     admin=ask('Management networks (comma-separated CIDRs)',networks)
+    upstreams=ask('Upstream DNS IPv4 addresses (comma-separated)').replace(' ','').split(',') if choice=='4' else []
     c=profile(dict(deployment_version=1,server_ipv4=address,listen_ipv4=address,dns_target_ipv4=address,portal_url='https://'+portal,
-                   portal_aliases=[],client_networks=[n.strip() for n in networks.split(',')]+['127.0.0.1/32','::1/128'],admin_networks=[n.strip() for n in admin.split(',')],dns_mode='external-pihole' if choice=='1' else 'external'))
+                   portal_aliases=[],client_networks=[n.strip() for n in networks.split(',')]+['127.0.0.1/32','::1/128'],admin_networks=[n.strip() for n in admin.split(',')],dns_mode='external-pihole' if choice=='1' else ('builtin' if choice=='4' else 'external'),dns_upstreams=upstreams))
     preflight(c,addresses=addresses)
-    print(json.dumps({k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode',)},indent=2))
+    print(json.dumps({k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams') if k in c},indent=2))
     print('Host addressing and external DNS/firewall settings will not be changed.')
     if ask('Apply this installation? Type INSTALL')!='INSTALL': raise ValueError('Installation cancelled; no services were changed.')
     password=getpass.getpass('Admin password (empty = generate): ')
@@ -87,7 +93,7 @@ def main():
     else:
         if not sys.stdin.isatty(): raise SystemExit('An interactive terminal or ACCESS_GATE_INSTALL_CONFIG profile is required.')
         c,password=wizard()
-    allowed={k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode',)}
+    allowed={k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams') if k in c}
     p=Path(args.destination);p.write_text(json.dumps(allowed,indent=2)+'\n');p.chmod(0o600)
     if password:
         secret=p.with_suffix(p.suffix+'.password');secret.write_text(password);secret.chmod(0o600)

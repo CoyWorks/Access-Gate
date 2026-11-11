@@ -69,7 +69,7 @@ class Health:
             checks.append(self.item('Database','healthy','Application database is readable.'))
         except Exception:
             checks.append(self.item('Database','failed','Application database is unavailable.','Check portal service logs and data-directory permissions.'))
-        for name in ('access-gate','access-gate-gateway','access-gate-maintenance','access-gate-scheduler','access-gate-push','nginx'):
+        for name in ('access-gate','access-gate-gateway','access-gate-maintenance','access-gate-scheduler','access-gate-push','nginx')+(('access-gate-dns','access-gate-dns-rules') if self.config['dns_mode']=='builtin' else ()):
             try:
                 # is-active returns non-zero for inactive/failed; show gives the state without that ambiguity.
                 state=self.command(['systemctl','show',name+'.service','--property=ActiveState','--value'])
@@ -77,6 +77,12 @@ class Health:
                 checks.append(self.item(name,'healthy' if state=='active' else 'failed','Service state: '+state+'.','Inspect this service with systemctl status.' if state!='active' else ''))
             except (OSError,ValueError,subprocess.SubprocessError):
                 checks.append(self.item(name,'unknown','Service status could not be read.','Check systemd availability and service logs on the server.'))
+        if self.config['dns_mode']=='builtin':
+            try:
+                status=json.loads(Path('/var/lib/access-gate/dns/status.json').read_text())
+                good=status['state']=='healthy' and now-status['updated']<15
+                checks.append(self.item('DNS synchronization','healthy' if good else 'failed','Rules synchronized.' if good else 'DNS rules are stale or synchronization failed.','Check access-gate-dns-rules.service.' if not good else ''))
+            except (OSError,ValueError,KeyError,TypeError):checks.append(self.item('DNS synchronization','unknown','DNS synchronization status unavailable.','Check the DNS publisher service.'))
         try:
             synced=self.command(['timedatectl','show','--property=NTPSynchronized','--value'])
             if synced not in ('yes','no'): raise ValueError()

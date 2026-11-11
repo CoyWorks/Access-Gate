@@ -588,7 +588,7 @@ def create_app(config=None):
         page = store.dns_domain_page(request.args.get('q', ''), request.args.get('page', '1'))
         summary = store.dns_summary()
         return render_template('dns_domains.html', domains=page['items'], domain_page=page, summary=summary,
-                               target_ip=target_ip, enabled_count=summary['enabled'], wildcard_count=summary['wildcard'],
+                               target_ip=target_ip, dns_mode=config['dns_mode'], enabled_count=summary['enabled'], wildcard_count=summary['wildcard'],
                                preview=store.export_dns_domains('dnsmasq', limit=50, target_ip=target_ip), value=value, scope=scope,
                                error=error, csrf=csrf(), import_error=import_error,
                                import_url=import_url, import_scope=import_scope), 400 if error or import_error else 200
