@@ -1,5 +1,7 @@
 """Isolated SNI callback microbenchmark; does not clear the running gateway cache."""
 import argparse
+import asyncio
+import aiohttp
 import json
 from pathlib import Path
 import statistics
@@ -11,6 +13,11 @@ from .browser import origin
 def benchmark(config,hostname,iterations=20):
     if not 1<=iterations<=50:raise ValueError('Choose 1 to 50 repetitions.')
     name=origin('https://'+hostname)[8:];gateway=Gateway(config)
+    async def load():
+        async with aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=gateway.api_context),timeout=aiohttp.ClientTimeout(total=2)) as session:
+            gateway.local=session
+            if not await gateway.refresh_policy():raise ValueError('Policy bootstrap failed.')
+    asyncio.run(load())
     if not gateway.is_restricted_sync(name):raise ValueError('Choose an enabled restricted hostname; policy service must be reachable.')
     samples=[]
     class Connection:pass

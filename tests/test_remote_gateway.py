@@ -91,6 +91,7 @@ class RemoteGatewayTLS(unittest.IsolatedAsyncioTestCase):
         self.store.revoke_batch(bid)
         active,_,_=await self.private.allowed('restricted.example','__Host-accessgate-site='+token);self.assertFalse(active)
         self.store.revoke_gateway(self.peer['id'])
+        self.assertFalse(await self.private.refresh_policy())
         self.assertFalse(await asyncio.to_thread(self.private.is_restricted_sync,'restricted.example'))
 
     async def test_no_client_certificate_or_forged_transport_headers_cannot_call_api(self):

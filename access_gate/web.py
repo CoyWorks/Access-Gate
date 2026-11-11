@@ -872,6 +872,7 @@ def create_app(config=None):
         response.delete_cookie(CHALLENGE_COOKIE,secure=True,httponly=True,samesite='Lax',path='/')
         return response
 
+    @app.get('/internal/gateway/rules')
     @app.get('/gateway/v1/rules')
     def gateway_remote_rules():
         return jsonify(domains=[dict(domain=r['domain'],include_subdomains=bool(r['include_subdomains'])) for r in store.list_dns_domains() if r['enabled']])

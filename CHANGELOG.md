@@ -1,3 +1,8 @@
+# 0.23.0
+
+- Replace synchronous per-handshake policy API calls with atomic authenticated RAM snapshots (#32).
+- Refresh every two seconds, fail closed after ten seconds and keep live session authorization separate.
+
 # 0.22.0
 
 - Add bounded, private gateway latency aggregates and administrator performance diagnostics (#31).

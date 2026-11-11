@@ -28,3 +28,13 @@ For background renewal compare the renewal count/duration and concurrent warm re
 ## Development baseline (#31)
 
 Measured in the development container with Python 3.12, aiohttp 3.9.1 and cryptography 41.0.7, a real loopback Flask policy server, generated test CA and one enabled synthetic hostname: cold callback 4.70 ms; 10 warm callbacks mean 2.86 ms, maximum 4.96 ms. Each warm callback still creates a policy HTTP connection in this baseline. These numbers are fixture results, not measurements of a deployed server or remote WAN authority.
+
+## Policy snapshots (0.23)
+
+The gateway loads an authenticated complete rule snapshot before opening listeners. Local mode uses the loopback API key; remote mode uses verified HTTPS and gateway mTLS credentials. Network reads are asynchronous, capped at 64 MiB/500,000 rules; parsing runs off the event loop. Exact and suffix sets are immutable and swapped atomically. The TLS callback and HTTP handler only read memory.
+
+Edits are normally visible at the next two-second refresh (plus request/parse time). Maximum snapshot age is ten seconds. A malformed response or outage retains the last good snapshot only within that age; stale SNI is rejected, including previously cached certificates. Authentication rejection invalidates immediately when observed. Startup fails without a valid snapshot; an authenticated empty rule set is valid and rejects all intercepted hosts. Freshness and refresh errors appear in administrator performance diagnostics. No snapshot is persisted.
+
+Policy freshness never grants access. Code/admin state, domain removal, peer revocation and streaming deadlines still use the live authority checks. Existing streams are stopped by their normal live checks during an outage.
+
+With the same local fixture after #32, cold callback was 1.36 ms and 10 warm callbacks averaged 0.053 ms (maximum 0.199 ms). Initial authenticated snapshot loading occurs outside the callback timing. The earlier #31 warm mean was 2.86 ms. This shows removal of the loopback API roundtrip; it does not predict WAN/page-load performance. Concurrent refresh and slow-parser tests also verify that immutable warm lookups remain available while background work awaits network/worker execution.

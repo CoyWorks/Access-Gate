@@ -210,6 +210,7 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
             database=str(self.root/'db'), portal_url='https://portal.example', client_networks=['127.0.0.0/8'])
         self.config = settings(self.root, portal)
         self.flask = create_app(portal); self.flask.config['TESTING'] = True
+        self.flask.add_url_rule('/test-large-export','large_test_export',lambda:(b'x'*(5*1024*1024),{'Content-Type':'text/plain'}))
         self.store = self.flask.extensions['store']; self.store.initialize(); self.store.add_dns_domains('restricted.example')
         self.wsgi = make_server('127.0.0.1', 0, self.flask, threaded=True, request_handler=QuietHandler)
         self.thread = threading.Thread(target=self.wsgi.serve_forever, daemon=True); self.thread.start()
@@ -233,6 +234,49 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         self.client_context = ssl.create_default_context(cafile=str(self.root/'etc/access-gate/ca/root.crt'))
         self.client = aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=LoopbackResolver(), ssl=self.client_context),
             timeout=aiohttp.ClientTimeout(total=5))
+
+    async def test_policy_snapshot_refresh_stale_failure_and_live_authorization(self):
+        from dataclasses import replace
+        from unittest.mock import patch
+        self.assertTrue(self.gateway.is_restricted_sync('restricted.example'))
+        with patch('http.client.HTTPConnection',side_effect=AssertionError('No network in SNI')):
+            for _ in range(100):self.assertTrue(self.gateway.is_restricted_sync('restricted.example'))
+        old=self.gateway.policy
+        self.gateway.policy=replace(old,loaded=time.monotonic()-11)
+        self.assertFalse(self.gateway.is_restricted_sync('restricted.example'))
+        self.assertTrue(await self.gateway.refresh_policy())
+        self.store.add_dns_domains('exact.example',scope='exact')
+        self.assertFalse(self.gateway.is_restricted_sync('exact.example'))
+        await self.gateway.refresh_policy()
+        self.assertTrue(self.gateway.is_restricted_sync('exact.example'))
+        self.assertFalse(self.gateway.is_restricted_sync('child.exact.example'))
+        with patch.object(self.gateway.local,'get',side_effect=OSError('offline')):
+            self.assertFalse(await self.gateway.refresh_policy())
+        self.assertTrue(self.gateway.policy_status()['last_refresh_failed'])
+        self.assertTrue(self.gateway.is_restricted_sync('exact.example'))
+        self.gateway.policy=replace(self.gateway.policy,loaded=time.monotonic()-11)
+        self.assertFalse(self.gateway.is_restricted_sync('exact.example'))
+
+    async def test_policy_startup_fails_closed_without_authenticated_snapshot(self):
+        from unittest.mock import patch,AsyncMock
+        other=Gateway(self.config)
+        with patch.object(other,'refresh_policy',new=AsyncMock(return_value=False)):
+            with self.assertRaisesRegex(OSError,'listener not started'):await other.start(None)
+        self.assertTrue(other.local.closed)
+        self.assertIsNone(other.policy_task)
+        self.assertFalse(other.is_restricted_sync('restricted.example'))
+
+    async def test_slow_policy_refresh_does_not_block_loop_or_warm_lookup(self):
+        from unittest.mock import patch
+        from access_gate.domain_policy import DomainPolicy
+        original=DomainPolicy.parse
+        def slow(data):time.sleep(.15);return original(data)
+        with patch.object(DomainPolicy,'parse',side_effect=slow):
+            task=asyncio.create_task(self.gateway.refresh_policy())
+            await asyncio.sleep(.03)
+            self.assertFalse(task.done())
+            self.assertTrue(self.gateway.is_restricted_sync('restricted.example'))
+            await task
 
     async def test_performance_requires_private_machine_key(self):
         response=await self.get(path='/__access_gate/performance')
@@ -355,7 +399,6 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_large_portal_exports_are_not_truncated(self):
         data = b'x' * (5*1024*1024)
-        self.flask.add_url_rule('/test-large-export', 'large_test_export', lambda: (data, {'Content-Type': 'text/plain'}))
         response = await self.get(path='/test-large-export')
         self.assertEqual(response.status, 200)
         self.assertEqual(await response.read(), data)

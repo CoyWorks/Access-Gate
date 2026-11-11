@@ -25,6 +25,7 @@ from .browser import origin
 from .gateway_activity import GatewayActivity
 from .gateway_tls import CertificateCache, expires
 from .performance import Metrics
+from .domain_policy import DomainPolicy
 
 HOP = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
        'transfer-encoding', 'upgrade', 'alt-svc', 'alternate-protocol', 'proxy-connection'}
@@ -130,26 +131,43 @@ class Gateway(GatewayActivity):
         self.local = self.upstream = None
         self.resolver = None
         self.performance=Metrics('remote' if self.remote else 'local')
+        self.policy=None;self.policy_task=None;self.policy_lock=asyncio.Lock();self.policy_last_error=False
         self.tls = CertificateCache(config,self.is_restricted_sync,metrics=self.performance)
 
     def is_restricted_sync(self,host):
-        with self.performance.measure('policy_lookup') as sample:return self._is_restricted_sync(host,sample)
+        with self.performance.measure('policy_lookup'):
+            return bool(self.policy and self.policy.match(host))
 
-    def _is_restricted_sync(self, host,sample):
-        connection = http.client.HTTPSConnection(self.api_host,self.api_port,timeout=1,context=self.api_context) if self.remote else http.client.HTTPConnection(self.api_host,self.api_port,timeout=1)
-        try:
-            connection.request('GET', self.api_path('/internal/gateway/domain')+'?'+urlencode({'host':host}), headers=self.api_headers())
-            response = connection.getresponse()
-            data = response.read(16385)
-            if response.status!=200 or len(data)>16384:raise OSError('Policy lookup failed.')
-            return json.loads(data).get('restricted') is True
-        except (OSError, ValueError, http.client.HTTPException):
-            sample['failed']=True;self.performance.increment('policy_error');return False
-        finally: connection.close()
+    async def refresh_policy(self):
+        async with self.policy_lock:
+            try:
+                async with self.local.get(self.api_url+self.api_path('/internal/gateway/rules'),headers=self.api_headers(),allow_redirects=False) as response:
+                    if response.status!=200:
+                        if response.status in (401,403):self.policy=None
+                        raise OSError('Policy authority unavailable.')
+                    data=bytearray()
+                    async for chunk in response.content.iter_chunked(65536):
+                        data.extend(chunk)
+                        if len(data)>64*1024*1024:raise ValueError('Policy snapshot too large.')
+                snapshot=await asyncio.to_thread(lambda:DomainPolicy.parse(json.loads(data)))
+                self.policy=snapshot;self.policy_last_error=False
+                return True
+            except (OSError,ValueError,TypeError,aiohttp.ClientError,asyncio.TimeoutError):
+                self.performance.increment('policy_refresh_error');self.policy_last_error=True
+                return False
+
+    async def policy_loop(self):
+        while True:
+            await asyncio.sleep(2)
+            await self.refresh_policy()
+
+    def policy_status(self):
+        snapshot=self.policy
+        return dict(ready=bool(snapshot and snapshot.fresh()),age_seconds=max(0,time.monotonic()-snapshot.loaded) if snapshot else None,max_age_seconds=10,refresh_seconds=2,last_refresh_failed=self.policy_last_error)
 
     def api_path(self,path):
         if not self.remote:return path
-        mapping={'/internal/health':'/gateway/v1/health','/internal/gateway/domain':'/gateway/v1/domain','/internal/gateway/check':'/gateway/v1/check','/internal/start':'/gateway/v1/start','/internal/finish':'/gateway/v1/finish','/internal/activity/visit':'/gateway/v1/activity/visit'}
+        mapping={'/internal/gateway/rules':'/gateway/v1/rules','/internal/health':'/gateway/v1/health','/internal/gateway/domain':'/gateway/v1/domain','/internal/gateway/check':'/gateway/v1/check','/internal/start':'/gateway/v1/start','/internal/finish':'/gateway/v1/finish','/internal/activity/visit':'/gateway/v1/activity/visit'}
         base,sep,query=path.partition('?')
         if base not in mapping:raise OSError('This operation is not available to a remote gateway.')
         return mapping[base]+(sep+query if sep else '')
@@ -160,6 +178,10 @@ class Gateway(GatewayActivity):
     async def start(self, app):
         self.local = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=self.api_context,limit=32) if self.remote else None,trust_env=False, cookie_jar=aiohttp.DummyCookieJar(),
             auto_decompress=False, skip_auto_headers={'Accept-Encoding'}, timeout=aiohttp.ClientTimeout(total=2))
+        if not await self.refresh_policy():
+            await self.local.close()
+            raise OSError('Initial authenticated domain snapshot unavailable; gateway listener not started.')
+        self.policy_task=asyncio.create_task(self.policy_loop())
         connector = self.upstream_connector
         if connector is None:
             self.resolver = PublicResolver()
@@ -187,6 +209,10 @@ class Gateway(GatewayActivity):
         return trace
 
     async def stop(self, app):
+        if self.policy_task:
+            self.policy_task.cancel()
+            try:await self.policy_task
+            except asyncio.CancelledError:pass
         await self.stop_activity()
         if self.upstream: await self.upstream.close()
         if self.resolver: await self.resolver.close()
@@ -269,7 +295,7 @@ class Gateway(GatewayActivity):
             if not secure:
                 if host in self.portal_hosts:
                     return web.Response(status=308, headers={'Location': self.config['portal_url'] + request.raw_path})
-                if not await asyncio.to_thread(self.is_restricted_sync, host): raise web.HTTPMisdirectedRequest(text='This hostname is not managed.')
+                if not self.is_restricted_sync(host): raise web.HTTPMisdirectedRequest(text='This hostname is not managed.')
                 return web.Response(status=308, headers={'Location': 'https://' + host + request.raw_path})
             sni = getattr(request.transport.get_extra_info('ssl_object'), 'access_gate_sni', None)
             if host in self.portal_hosts:
@@ -278,16 +304,16 @@ class Gateway(GatewayActivity):
                 if request.path=='/__access_gate/performance':
                     expected=self.config.get('local_api_key',self.key)
                     if request.method!='GET' or not hmac.compare_digest(request.headers.get('X-Gate-Metrics-Key','').encode(),expected.encode()):raise web.HTTPForbidden()
-                    return web.json_response(self.performance.snapshot(),headers={'Cache-Control':'no-store'})
+                    return web.json_response(dict(self.performance.snapshot(),policy=self.policy_status()),headers={'Cache-Control':'no-store'})
                 if request.path == '/__access_gate/health':
                     if self.remote:
                         status,_,data=await self.rpc('/internal/health',host)
                         if status!=200 or json.loads(data).get('ready') is not True:raise OSError('Remote authority health failed.')
-                    return web.json_response({'gateway': 'ready', 'issuer_expires': expires(self.tls.issuer).isoformat(),'activity_queue':self.activity_queue.qsize(),'activity_dropped':self.activity_dropped,'activity_last_success':self.activity_last_success})
+                    return web.json_response({'gateway': 'ready' if self.policy_status()['ready'] else 'stale', 'issuer_expires': expires(self.tls.issuer).isoformat(),'activity_queue':self.activity_queue.qsize(),'activity_dropped':self.activity_dropped,'activity_last_success':self.activity_last_success})
                 if self.remote:return web.Response(status=303,headers={'Location':self.config['portal_url'],'Cache-Control':'no-store'})
                 return await self.portal(request, address)
             if sni != host: raise web.HTTPMisdirectedRequest(text='TLS hostname mismatch.')
-            if not await asyncio.to_thread(self.is_restricted_sync, host): raise web.HTTPMisdirectedRequest(text='This hostname is not managed.')
+            if not self.is_restricted_sync(host): raise web.HTTPMisdirectedRequest(text='This hostname is not managed.')
             cookie = request.headers.get('Cookie', '')
             if request.path == '/__access_gate/complete':
                 if request.method != 'GET': raise web.HTTPMethodNotAllowed(request.method, ['GET'])
