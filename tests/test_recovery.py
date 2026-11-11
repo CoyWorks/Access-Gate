@@ -53,6 +53,8 @@ class RecoveryTests(unittest.TestCase):
     def test_full_recovery_revokes_old_unused_used_and_newer_access(self):
         schedule=self.store.create_schedule(dict(name='Saved schedule',recurrence='daily',clock='09:00'),PASSWORD)
         run=self.store.run_schedule_now(schedule,'c'*32)
+        token,login=self.store.new_admin_login('e'*64,dict(secret='secret',admin_hash='hash',client_networks=['10.40.0.0/16']))
+        self.store.save_push('e'*64,login['id'],'https://fcm.googleapis.com/fcm/send/test',dict(secret='secret',admin_hash='hash',client_networks=['10.40.0.0/16']))
         archive=self.backup();new_batch,new_codes=self.store.create_batch(count=1)
         job=self.jobs.submit('preflight',passphrase=PASSWORD,archive=archive);self.worker.run_once()
         self.assertTrue(self.jobs.status(job)['confirm']);self.assertEqual(self.calls,[])
@@ -65,7 +67,7 @@ class RecoveryTests(unittest.TestCase):
         for code in self.codes+new_codes:
             with self.assertRaises(GateError):self.store.redeem(code,'10.40.22.41',browser_token='b'*64)
         with self.store.connect() as db:
-            self.assertFalse(db.execute('PRAGMA foreign_key_check').fetchall());self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok')
+            self.assertFalse(db.execute('PRAGMA foreign_key_check').fetchall());self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok');self.assertEqual(db.execute('SELECT count(*) FROM push_subscriptions').fetchone()[0],0)
         self.assertFalse((self.worker.private/(job+'.json')).exists())
         self.assertEqual(len(list(self.worker.private.glob('*.rollback'))),1)
     def test_restore_service_failure_attempts_safe_rollback(self):

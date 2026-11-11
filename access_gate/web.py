@@ -95,7 +95,7 @@ def create_app(config=None):
         address=client_ip()
         g.admin_security=store.admin_security(config)
         # Polling/static/feed requests validate but never renew an idle login.
-        activity=request.path not in DNS_FEED_PATHS and request.path not in ('/status','/request-access/status') and not request.path.startswith(('/static/','/admin/api/'))
+        activity=request.path not in ('/admin/manifest.webmanifest','/admin/sw.js','/admin/icon-192.png','/admin/icon-512.png') and request.path not in DNS_FEED_PATHS and request.path not in ('/status','/request-access/status') and not request.path.startswith(('/static/','/admin/api/'))
         g.admin_login=None
         admin_cookie=request.cookies.get(ADMIN_COOKIE,'')
         if admin_cookie:
@@ -120,7 +120,7 @@ def create_app(config=None):
     def headers(response):
         response.headers.update({'Cache-Control':'no-store','Referrer-Policy':'no-referrer',
             'X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY',
-            'Content-Security-Policy':"default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"})
+            'Content-Security-Policy':"worker-src 'self'; manifest-src 'self'; img-src 'self'; default-src 'none'; style-src 'self'; script-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"})
         if getattr(g,'new_browser',False):
             response.set_cookie(BROWSER_COOKIE,g.browser_token,max_age=365*86400,secure=True,httponly=True,samesite='Lax',path='/')
         if getattr(g,'new_admin_cookie',None):
@@ -452,6 +452,39 @@ def create_app(config=None):
         import io
         data=read_regular(jobs.root/'downloads'/(job_id+'.agbackup'),MAX_ARCHIVE)
         return send_file(io.BytesIO(data),mimetype='application/octet-stream',as_attachment=True,download_name='access-gate-'+job_id[:8]+'.agbackup',max_age=0)
+
+    @app.get('/admin/manifest.webmanifest')
+    def admin_manifest():
+        return app.response_class(json.dumps(dict(id='/admin',name='Access Gate Admin',short_name='Access Gate',start_url='/admin',scope='/admin',display='standalone',background_color='#101624',theme_color='#101624',icons=[dict(src='/admin/icon-192.png',sizes='192x192',type='image/png',purpose='any'),dict(src='/admin/icon-512.png',sizes='512x512',type='image/png',purpose='any')])),mimetype='application/manifest+json')
+
+    @app.get('/admin/icon-<int:size>.png')
+    def admin_icon(size):
+        if size not in (192,512):abort(404)
+        from .pwa import icon
+        return app.response_class(icon(size),mimetype='image/png')
+
+    @app.get('/admin/sw.js')
+    def admin_worker():
+        response=app.send_static_file('admin-sw.js');response.headers['Service-Worker-Allowed']='/admin';return response
+
+    @app.get('/admin/app')
+    @admin_only
+    def admin_app():return render_template('admin_app.html',csrf=csrf())
+
+    @app.route('/admin/api/push',methods=['GET','POST'])
+    @admin_only
+    def admin_push():
+        if request.method=='POST':
+            try:
+                action=request.form.get('action','')
+                if action=='enable':store.save_push(browser(),g.admin_login['id'],request.form.get('endpoint',''),config)
+                elif action=='disable':store.disable_push(browser())
+                elif action=='test':
+                    if not store.attempt('push-test:'+client_ip(),3):raise GateError('Too many test notifications. Wait 15 minutes.')
+                    store.test_push(browser(),config)
+                else:raise GateError('Invalid notification action.')
+            except GateError as exc:return jsonify(error=str(exc)),400
+        return jsonify(store.push_state(browser(),config))
 
     @app.get('/admin/system')
     @admin_only

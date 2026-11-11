@@ -62,3 +62,6 @@ Daily/weekly schedules, explicit DST/catch-up rules and secure one-time portal c
 
 ### 0.13.0 — #17 delivered
 Reviewed fixed-repository updates, persistent progress, clean-source identity and readiness checks are implemented through the maintenance worker. All original P2 issues (#14–#17) are delivered in separate commits; #11 remains open.
+
+### 0.14.0 — phone administration
+Installable admin PWA with opt-in, generic access-request Web Push, background delivery and existing Approve/Deny navigation. Real phone/provider acceptance uses the documented Send test workflow.

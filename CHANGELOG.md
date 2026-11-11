@@ -1,3 +1,9 @@
+# 0.14.0
+
+- Add an installable admin PWA, Home Screen icons and explicit per-browser push notification controls.
+- Add payload-free VAPID notifications for new access requests through an unprivileged durable delivery worker; notification clicks open the pending Approve/Deny inbox.
+- Add schema 10, bounded retries, subscription expiry/revocation, restore invalidation and phone setup documentation. No new Python dependencies.
+
 # 0.13.0
 
 - Add reviewed Git checks and confirmed admin-portal updates with persistent progress and post-deployment identity/readiness checks (#17).

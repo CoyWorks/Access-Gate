@@ -139,6 +139,7 @@ def invalidate(database,config):
     store=Store(database,config['pepper'])
     with store.connect() as db:
         db.execute('BEGIN IMMEDIATE')
+        db.execute('DELETE FROM push_deliveries');db.execute('DELETE FROM push_subscriptions')
         db.execute('UPDATE schedules SET enabled=0')
         db.execute("UPDATE schedule_runs SET payload=NULL,status='invalidated' WHERE status='ready'")
         db.execute('UPDATE codes SET revoked=1');db.execute('UPDATE batches SET revoked=1');db.execute('UPDATE grants SET revoked=1,browser_hash=NULL')

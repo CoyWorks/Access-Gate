@@ -7,7 +7,7 @@ import secrets
 import time
 from urllib.parse import urlsplit
 
-EVENTS=frozenset(('update.requested','update.checked','update.completed','update.failed','schedule.created','schedule.changed','schedule.generated','schedule.collected','schedule.failed','recovery.backup','recovery.restored','batch.created','batch.revoked','batch.removed','codes.cleared','code.activated','code.failed','code.revoked','session.extended','session.terminated','session.expired','admin.login','admin.login_failed','admin.logout','admin.policy_changed','domains.merged','domain.changed','request.created','request.read','request.resolved','request.dismissed','request.expired','request.approved','request.denied','activity.settings'))
+EVENTS=frozenset(('push.enabled','push.disabled','update.requested','update.checked','update.completed','update.failed','schedule.created','schedule.changed','schedule.generated','schedule.collected','schedule.failed','recovery.backup','recovery.restored','batch.created','batch.revoked','batch.removed','codes.cleared','code.activated','code.failed','code.revoked','session.extended','session.terminated','session.expired','admin.login','admin.login_failed','admin.logout','admin.policy_changed','domains.merged','domain.changed','request.created','request.read','request.resolved','request.dismissed','request.expired','request.approved','request.denied','activity.settings'))
 
 
 def page_path(value):
@@ -188,6 +188,7 @@ class Operations:
             for scope in ('access-request-ip:'+address,'access-request-browser:'+owner):db.execute('INSERT INTO attempts VALUES(?,?)',(scope,now))
             rid=secrets.token_hex(16)
             db.execute('INSERT INTO access_requests(id,browser_hash,domain,label,reason,address,created) VALUES(?,?,?,?,?,?,?)',(rid,owner,domain,label.strip(),reason.strip(),address,now))
+            self.queue_request_push(db,rid,now)
             self._event(db,'request.created',actor='Visitor',details=dict(state='pending'),now=now)
             db.commit()
         return rid,True
