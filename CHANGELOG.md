@@ -1,3 +1,8 @@
+# 0.19.2
+
+- Document the proposed public portal/private gateway trust boundaries, browser handoff, enrollment, outage policy and acceptance matrix (#26).
+- Keep public mode explicitly unsupported pending protocol implementation, MFA and target-system validation.
+
 # 0.19.1
 
 - Document supported separate-host service combinations and deferred shared CloudPanel/Pi-hole arrangements (#25).
