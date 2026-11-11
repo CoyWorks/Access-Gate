@@ -38,3 +38,13 @@ Edits are normally visible at the next two-second refresh (plus request/parse ti
 Policy freshness never grants access. Code/admin state, domain removal, peer revocation and streaming deadlines still use the live authority checks. Existing streams are stopped by their normal live checks during an outage.
 
 With the same local fixture after #32, cold callback was 1.36 ms and 10 warm callbacks averaged 0.053 ms (maximum 0.199 ms). Initial authenticated snapshot loading occurs outside the callback timing. The earlier #31 warm mean was 2.86 ms. This shows removal of the loopback API roundtrip; it does not predict WAN/page-load performance. Concurrent refresh and slow-parser tests also verify that immutable warm lookups remain available while background work awaits network/worker execution.
+
+## Certificate lifecycle (0.24)
+
+Intercepted website leaves expire 48 hours after generation (with five minutes of not-before clock-skew allowance). Their TLS contexts live in a process-local LRU of at most 256 entries. Age is measured from creation; hits do not extend it. Eviction can shorten residency. Restart/update intentionally empties the cache; no leaf database or persistent private-key cache is created. The short-lived PEM used to load OpenSSL is removed immediately.
+
+One background worker checks cached entries every minute and starts renewal five minutes before their fixed 24-hour age. It signs/loads outside the event loop, deduplicates by cache key and swaps a completed context atomically. During a slow/failed replacement, a still-valid old context may be used for at most five minutes beyond the 24-hour age. It is never reused beyond its cryptographic expiry. An evicted entry is not resurrected by a late worker. Shutdown cancels the loop, waits for the bounded worker off the event loop and clears RAM state.
+
+Cold misses still sign synchronously in Python's SNI callback; background renewal removes ordinary warm-cache expiry stalls, not first-ever signing cost. Only visited entries are created; imported lists are not pre-generated. Renewal has its own aggregate timer/failure count. All visitors share the same cached context; that context never caches or extends a visitor's live authorization.
+
+Signing requires at least 48 hours plus five minutes of issuer lifetime. Otherwise it fails explicitly; use the normal installer/updater issuer provisioning path. The retained device root CA, public-portal TLS and gateway enrollment certificates have their own lifecycles and are unchanged by this setting.

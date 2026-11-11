@@ -1,4 +1,8 @@
 """Short-lived exact-host TLS certificates under an isolated intermediate CA."""
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
+import threading
 from collections import OrderedDict
 from contextlib import nullcontext
 import datetime as dt
@@ -26,9 +30,20 @@ def server_context(cert, key=None):
     return context
 
 
+@dataclass(frozen=True)
+class CacheEntry:
+    created: float
+    context: ssl.SSLContext
+    not_after: dt.datetime
+
+
 class CertificateCache:
     def __init__(self, config, restricted, metrics=None):
         self.metrics=metrics
+        self.clock=time.monotonic
+        self.utcnow=lambda:dt.datetime.now(dt.timezone.utc)
+        self.ttl=86400;self.grace=300;self.renew_before=300
+        self.lock=threading.RLock();self.pending={};self.worker=None;self.renew_task=None;self.stopping=False
         self.restricted = restricted
         self.portal_hosts = set(config['portal_hosts'])
         self.directory = Path(config['runtime_dir'])
@@ -57,32 +72,79 @@ class CertificateCache:
         return None
 
     def for_host(self, name):
-        lookup_start=time.monotonic()
-        now = dt.datetime.now(dt.timezone.utc)
-        if expires(self.issuer) <= now + dt.timedelta(minutes=5): raise ValueError('Gateway issuer has expired.')
-        if name in self.cache:
-            stamp, context = self.cache.pop(name)
-            if stamp > time.monotonic():
-                self.cache[name] = (stamp, context)
-                if self.metrics:self.metrics.observe('certificate_hit',time.monotonic()-lookup_start)
-                return context
-        if self.metrics:self.metrics.observe('certificate_miss',time.monotonic()-lookup_start)
-        with self.metrics.measure('certificate_generate') if self.metrics else nullcontext():
-            context=self.generate(name)
-        self.cache[name]=(time.monotonic()+1800,context)
+        lookup_start=self.clock()
+        with self.lock:
+            entry=self.cache.get(name)
+            now=self.utcnow();age=self.clock()-entry.created if entry else None
+            if entry and now<entry.not_after and age<self.ttl+self.grace:
+                self.cache.move_to_end(name)
+                if self.metrics:self.metrics.observe('certificate_hit',self.clock()-lookup_start)
+                return entry.context
+            if entry:self.cache.pop(name,None)
+            if name in self.pending:raise ValueError('Certificate replacement is pending; retry shortly.')
+            if self.metrics:self.metrics.observe('certificate_miss',self.clock()-lookup_start)
+            with self.metrics.measure('certificate_generate') if self.metrics else nullcontext():
+                context=self.generate(name)
+            self.cache[name]=CacheEntry(self.clock(),context,context.access_gate_not_after)
+            self.trim()
+            return context
+
+    def trim(self):
         while len(self.cache)>self.limit:
             self.cache.popitem(last=False)
             if self.metrics:self.metrics.increment('cache_eviction')
-        return context
+
+    def start(self):
+        self.worker=ThreadPoolExecutor(max_workers=1,thread_name_prefix='gate-certificate')
+        self.renew_task=asyncio.create_task(self.renew_loop())
+
+    async def close(self):
+        self.stopping=True
+        if self.renew_task:
+            self.renew_task.cancel()
+            try:await self.renew_task
+            except asyncio.CancelledError:pass
+        if self.worker:
+            await asyncio.to_thread(self.worker.shutdown,wait=True,cancel_futures=True)
+        self.pending.clear();self.cache.clear()
+
+    async def renew_loop(self):
+        while True:
+            await asyncio.sleep(60)
+            await self.renew_due()
+
+    async def renew_due(self):
+        # One bounded worker; no unbounded task queue for a large imported list.
+        for name,entry in list(self.cache.items()):
+            if self.stopping:return
+            age=self.clock()-entry.created
+            if age>=self.ttl+self.grace or self.utcnow()>=entry.not_after:
+                if self.cache.get(name) is entry:self.cache.pop(name,None)
+                continue
+            if age<self.ttl-self.renew_before or name in self.pending:continue
+            # Policy must still manage the group; its actual SNI is checked separately.
+            if not self.restricted(name):continue
+            self.pending[name]=entry
+            try:
+                with self.metrics.measure('certificate_renew') if self.metrics else nullcontext():
+                    context=await asyncio.get_running_loop().run_in_executor(self.worker,self.generate,name)
+                if not self.stopping and self.cache.get(name) is entry:
+                    self.cache[name]=CacheEntry(self.clock(),context,context.access_gate_not_after)
+            except asyncio.CancelledError:raise
+            except Exception:
+                if self.metrics:self.metrics.increment('renew_error')
+            finally:self.pending.pop(name,None)
 
     def generate(self,name):
-        now=dt.datetime.now(dt.timezone.utc)
+        now=self.utcnow()
+        if expires(self.issuer)<now+dt.timedelta(hours=48,minutes=5):
+            raise ValueError('Gateway issuing CA has insufficient lifetime for a full 48-hour certificate; run the supported installer/update provisioning to renew it.')
         key = ec.generate_private_key(ec.SECP256R1())
         certificate = (x509.CertificateBuilder()
             .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'Access Gate website')]))
             .issuer_name(self.issuer.subject).public_key(key.public_key()).serial_number(x509.random_serial_number())
             .not_valid_before(now-dt.timedelta(minutes=5))
-            .not_valid_after(min(now+dt.timedelta(days=1), expires(self.issuer)))
+            .not_valid_after(now+dt.timedelta(hours=48))
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
             .add_extension(x509.SubjectAlternativeName([x509.DNSName(name)]), critical=False)
             .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
@@ -95,4 +157,5 @@ class CertificateCache:
         with tempfile.NamedTemporaryFile(dir=self.directory, prefix='leaf-', suffix='.pem') as handle:
             handle.write(pem); handle.flush()
             context = server_context(handle.name)
+        context.access_gate_not_after=expires(certificate)
         return context

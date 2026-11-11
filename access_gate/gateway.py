@@ -192,6 +192,7 @@ class Gateway(GatewayActivity):
             skip_auto_headers={'Accept-Encoding'},
             timeout=aiohttp.ClientTimeout(total=None, connect=10, sock_read=60),trace_configs=[self.origin_trace()])
 
+        self.tls.start()
         self.start_activity()
 
     def origin_trace(self):
@@ -213,6 +214,7 @@ class Gateway(GatewayActivity):
             self.policy_task.cancel()
             try:await self.policy_task
             except asyncio.CancelledError:pass
+        await self.tls.close()
         await self.stop_activity()
         if self.upstream: await self.upstream.close()
         if self.resolver: await self.resolver.close()

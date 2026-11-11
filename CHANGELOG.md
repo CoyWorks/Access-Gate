@@ -1,3 +1,8 @@
+# 0.24.0
+
+- Issue 48-hour intercepted website certificates with fixed 24-hour RAM residency and bounded background renewal (#33).
+- Keep bounded LRU, short renewal grace, sufficient issuer lifetime checks and immediate removal of temporary leaf keys.
+
 # 0.23.0
 
 - Replace synchronous per-handshake policy API calls with atomic authenticated RAM snapshots (#32).
