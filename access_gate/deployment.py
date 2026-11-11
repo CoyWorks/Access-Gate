@@ -54,6 +54,8 @@ def normalize(config, legacy=True):
         c[name]=list(dict.fromkeys(str(ipaddress.ip_network(n)) for n in values))
     if c.get('dns_mode','external-pihole') not in ('external-pihole','external','builtin'): raise ValueError('Unsupported DNS component selection.')
     c.setdefault('dns_mode','external-pihole')
+    c.setdefault('web_mode','dedicated')
+    if c['web_mode'] not in ('dedicated','shared-nginx'):raise ValueError('web_mode must be dedicated or shared-nginx.')
     if c['dns_mode']=='builtin':
         upstreams=c.get('dns_upstreams')
         if not isinstance(upstreams,list) or not 1<=len(upstreams)<=3: raise ValueError('Built-in DNS requires 1 to 3 upstream IPv4 addresses.')
@@ -93,10 +95,10 @@ def main():
     parser.add_argument('--new',action='store_true')
     args=parser.parse_args()
     c=normalize(json.loads(Path(args.path).read_text()),legacy=not args.new)
-    if args.action=='plan': print(json.dumps({k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams') if k in c},indent=2))
+    if args.action=='plan': print(json.dumps({k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams','web_mode') if k in c},indent=2))
     elif args.action=='certificate': print(certificate_extensions(c),end='')
     else:
-        for name,value in dict(GATE_SERVER_IP=c['server_ipv4'],GATE_PORTAL_URL=c['portal_url'],GATE_PORTAL_HOST=urlsplit(c['portal_url']).hostname,GATE_NAMES=' '.join(names(c)),GATE_DNS_MODE=c['dns_mode']).items():
+        for name,value in dict(GATE_SERVER_IP=c['server_ipv4'],GATE_PORTAL_URL=c['portal_url'],GATE_PORTAL_HOST=urlsplit(c['portal_url']).hostname,GATE_NAMES=' '.join(names(c)),GATE_DNS_MODE=c['dns_mode'],GATE_WEB_MODE=c['web_mode']).items():
             print(name+'='+shlex.quote(value))
 
 

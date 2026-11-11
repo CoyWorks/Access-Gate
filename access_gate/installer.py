@@ -37,12 +37,15 @@ def password_file(path):
     return value
 
 
-def service_conflicts(root=Path('/')):
+def service_conflicts(root=Path('/'),web_mode='dedicated'):
     root=Path(root)
-    if (root/'etc/cloudpanel').exists() or (root/'home/clp').exists():
+    if web_mode=='shared-nginx':
+        from .services import check_shared_nginx
+        check_shared_nginx(root)
+    if web_mode!='shared-nginx' and ((root/'etc/cloudpanel').exists() or (root/'home/clp').exists()):
         raise ValueError('CloudPanel host detected. Install Access Gate on a separate VM; shared web-server deployment is not supported. See docs/DEPLOYMENTS.md.')
     enabled=root/'etc/nginx/sites-enabled'
-    if enabled.exists() and any(enabled.iterdir()):
+    if web_mode!='shared-nginx' and enabled.exists() and any(enabled.iterdir()):
         raise ValueError('Existing enabled nginx sites detected. Use a dedicated Access Gate VM; no existing sites were changed. See docs/DEPLOYMENTS.md.')
     for relative in ('etc/nginx/sites-available/access-gate','etc/systemd/system/access-gate.service','etc/systemd/system/access-gate-dns.service'):
         if (root/relative).exists() or (root/relative).is_symlink():raise ValueError('An Access Gate target file already exists; inspect the installation or use resume instead of overwriting it.')
@@ -59,8 +62,9 @@ def preflight(c,addresses=None, listeners=None):
     if c['dns_mode']=='builtin':
         ports.add(53)
         if listeners is None: raise ValueError('Unable to inspect DNS listeners.')
+    from .services import conflicts
     for endpoint in listeners:
-        if int(endpoint.rsplit(':',1)[-1]) in ports: raise ValueError('A required TCP/UDP port is occupied ('+endpoint+'). Use a dedicated address/host; existing services were not changed.')
+        if conflicts(c,endpoint): raise ValueError('A required TCP/UDP port is occupied ('+endpoint+'). Use a dedicated address/host; existing services were not changed.')
 
 
 def ask(label,default=None):
@@ -76,6 +80,9 @@ def wizard():
         selection=ask('DNS integration: pihole, external or builtin','external')
         if selection not in ('pihole','external','builtin'): raise ValueError('Choose pihole, external or builtin.')
         choice={'pihole':'1','external':'2','builtin':'4'}[selection]
+    web_mode=ask('Web server: dedicated or shared-nginx','dedicated')
+    if web_mode not in ('dedicated','shared-nginx'):raise ValueError('Choose dedicated or shared-nginx.')
+    service_conflicts(web_mode=web_mode)
     addresses=local_addresses()
     print('Detected IPv4 addresses: '+', '.join(addresses))
     address=ask('Server IPv4',addresses[0] if len(addresses)==1 else None)
@@ -84,9 +91,9 @@ def wizard():
     admin=ask('Management networks (comma-separated CIDRs)',networks)
     upstreams=ask('Upstream DNS IPv4 addresses (comma-separated)').replace(' ','').split(',') if choice=='4' else []
     c=profile(dict(deployment_version=1,server_ipv4=address,listen_ipv4=address,dns_target_ipv4=address,portal_url='https://'+portal,
-                   portal_aliases=[],client_networks=[n.strip() for n in networks.split(',')]+['127.0.0.1/32','::1/128'],admin_networks=[n.strip() for n in admin.split(',')],dns_mode='external-pihole' if choice=='1' else ('builtin' if choice=='4' else 'external'),dns_upstreams=upstreams))
+                   portal_aliases=[],client_networks=[n.strip() for n in networks.split(',')]+['127.0.0.1/32','::1/128'],admin_networks=[n.strip() for n in admin.split(',')],dns_mode='external-pihole' if choice=='1' else ('builtin' if choice=='4' else 'external'),dns_upstreams=upstreams,web_mode=web_mode))
     preflight(c,addresses=addresses)
-    print(json.dumps({k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams') if k in c},indent=2))
+    print(json.dumps({k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams','web_mode') if k in c},indent=2))
     print('Host addressing and external DNS/firewall settings will not be changed.')
     if ask('Apply this installation? Type INSTALL')!='INSTALL': raise ValueError('Installation cancelled; no services were changed.')
     password=getpass.getpass('Admin password (empty = generate): ')
@@ -98,14 +105,13 @@ def wizard():
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('destination');parser.add_argument('--profile');args=parser.parse_args()
     if os.geteuid()!=0: raise SystemExit('Run the installation planner as root.')
-    service_conflicts()
     if args.profile:
-        raw=json.loads(Path(args.profile).read_text());c=profile(raw);preflight(c)
+        raw=json.loads(Path(args.profile).read_text());c=profile(raw);service_conflicts(web_mode=c['web_mode']);preflight(c)
         password=password_file(raw['admin_password_file']) if raw.get('admin_password_file') else ''
     else:
         if not sys.stdin.isatty(): raise SystemExit('An interactive terminal or ACCESS_GATE_INSTALL_CONFIG profile is required.')
         c,password=wizard()
-    allowed={k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams') if k in c}
+    allowed={k:c[k] for k in ('deployment_version',)+FIELDS+('dns_mode','dns_upstreams','web_mode') if k in c}
     p=Path(args.destination);p.write_text(json.dumps(allowed,indent=2)+'\n');p.chmod(0o600)
     if password:
         secret=p.with_suffix(p.suffix+'.password');secret.write_text(password);secret.chmod(0o600)

@@ -75,7 +75,7 @@ else
     if [[ -e /etc/access-gate/config.json ]]; then
         echo 'Access Gate already exists. To preserve its state, use the updated installer with --resume.' >&2; exit 1
     fi
-    if ss -H -lnt | awk '{print $4}' | grep -Eq ':(80|443|8088)$'; then
+    if [[ $GATE_WEB_MODE == dedicated ]] && ss -H -lnt | awk '{print $4}' | grep -Eq ':(80|443|8088)$'; then
         echo 'A required port is in use. Use a dedicated VM.' >&2; exit 1
     fi
 fi
@@ -88,8 +88,9 @@ fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 extra_packages=()
-if [[ $GATE_DNS_MODE == builtin ]]; then extra_packages=(python3-dnspython); fi
-apt-get install -y "${extra_packages[@]}" nginx python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
+if [[ $GATE_WEB_MODE == dedicated ]]; then extra_packages+=(nginx); fi
+if [[ $GATE_DNS_MODE == builtin ]]; then extra_packages+=(python3-dnspython); fi
+apt-get install -y "${extra_packages[@]}" python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
 if [[ $resume_install -eq 1 ]]; then
     for unit in access-gate-dns.service access-gate-dns-rules.service access-gate-push.service access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
@@ -177,7 +178,7 @@ template=Path('/opt/access-gate/access_gate/nginx-http.conf.in').read_text()
 Path('/etc/nginx/sites-available/access-gate').write_text(template.replace('@@LISTEN@@',c['listen_ipv4']).replace('@@NAMES@@',' '.join(names(c))))
 NGINX
 ln -sfn /etc/nginx/sites-available/access-gate /etc/nginx/sites-enabled/access-gate
-if [[ $resume_install -eq 0 && -L /etc/nginx/sites-enabled/default ]]; then
+if [[ $GATE_WEB_MODE == dedicated && $resume_install -eq 0 && -L /etc/nginx/sites-enabled/default ]]; then
     # Fresh-install preflight refused pre-existing enabled sites. This default was installed by apt.
     if [[ $(readlink -f /etc/nginx/sites-enabled/default) == /etc/nginx/sites-available/default ]]; then
         rm /etc/nginx/sites-enabled/default
@@ -343,10 +344,11 @@ nginx -t
 systemctl daemon-reload
 systemctl enable --now access-gate-maintenance.service
 if [[ -z ${ACCESS_GATE_MAINTENANCE_JOB:-} ]]; then systemctl restart access-gate-maintenance.service; fi
-systemctl enable nginx access-gate.service access-gate-gateway.service access-gate-scheduler.service access-gate-push.service
+if [[ $GATE_WEB_MODE == dedicated ]]; then systemctl enable nginx; fi
+systemctl enable access-gate.service access-gate-gateway.service access-gate-scheduler.service access-gate-push.service
 systemctl reset-failed access-gate-gateway.service
 # Nginx releases its former HTTPS listener before the new gateway binds port 443.
-systemctl restart nginx
+/usr/bin/python3 -m access_gate.services
 systemctl restart access-gate.service
 if ! systemctl restart access-gate-gateway.service; then
     journalctl -u access-gate-gateway.service -n 60 --no-pager >&2 || true

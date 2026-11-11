@@ -62,3 +62,5 @@ The command uses the shared maintenance lock, privately stages certificate/gatew
 A changed portal origin clears admin logins and push subscriptions. Sign in again and reinstall/re-enroll the phone app as necessary. Visitor cookies belong to an origin; users who lose their portal browser identity may need a fresh code. IP changes require external DNS, Pi-hole sync URL/target and firewall changes; those are never applied remotely by this command. A successful local readiness check does not prove external clients have been updated.
 
 For the optional DNS component, see [Built-in DNS](DNS.md). In unattended profiles set `dns_mode` to `builtin` and supply `dns_upstreams`, for example `["1.1.1.1", "9.9.9.9"]`. External modes install no DNS listener or extra DNS package.
+
+For an existing nginx/CloudPanel host, select `web_mode: "shared-nginx"` and follow [address-separated service combinations](DEPLOYMENTS.md). Default dedicated behavior is unchanged.

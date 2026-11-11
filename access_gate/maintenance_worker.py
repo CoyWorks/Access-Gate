@@ -82,6 +82,7 @@ class Worker:
             restored_config=json.loads((stage/'etc/access-gate/config.json').read_text())
             if (current_config.get('dns_mode')=='builtin')!=(restored_config.get('dns_mode')=='builtin'):
                 raise GateError('Restore requires the same installed DNS component selection. Install matching components first.')
+            if current_config.get('web_mode','dedicated')!=restored_config.get('web_mode','dedicated'):raise GateError('Restore requires the same nginx ownership mode.')
             dns_services=('access-gate-dns.service','access-gate-dns-rules.service') if current_config.get('dns_mode')=='builtin' else ()
             rollback=self.private/(job_id+'.rollback')
             self.service('stop',*dns_services,'access-gate-push.service','access-gate-scheduler.service','access-gate-gateway.service','access-gate.service')
@@ -89,7 +90,8 @@ class Worker:
                 saved=snapshot(self.root,self.installed_version());write_private(rollback,encrypt(saved,original['passphrase']))
                 self.result(job_id,action='restore',state='running',message='Applying validated backup; all restored access is being invalidated.')
                 self.apply(stage)
-                self.service('restart',*dns_services,'nginx.service','access-gate.service','access-gate-gateway.service','access-gate-scheduler.service','access-gate-push.service')
+                self.runner(['/usr/bin/python3','-m','access_gate.services'])
+                self.service('restart',*dns_services,'access-gate.service','access-gate-gateway.service','access-gate-scheduler.service','access-gate-push.service')
                 self.runner(['/usr/bin/python3','-m','access_gate.readiness'])
                 if dns_services:self.runner(['/usr/bin/python3','-m','access_gate.dns_service','--probe'])
             except Exception:
@@ -97,7 +99,8 @@ class Worker:
                     # Revalidate our snapshot, then restore with the same fail-closed invalidation policy.
                     with tempfile.TemporaryDirectory(dir=self.private) as back:
                         preflight(rollback.read_bytes(),original['passphrase'],back);self.apply(Path(back))
-                self.service('restart',*dns_services,'nginx.service','access-gate.service','access-gate-gateway.service','access-gate-scheduler.service','access-gate-push.service')
+                self.runner(['/usr/bin/python3','-m','access_gate.services'])
+                self.service('restart',*dns_services,'access-gate.service','access-gate-gateway.service','access-gate-scheduler.service','access-gate-push.service')
                 raise GateError('Restore failed. A rollback was attempted; access remains revoked. Check services and the encrypted root rollback snapshot.') from None
         (self.private/(preview+'.json')).unlink(missing_ok=True);(self.private/(preview+'.archive')).unlink(missing_ok=True)
         return dict(message='Restore completed and services passed readiness. Sign in with the password from the backup. All restored codes and sessions are revoked.',summary=summary)

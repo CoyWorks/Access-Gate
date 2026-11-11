@@ -1,3 +1,9 @@
+# 0.20.0
+
+- Add explicit shared-nginx installation mode with address-aware web/DNS conflicts and preserved CloudPanel/Pi-hole ownership (#25).
+- Reuse/reload existing nginx without package installation, default-site removal, restart or boot-policy changes; apply matching lifecycle to restore/reconfigure.
+- Document same-host Pi-hole integration and the decision to retain its independent lifecycle rather than bundle another root installer.
+
 # 0.19.3
 
 - Explicitly create the isolated DNS service group rather than relying on host useradd defaults.

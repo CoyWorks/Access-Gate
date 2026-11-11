@@ -90,7 +90,8 @@ def apply(root,c,runner=command,gid=None):
             atomic_write(root/'etc/access-gate/client-networks.nginx',''.join('allow '+n+';\n' for n in c['client_networks'])+'deny all;\n',0o644)
             atomic_write(root/'etc/nginx/sites-available/access-gate',render_http(c),0o644)
             runner(['/usr/sbin/nginx','-t'])
-            runner(['/usr/bin/systemctl','restart',*services])
+            runner(['/usr/bin/python3','-m','access_gate.services'])
+            runner(['/usr/bin/systemctl','restart',*services[1:]])
             runner(['/usr/bin/python3','-m','access_gate.readiness'])
             if c['dns_mode']=='builtin':runner(['/usr/bin/python3','-m','access_gate.dns_service','--probe'])
         except Exception as original:
@@ -99,7 +100,8 @@ def apply(root,c,runner=command,gid=None):
                     previous=backup/relative
                     if previous.exists():atomic_write(root/relative,previous.read_text(),previous.stat().st_mode&0o777)
                     else:(root/relative).unlink(missing_ok=True)
-                runner(['/usr/bin/systemctl','restart',*services])
+                runner(['/usr/bin/python3','-m','access_gate.services'])
+                runner(['/usr/bin/systemctl','restart',*services[1:]])
                 runner(['/usr/bin/python3','-m','access_gate.readiness'])
                 if current['dns_mode']=='builtin':runner(['/usr/bin/python3','-m','access_gate.dns_service','--probe'])
             except Exception:raise RuntimeError('Reconfiguration and rollback readiness failed. Retained private backup: '+str(backup)) from original

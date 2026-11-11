@@ -8,7 +8,7 @@ from test_deployment_settings import profile as deployment
 
 class InstallerTests(unittest.TestCase):
     def test_same_profile_for_interactive_and_unattended(self):
-        answers=['2','192.168.10.20','access.example.net','192.168.10.0/24','192.168.10.0/24','INSTALL']
+        answers=['2','dedicated','192.168.10.20','access.example.net','192.168.10.0/24','192.168.10.0/24','INSTALL']
         with patch('builtins.input',side_effect=answers),patch('builtins.print'),patch('access_gate.installer.local_addresses',return_value=['192.168.10.20']),patch('access_gate.installer.preflight'),patch('getpass.getpass',return_value=''):
             c,password=wizard()
         self.assertEqual(c['dns_mode'],'external');self.assertEqual(c['portal_url'],'https://access.example.net');self.assertEqual(password,'')
@@ -31,7 +31,7 @@ class InstallerTests(unittest.TestCase):
             with self.assertRaises(OSError):password_file(alias)
 
     def test_cancellation_never_collects_password(self):
-        answers=['1','192.168.10.20','192.168.10.20','192.168.10.0/24','192.168.10.0/24','NO']
+        answers=['1','dedicated','192.168.10.20','192.168.10.20','192.168.10.0/24','192.168.10.0/24','NO']
         with patch('builtins.input',side_effect=answers),patch('builtins.print'),patch('access_gate.installer.local_addresses',return_value=['192.168.10.20']),patch('access_gate.installer.preflight'),patch('getpass.getpass') as password:
             with self.assertRaises(ValueError):wizard()
             password.assert_not_called()
