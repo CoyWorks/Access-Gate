@@ -133,6 +133,16 @@ def create_app(config=None):
     @app.template_filter('localtime')
     def localtime(stamp): return dt.datetime.fromtimestamp(stamp,TZ).strftime('%d-%m-%Y %H:%M:%S') if stamp else '—'
 
+    @app.template_filter('age')
+    def age(stamp):
+        seconds=max(0,int(time.time()-stamp))
+        return f'{seconds//3600}h ago' if seconds>=3600 else (f'{seconds//60}m ago' if seconds>=60 else 'Just now')
+
+    @app.template_filter('remaining')
+    def remaining(seconds):
+        seconds=max(0,int(seconds));minutes=(seconds+59)//60
+        return f'{minutes//60}h {minutes%60}m' if minutes>=60 else f'{minutes} min'
+
     @app.template_filter('zonetime')
     def zonetime(stamp,zone):
         from zoneinfo import ZoneInfo
@@ -230,7 +240,9 @@ def create_app(config=None):
         def page_link(page):
             params=request.args.to_dict();params['page']=page
             return request.path+'?'+urlencode(params)
-        return dict(page_link=page_link,request_notifications=store.notifications()['unread'] if getattr(g,'admin_login',None) else 0)
+        endpoint=request.endpoint or ''
+        group='home' if endpoint=='admin' else ('requests' if endpoint in ('access_requests','access_request_detail') else ('sessions' if endpoint in ('active_sessions','session_detail','extend_access','terminate_access') else ('codes' if endpoint in ('batches','new_batch','batch','batch_detail','code_detail','all_codes','schedules','new_schedule','schedule_detail','collect_schedule','revoke_batch','remove_batch','clear_revoked_batches') else 'more')))
+        return dict(server_now=time.time(),nav_group=group,admin_shell=bool(session.get('admin') and request.path.startswith('/admin')),page_link=page_link,request_notifications=store.notifications()['pending'] if getattr(g,'admin_login',None) else 0)
 
     @app.route('/request-access',methods=['GET','POST'])
     def request_access():
@@ -262,7 +274,7 @@ def create_app(config=None):
     @admin_only
     def access_requests():
         state=request.args.get('state','pending')
-        return render_template('requests.html',result=store.requests_page(state=state,page=page_number()),visitor=False,state=state)
+        return render_template('requests.html',result=store.ui_requests(store.requests_page(state=state,page=page_number())),visitor=False,state=state,csrf=csrf())
 
     @app.route('/admin/requests/<request_id>',methods=['GET','POST'])
     @admin_only
@@ -276,7 +288,8 @@ def create_app(config=None):
                 store.change_request(request_id,action)
                 flash('Request marked read.','success')
             else:raise GateError('Reload this request to choose Approve or Deny; the old Resolve/Dismiss form is no longer supported.')
-            return redirect(url_for('access_request_detail',request_id=request_id))
+            destination=request.form.get('return_to','')
+            return redirect(destination if destination in ('/admin','/admin/requests') else url_for('access_request_detail',request_id=request_id),code=303 if destination in ('/admin','/admin/requests') else 302)
         return render_template('request_detail.html',item=store.request_detail(request_id),csrf=csrf())
 
     @app.get('/admin/api/notifications')
@@ -370,13 +383,13 @@ def create_app(config=None):
     @admin_only
     def active_sessions():
         state=request.args.get('state','active')
-        result=store.session_overview(state,request.args.get('page','1'))
+        result=store.ui_sessions(state,request.args.get('page','1'))
         return render_template('sessions.html',result=result,state=state,csrf=csrf())
 
     @app.get('/admin/api/sessions')
     @admin_only
     def sessions_data():
-        return jsonify(store.session_overview(request.args.get('state','active'),request.args.get('page','1')))
+        return jsonify(store.ui_sessions(request.args.get('state','active'),request.args.get('page','1')))
 
     @app.route('/admin/access/<session_id>/terminate',methods=['GET','POST'])
     @admin_only
@@ -504,6 +517,8 @@ def create_app(config=None):
 
     @app.errorhandler(GateError)
     def gate_error(error):
+        if request.method=='POST' and request.endpoint=='access_request_detail' and session.get('admin') and request.form.get('return_to') in ('/admin','/admin/requests'):
+            flash(str(error),'error');return redirect(request.form['return_to'],code=303)
         return render_template('error.html', error=str(error)), 400
 
     def page_number():
@@ -516,7 +531,7 @@ def create_app(config=None):
                     csrf=csrf(),now=time.time())
 
     def back(batch_id):
-        return redirect(url_for('batch_detail',batch_id=batch_id) if batch_id else url_for('admin'))
+        return redirect(url_for('batch_detail',batch_id=batch_id) if batch_id else url_for('all_codes'))
 
     @app.get('/status')
     def access_status():
@@ -528,13 +543,26 @@ def create_app(config=None):
     @app.get('/admin')
     @admin_only
     def admin():
-        return render_template('admin.html',**list_context(),grants=[r for r in store.list_grants() if not r['revoked'] and r['expires']>time.time()],
-                               extensions=store.extension_history())
+        return render_template('admin.html',home=store.ui_home(),now=time.time(),csrf=csrf(),phone_enabled=bool(store.push_state(browser(),config)['devices']))
+
+    @app.get('/admin/more')
+    @admin_only
+    def more():return render_template('more.html',csrf=csrf())
+
+    @app.get('/admin/sessions/<session_id>')
+    @admin_only
+    def session_detail(session_id):
+        item=store.ui_session(session_id)
+        return render_template('session_detail.html',item=item,history=store.history(kind=request.args.get('view','domains'),code_id=item['code_id'],**history_options()),events=sorted(EVENTS),policy=store.activity_settings(),csrf=csrf(),now=time.time())
+
+    @app.get('/admin/codes')
+    @admin_only
+    def all_codes():return render_template('codes.html',**list_context())
 
     @app.get('/admin/batches')
     @admin_only
     def batches():
-        return render_template('batches.html',batches=store.list_batches(page=page_number(),view=request.args.get('view','active')),view=request.args.get('view','active'),
+        return render_template('batches.html',batches=store.list_batches(page=page_number(),view=request.args.get('view','active'),include_approvals=False),view=request.args.get('view','active'),
                                csrf=csrf(),now=time.time())
 
     @app.route('/admin/dns-domains', methods=['GET', 'POST'])
@@ -713,7 +741,7 @@ def create_app(config=None):
             event = store.extend(session_id,request.form.get('value',''),request.form.get('unit',''),
                                  request.form.get('request_id',''),actor=f'Administrator ({client_ip()})')
             flash('Access extended. New end time: '+localtime(event['new_expires'])+'.','success')
-            return back(None)
+            return redirect(url_for('session_detail',session_id=session_id))
         return render_template('extend.html',grant=grant,request_id=secrets.token_hex(16),csrf=csrf())
 
     @app.post('/internal/entry')

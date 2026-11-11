@@ -56,9 +56,10 @@ from .exclusions import Exclusions
 from .operations import Operations
 from .scheduling import Scheduling
 from .push import Push
+from .interface import Interface
 
 
-class Store(BrowserSessions, DNSExports, Administration, Exclusions, Operations, Scheduling, Push):
+class Store(BrowserSessions, DNSExports, Administration, Exclusions, Operations, Scheduling, Push, Interface):
     def __init__(self, path, pepper):
         self.path, self.pepper = str(path), pepper.encode()
 
@@ -291,11 +292,12 @@ class Store(BrowserSessions, DNSExports, Administration, Exclusions, Operations,
             if not row: raise GateError('Batch not found.')
             return dict(row)
 
-    def list_batches(self, page=1, per_page=10, now=None, view='active'):
+    def list_batches(self, page=1, per_page=10, now=None, view='active',include_approvals=True):
         now = time.time() if now is None else now
         page = positive_int(page,'Page',1000000)
         if view not in ('active','removed','all'):raise GateError('Invalid batch view.')
         where='' if view=='all' else (' WHERE b.removed_at IS NULL' if view=='active' else ' WHERE b.removed_at IS NOT NULL')
+        if not include_approvals:where+=(' AND ' if where else ' WHERE ')+"b.timing_mode!='approval'"
         with self.connect() as db:
             db.execute('BEGIN')
             total = db.execute('SELECT count(*) FROM batches b'+where).fetchone()[0]

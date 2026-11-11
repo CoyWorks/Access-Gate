@@ -46,7 +46,7 @@ const link = (parent,label,href,classes='') => { const a=document.createElement(
 const sessionsPanel=document.getElementById('sessions-panel');
 if (sessionsPanel) {
   let busy=false, offset=0;
-  const tick=()=>document.querySelectorAll('[data-session-expires]').forEach(el=>{el.textContent=remainingTime(Number(el.dataset.sessionExpires)-Date.now()/1000-offset);});
+  const tick=()=>document.querySelectorAll('[data-session-expires]').forEach(el=>{el.textContent=remainingTime(Number(el.dataset.sessionExpires)-Date.now()/1000-offset)+' remaining';});
   const refresh=async()=>{
     if(busy) return; busy=true;
     const status=document.getElementById('session-refresh');
@@ -55,6 +55,27 @@ if (sessionsPanel) {
       const response=await fetch('/admin/api/sessions?'+query,{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});
       if(!response.ok) throw Error();
       const data=await response.json(); offset=data.server_time-Date.now()/1000;
+      const cards=document.getElementById('session-cards');
+      if(cards && cards.contains?.(document.activeElement)){status.textContent='Live update paused while a session action has focus. Access checks remain active.';return;}
+      if(cards){
+        cards.replaceChildren();
+        for(const item of data.items){
+          const card=document.createElement('article');card.className='session-card';
+          const heading=document.createElement('div');heading.className='card-heading';
+          const title=document.createElement('div'),eyebrow=document.createElement('span');eyebrow.className='eyebrow';eyebrow.textContent=item.hint==='AUTO'?'Approved request':'Code …'+(item.hint||'');title.append(eyebrow);
+          const h=document.createElement('h3');link(h,item.label||item.batch_name,'/admin/sessions/'+encodeURIComponent(item.session_id));title.append(h);
+          if(item.requested_domain){const domain=document.createElement('p');domain.textContent=item.requested_domain;title.append(domain);}
+          const badge=document.createElement('span');badge.className='badge '+(['active','expired','terminated','revoked'].includes(item.state)?item.state:'');badge.textContent=item.state;heading.append(title,badge);card.append(heading);
+          const timer=document.createElement('p');timer.className='session-timer';
+          if(item.state==='active'){timer.dataset.sessionExpires=item.expires;timer.textContent=remainingTime(item.expires-data.server_time)+' remaining';}else timer.textContent='Ended '+formatTime(item.expires);card.append(timer);
+          const actions=document.createElement('div');actions.className='actions';
+          if(item.state==='active')link(actions,'Extend','/admin/access/'+encodeURIComponent(item.session_id)+'/extend','button secondary');
+          link(actions,'Details & history','/admin/sessions/'+encodeURIComponent(item.session_id));
+          if(item.state==='active')link(actions,'Stop access','/admin/access/'+encodeURIComponent(item.session_id)+'/terminate','danger-link');
+          card.append(actions);cards.append(card);
+        }
+        if(!data.items.length){const empty=document.createElement('div');empty.className='empty-state';empty.textContent='No matching sessions. Try another state or approve a new request.';cards.append(empty);}
+      }else{
       const rows=document.getElementById('session-rows'); rows.replaceChildren();
       for(const item of data.items){
         const row=document.createElement('tr');
@@ -71,6 +92,7 @@ if (sessionsPanel) {
         rows.append(row);
       }
       if(!data.items.length){const row=document.createElement('tr');cell(row,'No matching browser sessions.').colSpan=8;rows.append(row);}
+      }
       document.getElementById('session-counts').textContent=`${data.total} matching sessions · ${data.counts.active||0} active · ${data.counts.expired||0} expired · ${data.counts.terminated||0} terminated · ${data.counts.revoked||0} revoked`;
       const pages=document.getElementById('session-pagination'); pages.replaceChildren();
       const pageLink=(label,page)=>link(pages,label,'?'+new URLSearchParams({state:sessionsPanel.dataset.state,page}));
@@ -111,7 +133,8 @@ if(requestNotifications){
     try{
       const response=await fetch('/admin/api/notifications',{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});
       if(!response.ok)throw Error();const data=await response.json();
-      requestNotifications.textContent=`(${data.unread})`;requestNotifications.title='Unread access requests';
+      const pending=data.pending??data.unread;requestNotifications.textContent=`(${pending})`;requestNotifications.title='Pending access requests';
+      const changes=document.getElementById('request-changes');if(changes&&Number(changes.dataset.pending)!==pending)changes.hidden=false;
     }catch(_){requestNotifications.title='Notification count is stale. Refresh or sign in again.';}
     finally{busy=false;}
   };
@@ -168,4 +191,43 @@ if(maintenance && ['queued','running'].includes(maintenance.dataset.state)){
     finally{busy=false;}
   };
   refresh();setInterval(refresh,3000);
+}
+
+// Local UI preferences only: no access, authentication or code state is stored here.
+const setupNotice=document.getElementById('phone-setup');
+if(setupNotice){
+  try{setupNotice.hidden=window.localStorage.getItem('accessgate-phone-setup-dismissed')==='1';}catch(_){}
+  document.getElementById('dismiss-phone-setup').addEventListener('click',()=>{setupNotice.hidden=true;try{window.localStorage.setItem('accessgate-phone-setup-dismissed','1');}catch(_){}});
+}
+for(const form of document.querySelectorAll('.approval-form')){
+  const value=form.querySelector('[name=value]'),unit=form.querySelector('[name=unit]'),button=form.querySelector('.approval-submit'),preview=form.querySelector('.approval-preview');
+  const update=()=>{
+    const amount=Number(value.value),seconds=amount*(unit.value==='hours'?3600:60),valid=Number.isInteger(amount)&&amount>0&&seconds<=604800;
+    value.max=unit.value==='hours'?'168':'10080';button.disabled=!valid;
+    if(!valid)preview.textContent='Choose between 1 minute and 7 days.';
+    button.textContent=form.dataset.verb+' '+(valid?amount+' '+(unit.value==='hours'?(amount===1?'hour':'hours'):'min'):'access');
+    if(form.dataset.expires&&valid)preview.textContent='New end time: '+formatTime(Number(form.dataset.expires)+seconds)+'.';
+    for(const preset of form.querySelectorAll('[data-minutes]'))preset.setAttribute('aria-pressed',String(unit.value==='minutes'&&Number(preset.dataset.minutes)===amount));
+  };
+  for(const preset of form.querySelectorAll('[data-minutes]'))preset.addEventListener('click',()=>{value.value=preset.dataset.minutes;unit.value='minutes';update();});
+  form.addEventListener('input',update);update();
+}
+const weeklyPreset=document.getElementById('weekly-code-preset');
+if(weeklyPreset)weeklyPreset.addEventListener('click',()=>{
+  for(const [name,value] of Object.entries({count:'10',validity_value:'7',validity_unit:'days',access_value:'15',access_unit:'minutes'}))batchForm.elements[name].value=value;
+  batchForm.dispatchEvent(new Event('input',{bubbles:true}));
+});
+if(!sessionsPanel && document.querySelectorAll('[data-session-expires]').length){
+  const offset=(Number(document.body?.dataset.serverTime)||Date.now()/1000)-Date.now()/1000;
+  const tick=()=>document.querySelectorAll('[data-session-expires]').forEach(el=>{el.textContent=remainingTime(Number(el.dataset.sessionExpires)-Date.now()/1000-offset)+' remaining';});tick();setInterval(tick,1000);
+}
+const dashboardHealth=document.getElementById('dashboard-health');
+if(dashboardHealth){
+  const refresh=async()=>{try{
+    const response=await fetch('/admin/api/health',{cache:'no-store',redirect:'error',signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error();const data=await response.json();
+    dashboardHealth.className='health-summary '+(data.state==='failed'?'failed':data.state==='healthy'?'':'warning');
+    const issue=data.checks.find(check=>check.state!=='healthy');
+    document.getElementById('dashboard-health-text').textContent=data.stale?'System status is stale. Open System status to retry.':data.state==='healthy'?'System healthy':issue?issue.name+': '+issue.detail:'System needs attention.';
+  }catch(_){document.getElementById('dashboard-health-text').textContent='System status unavailable. Open System status to check.';}};
+  refresh();setInterval(refresh,30000);
 }

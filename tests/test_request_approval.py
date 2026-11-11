@@ -122,7 +122,7 @@ class RequestApprovalWebTests(BrowserWebFixture,unittest.TestCase):
         page=self.request('/admin/requests/'+rid,client=admin)
         item=self.store.request_detail(rid)
         self.assertIn(('/admin/codes/'+item['approval_code_id']).encode(),page.data)
-        self.assertIn(b'Terminate access',page.data)
+        self.assertIn(b'Stop access',page.data)
         self.assertIn(b'Approved access token',self.request('/admin/codes/'+item['approval_code_id'],client=admin).data)
         self.store.terminate_session(item['approval_session_id'])
         self.assertFalse(self.request('/request-access/status?request='+rid).json['active'])

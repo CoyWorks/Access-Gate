@@ -1,3 +1,9 @@
+# 0.15.0
+
+- Reorganize administration into Home, Requests, Sessions, Codes and More with desktop sidebar/phone bottom navigation.
+- Add request-first dashboard, inline duration decisions, session cards/shared history, handout-batch separation and code presets.
+- Group occasional tools, simplify the visitor shell and preserve access/security semantics and one-time exports. No schema change.
+
 # 0.14.0
 
 - Add an installable admin PWA, Home Screen icons and explicit per-browser push notification controls.

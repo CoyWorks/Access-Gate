@@ -49,6 +49,14 @@ async function scenario(ids,answer,fragment){
  assert.equal(row.children[7].children[0].href,'/admin/access/'+'a'.repeat(32)+'/extend');
  assert.equal(row.children[7].children[2].href,'/admin/access/'+'a'.repeat(32)+'/terminate');
  sessions.fail();await sessions.intervals[0]();assert.match(sessions.elements['session-refresh'].textContent,/stale/);
+ const cards=await scenario(['sessions-panel','session-refresh','session-counts','session-cards','session-pagination'],{
+  server_time:1000,total:1,counts:{active:1},page:1,pages:1,
+  items:[{session_id:'c'.repeat(32),ip:'10.40.22.99',batch_id:'b'.repeat(16),batch_name:'<script>unsafe()</script>',label:'<script>unsafe()</script>',hint:'ABCD',started:900,expires:1900,state:'active'}]
+ });
+ const card=cards.elements['session-cards'].children[0];assert.equal(card.tag,'article');
+ assert.equal(card.children[0].children[0].children[1].children[0].textContent,'<script>unsafe()</script>');
+ assert.equal(card.children[2].children[1].href,'/admin/sessions/'+'c'.repeat(32));
+ assert.equal(card.children[2].children[2].href,'/admin/access/'+'c'.repeat(32)+'/terminate');
  const health=await scenario(['system-health','health-time','health-version','health-state','health-rows'],{
   version:'0.6.0',state:'warning',checked_at:1000,stale:true,checks:[{name:'Clock',state:'unknown',detail:'Cannot verify.',action:'Check server.'}]
  });

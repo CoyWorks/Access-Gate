@@ -80,7 +80,7 @@ class ExclusionWebTests(BrowserWebFixture,unittest.TestCase):
         if activity:headers['X-Gate-Activity']='1'
         return self.client.get('/internal/gateway/check',base_url='http://127.0.0.1:8088',headers=headers,environ_overrides={'REMOTE_ADDR':'127.0.0.1'})
     def test_portal_has_login_link_and_login_returns_to_portal_without_code(self):
-        self.assertIn(b'>Sign in</a>',self.request().data)
+        self.assertIn(b'>Administrator sign in</a>',self.request().data)
         self.assertEqual(self.login(portal=True).headers['Location'],'/')
         page=self.request();self.assertIn(b'Access unrestricted',page.data)
         self.assertNotIn(b'name="code"',page.data)

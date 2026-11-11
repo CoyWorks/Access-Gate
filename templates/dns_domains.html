@@ -1,7 +1,13 @@
 {% extends 'base.html' %}{% block content %}
 <div class="page-heading"><div><p class="eyebrow">Administration</p><h1>DNS domains</h1></div><span class="badge">Target: {{ target_ip }}</span></div>
 <p>Build your Pi-hole hostname list here. Each enabled hostname points to <strong>{{ target_ip }}</strong>. The feeds update immediately when you edit this list; Pi-hole uses changes after fetching and applying them.</p>
-<div class="form-grid">
+<section><h2>Hostnames</h2><form method="get" action="{{ url_for('dns_domains') }}" class="toolbar"><div><label for="domain-search">Search hostnames</label><input id="domain-search" name="q" value="{{ domain_page.query }}" maxlength="253" placeholder="example.com"></div><button class="secondary">Search</button><a href="{{ url_for('dns_domains') }}">Clear search</a></form>
+<p>{{ domain_page.total }} matching hostnames · Page {{ domain_page.page }} of {{ domain_page.pages }} · Up to 100 rows per page</p>
+<div class="scroll"><table><thead><tr><th>Hostname</th><th>Match scope</th><th>Target</th><th>Export state</th><th>Actions</th></tr></thead><tbody>
+{% for d in domains %}<tr><td>{{ d.domain }}</td><td>{{ 'Domain + all subdomains' if d.include_subdomains else 'Exact hostname only' }}</td><td>{{ target_ip }}</td><td><span class="badge">{{ 'Enabled' if d.enabled else 'Disabled' }}</span></td><td><form method="post" action="{{ url_for('change_dns_domain') }}" class="domain-actions"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="domain" value="{{ d.domain }}"><button class="secondary" name="action" value="{{ 'disable' if d.enabled else 'enable' }}">{{ 'Disable' if d.enabled else 'Enable' }}</button><button class="secondary" name="action" value="{{ 'exact' if d.include_subdomains else 'subdomains' }}">{{ 'Use exact match' if d.include_subdomains else 'Include subdomains' }}</button><button class="secondary danger" name="action" value="delete">Delete</button></form></td></tr>
+{% else %}<tr><td colspan="5">No matching hostnames. Add a list above or clear the search.</td></tr>{% endfor %}
+</tbody></table></div><div class="pagination">{% if domain_page.page > 1 %}<a class="button secondary" href="{{ url_for('dns_domains', q=domain_page.query, page=domain_page.page-1) }}">Previous</a>{% endif %}{% if domain_page.page < domain_page.pages %}<a class="button secondary" href="{{ url_for('dns_domains', q=domain_page.query, page=domain_page.page+1) }}">Next</a>{% endif %}</div></section>
+<details class="help" {% if error or import_error %}open{% endif %}><summary>Add domains or import a list</summary><div class="form-grid">
 <section><h2>Add hostnames</h2>
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 <form method="post" action="{{ url_for('dns_domains') }}">
@@ -22,7 +28,7 @@
 <p><button>Import from URL</button></p>
 <small>Up to 32 MiB per download and 500,000 stored domains. Nothing is preloaded or periodically synced. Paste the URL again to import additions from a newer copy; source removals do not delete your existing rules.</small>
 </form></section></div>
-<section><h2>Feeds and exports</h2><p>{{ enabled_count }} enabled of {{ summary.total }} hostnames.</p>
+</details><details class="help"><summary>Pi-hole integration &amp; exports</summary><section><h2>Feeds and exports</h2><p>{{ enabled_count }} enabled of {{ summary.total }} hostnames.</p>
 <p><strong>Live hosts feed</strong><br><a href="http://{{ target_ip }}/domains.txt">http://{{ target_ip }}/domains.txt</a></p>
 <small>Available without login on the allowed local/VPN networks. Includes each enabled base/exact hostname in hosts format. Wildcard scopes cannot be represented in this format.</small>
 <p><strong>Live Pi-hole config</strong><br><a href="http://{{ target_ip }}/pihole.conf">http://{{ target_ip }}/pihole.conf</a></p>
@@ -33,11 +39,5 @@
 <p>Use local DNS configuration, not Pi-hole's adlists: adlists do not preserve a custom destination IP.</p>
 <p class="muted">These are IPv4 DNS mappings. HTTPS certificates, website forwarding and timed access still require the gateway setup.</p>
 </section>
-<section><h2>Hostnames</h2><form method="get" action="{{ url_for('dns_domains') }}" class="toolbar"><div><label for="domain-search">Search hostnames</label><input id="domain-search" name="q" value="{{ domain_page.query }}" maxlength="253" placeholder="example.com"></div><button class="secondary">Search</button><a href="{{ url_for('dns_domains') }}">Clear search</a></form>
-<p>{{ domain_page.total }} matching hostnames · Page {{ domain_page.page }} of {{ domain_page.pages }} · Up to 100 rows per page</p>
-<div class="scroll"><table><thead><tr><th>Hostname</th><th>Match scope</th><th>Target</th><th>Export state</th><th>Actions</th></tr></thead><tbody>
-{% for d in domains %}<tr><td>{{ d.domain }}</td><td>{{ 'Domain + all subdomains' if d.include_subdomains else 'Exact hostname only' }}</td><td>{{ target_ip }}</td><td><span class="badge">{{ 'Enabled' if d.enabled else 'Disabled' }}</span></td><td><form method="post" action="{{ url_for('change_dns_domain') }}" class="domain-actions"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="domain" value="{{ d.domain }}"><button class="secondary" name="action" value="{{ 'disable' if d.enabled else 'enable' }}">{{ 'Disable' if d.enabled else 'Enable' }}</button><button class="secondary" name="action" value="{{ 'exact' if d.include_subdomains else 'subdomains' }}">{{ 'Use exact match' if d.include_subdomains else 'Include subdomains' }}</button><button class="secondary danger" name="action" value="delete">Delete</button></form></td></tr>
-{% else %}<tr><td colspan="5">No matching hostnames. Add a list above or clear the search.</td></tr>{% endfor %}
-</tbody></table></div><div class="pagination">{% if domain_page.page > 1 %}<a class="button secondary" href="{{ url_for('dns_domains', q=domain_page.query, page=domain_page.page-1) }}">Previous</a>{% endif %}{% if domain_page.page < domain_page.pages %}<a class="button secondary" href="{{ url_for('dns_domains', q=domain_page.query, page=domain_page.page+1) }}">Next</a>{% endif %}</div></section>
 <section><h2>Pi-hole config preview</h2><p>First 50 enabled rules. Downloads and live feeds contain the complete enabled list, regardless of search or page.</p><pre class="dns-preview">{{ preview }}</pre></section>
-{% endblock %}
+</details>{% endblock %}

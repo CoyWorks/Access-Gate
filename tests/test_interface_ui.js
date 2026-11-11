@@ -1,0 +1,16 @@
+'use strict';
+const assert=require('node:assert/strict'),fs=require('node:fs'),vm=require('node:vm');
+const fields={value:{value:'15'},unit:{value:'minutes'}},button={},preview={};
+const presets=['15','30','60'].map(value=>({dataset:{minutes:value},attrs:{},addEventListener(name,fn){this[name]=fn;},setAttribute(name,value){this.attrs[name]=value;}}));
+const form={dataset:{verb:'Add',expires:'1000'},events:{},querySelector(selector){return selector==='[name=value]'?fields.value:selector==='[name=unit]'?fields.unit:selector==='.approval-submit'?button:preview;},querySelectorAll(){return presets;},addEventListener(name,fn){this.events[name]=fn;}};
+const batch={elements:Object.fromEntries(Object.entries({count:'3',validity_value:'2',validity_unit:'hours',access_value:'30',access_unit:'minutes'}).map(([name,value])=>[name,{value}])),events:{},addEventListener(name,fn){this.events[name]=fn;},dispatchEvent(event){this.events[event.type]();}};
+const weekly={addEventListener(name,fn){this[name]=fn;}},summary={};
+const elements={'batch-form':batch,'batch-summary':summary,'weekly-code-preset':weekly};
+const document={getElementById:id=>elements[id]||null,querySelectorAll:selector=>selector==='.approval-form'?[form]:[]};
+const context={document,window:{location:{}},Intl,Date,URL,URLSearchParams,AbortSignal,Event,FormData:class{constructor(form){this.form=form;}get(name){return this.form.elements[name].value;}},setInterval(){}};
+vm.runInNewContext(fs.readFileSync('static/gate.js','utf8'),context);
+assert.equal(button.textContent,'Add 15 min');assert.equal(presets[0].attrs['aria-pressed'],'true');assert.match(preview.textContent,/New end time/);
+presets[2].click();assert.equal(fields.value.value,'60');assert.equal(button.textContent,'Add 60 min');assert.equal(fields.unit.value,'minutes');
+fields.unit.value='hours';fields.value.value='999';form.events.input();assert.equal(button.disabled,true);assert.match(preview.textContent,/7 days/);
+weekly.click();assert.equal(batch.elements.count.value,'10');assert.equal(batch.elements.validity_value.value,'7');assert.equal(batch.elements.access_value.value,'15');assert.match(summary.textContent,/10 single-use codes/);
+console.log('Approval duration presets, active-access preview, duration limits and weekly code preset passed.');

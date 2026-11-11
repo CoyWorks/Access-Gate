@@ -1,6 +1,6 @@
 # Access Gate
 
-**Version 0.14.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+**Version 0.15.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
 Keep selected DNS names pointed at `10.40.22.5` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
 
@@ -245,3 +245,7 @@ Code generation also supports [printable/PDF cards and QR prefill](docs/EXPORTS.
 ## Phone administration
 
 Install the admin portal on your Home Screen and opt in to access-request notifications under **Phone app & notifications**. Android Chrome and iOS/iPadOS Home Screen web apps are supported; opening the private portal still requires VPN/local access and trusted HTTPS. See [PHONE_APP.md](docs/PHONE_APP.md) for installation, permissions, login expiry and test delivery.
+
+## Daily administration
+
+The request-first UI uses Home, Requests, Sessions, Codes and More, with a desktop sidebar and phone bottom navigation. Approval cards show duration presets and the global restricted-site scope. See [INTERFACE.md](docs/INTERFACE.md) for navigation, settings locations and validation.

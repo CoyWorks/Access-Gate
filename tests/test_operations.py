@@ -189,7 +189,7 @@ class OperationsWebTests(BrowserWebFixture,unittest.TestCase):
         self.login();self.assertEqual(self.request('/admin/api/notifications').json['unread'],1)
         self.assertIn(b'example.org',self.request('/admin/requests').data)
         path='/admin/requests/'+rid
-        self.assertIn(b'>Approve</button>',self.request(path).data)
+        self.assertIn(b'>Approve 15 min</button>',self.request(path).data)
         self.assertEqual(self.request(path,'POST',dict(csrf=self.csrf(),action='deny')).status_code,302)
         self.assertEqual(self.request('/admin/api/notifications').json['unread'],0)
         self.assertEqual(self.store.requests_page('a'*64)['items'][0]['state'],'denied')

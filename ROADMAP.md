@@ -65,3 +65,6 @@ Reviewed fixed-repository updates, persistent progress, clean-source identity an
 
 ### 0.14.0 — phone administration
 Installable admin PWA with opt-in, generic access-request Web Push, background delivery and existing Approve/Deny navigation. Real phone/provider acceptance uses the documented Send test workflow.
+
+### 0.15.0 — request-first interface
+Five-item navigation, inline request decisions, session/history cards and grouped settings are implemented. Approval scope remains global; #11 remains open. Browser screenshot acceptance remains an operator check due to preview environment restrictions.

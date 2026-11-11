@@ -207,7 +207,7 @@ class Operations:
             db.execute('BEGIN')
             total=db.execute('SELECT count(*) FROM access_requests'+where,params).fetchone()[0]
             pages=max(1,(total+49)//50);page=min(page,pages);params['offset']=(page-1)*50
-            rows=[dict(r) for r in db.execute('SELECT '+fields+' FROM access_requests'+where+' ORDER BY created DESC,id LIMIT 50 OFFSET :offset',params)]
+            rows=[dict(r) for r in db.execute('SELECT '+fields+' FROM access_requests'+where+(' ORDER BY created ASC,id' if state=='pending' else ' ORDER BY created DESC,id')+' LIMIT 50 OFFSET :offset',params)]
         return dict(items=rows,total=total,page=page,pages=pages)
 
     def notifications(self,now=None):
@@ -216,7 +216,8 @@ class Operations:
             where=" FROM access_requests WHERE status='pending' AND read_at IS NULL AND created>?"
             unread=db.execute('SELECT count(*)'+where,(now-86400,)).fetchone()[0]
             rows=db.execute('SELECT id,domain,created'+where+' ORDER BY created DESC LIMIT 5',(now-86400,)).fetchall()
-        return dict(unread=unread,items=[dict(r) for r in rows])
+            pending=db.execute("SELECT count(*) FROM access_requests WHERE status='pending' AND created>?",(now-86400,)).fetchone()[0]
+        return dict(unread=unread,pending=pending,items=[dict(r) for r in rows])
 
     def change_request(self,request_id,action,now=None):
         from .core import GateError
@@ -261,6 +262,8 @@ class Operations:
             row=db.execute('SELECT id,domain,label,reason,address,created,status,read_at,resolved_at,approval_seconds,approval_expires,approval_session_id,approval_code_id FROM access_requests WHERE id=?',(request_id,)).fetchone()
             if not row or row['created']<time.time()-self.activity_settings()['retention_days']*86400:raise GateError('Request not found.')
             item=dict(row)
+            existing=db.execute('SELECT g.expires FROM grants g JOIN codes c ON c.id=g.code JOIN batches b ON b.id=c.batch WHERE g.browser_hash=(SELECT browser_hash FROM access_requests WHERE id=?) AND g.revoked=0 AND c.revoked=0 AND b.revoked=0 AND g.expires>?',(request_id,time.time())).fetchone()
+            item['existing_expires']=existing['expires'] if existing else None
             active=db.execute('SELECT g.expires FROM grants g JOIN codes c ON c.id=g.code JOIN batches b ON b.id=c.batch WHERE g.session_id=? AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0',(item['approval_session_id'],time.time())).fetchone() if item['status']=='approved' else None
             item['session_active']=bool(active);item['current_expires']=active['expires'] if active else item['approval_expires']
             if item['status']=='pending' and item['created']<=time.time()-86400:item['status']='expired'
