@@ -1,4 +1,3 @@
-{% extends 'base.html' %}{% block content %}<h1>Stop this session?</h1>
-<section><p>Session <strong>{{ grant.session_id[:8] }}</strong> · {{ grant.batch_name }} · activation address {{ grant.ip }}.</p>
+{% extends 'base.html' %}{% from '_page.html' import page_header,codes_tabs,system_tabs,settings_tabs %}{% block content %}{{ page_header('Stop this session?','Access','Review the affected access before confirming.',[('Sessions',url_for('active_sessions')),('Session details',url_for('session_detail',session_id=grant.session_id)),('Stop access',none)]) }}<section><p>Session <strong>{{ grant.session_id[:8] }}</strong> · {{ grant.batch_name }} · activation address {{ grant.ip }}.</p>
 <p>This ends only this browser's grant. Its code remains used. The gateway denies new requests and closes its restricted connections on the next live check; already downloaded content remains available.</p>
 <form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="danger">Stop access</button> <a href="{{ url_for('session_detail',session_id=grant.session_id) }}">Cancel</a></form></section>{% endblock %}

@@ -1,3 +1,11 @@
+# 0.15.1
+
+- Standardize administration headers through shared breadcrumb/title/description/action components.
+- Keep Codes tabs visible and consistently selected on lists, details, create forms, confirmations and one-time output.
+- Apply the same structure to Requests, Sessions, restrictions, history, security, phone setup and system maintenance; add consistent System/Settings tabs.
+- Keep queued maintenance jobs in the correct navigation section without exposing private queue inputs.
+- Add rendered-page regression coverage for header structure, active tabs, export controls and validation-error layouts. No schema or access-policy changes.
+
 # 0.15.0
 
 - Reorganize administration into Home, Requests, Sessions, Codes and More with desktop sidebar/phone bottom navigation.

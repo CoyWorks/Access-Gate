@@ -1,0 +1,10 @@
+{% macro page_header(title,section,description='',crumbs=[]) -%}
+<div class="page-intro" data-page-section="{{ section }}">
+{% if crumbs %}<nav class="breadcrumbs" aria-label="Breadcrumb"><ol>{% for label,href in crumbs %}<li>{% if href %}<a href="{{ href }}">{{ label }}</a>{% else %}<span {% if loop.last %}aria-current="page"{% endif %}>{{ label }}</span>{% endif %}</li>{% endfor %}</ol></nav>{% endif %}
+<header class="page-heading"><div class="page-copy"><p class="eyebrow">{{ section }}</p><h1>{{ title }}</h1>{% if description %}<p class="page-description">{{ description }}</p>{% endif %}</div>{% if caller is defined %}<div class="page-actions">{{ caller() }}</div>{% endif %}</header>
+</div>
+{%- endmacro %}
+
+{% macro codes_tabs(active) -%}<nav class="tabs section-tabs" aria-label="Codes sections" data-section-navigation="codes">{% for key,label,endpoint in [('batches','Batches','batches'),('schedules','Schedules','schedules'),('records','All records','all_codes')] %}<a href="{{ url_for(endpoint) }}" {% if active==key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>{%- endmacro %}
+{% macro system_tabs(active) -%}<nav class="tabs section-tabs" aria-label="System sections" data-section-navigation="system">{% for key,label,endpoint in [('status','System status','system_status'),('updates','Updates','updates'),('recovery','Backup & restore','recovery')] %}<a href="{{ url_for(endpoint) }}" {% if active==key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>{%- endmacro %}
+{% macro settings_tabs(active) -%}<nav class="tabs section-tabs" aria-label="Settings sections" data-section-navigation="settings">{% for key,label,endpoint in [('security','Account & security','admin_settings'),('phone','Phone app & notifications','admin_app')] %}<a href="{{ url_for(endpoint) }}" {% if active==key %}aria-current="page"{% endif %}>{{ label }}</a>{% endfor %}</nav>{%- endmacro %}

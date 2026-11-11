@@ -141,7 +141,7 @@ class DNSExportWebTests(BrowserWebFixture, unittest.TestCase):
         self.login()
         self.assertEqual(self.request('/admin/dns-domains', 'POST', dict(csrf=self.csrf(), domains='Example.COM\nwww.example.com', scope='exact')).status_code, 302)
         page = self.request('/admin/dns-domains')
-        self.assertIn(b'DNS domains', page.data)
+        self.assertIn(b'Restricted domains', page.data)
         self.assertIn(b'2 enabled of 2', page.data)
         self.assertIn(b'host-record=example.com,10.40.22.5', page.data)
         for kind, filename in (('hosts', 'access-gate.hosts'), ('dnsmasq', '99-access-gate.conf')):

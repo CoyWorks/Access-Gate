@@ -56,8 +56,13 @@ class Jobs:
         if not JOB_ID.fullmatch(job_id):raise GateError('Invalid job identifier.')
         try:return json.loads(read_regular(self.root/'results'/(job_id+'.json'),8192))
         except FileNotFoundError:
-            if (self.root/'inbox'/(job_id+'.json')).is_file():return dict(id=job_id,state='queued',action='maintenance',message='Waiting for the maintenance worker.')
-            raise GateError('Maintenance job not found or expired.')
+            try:
+                pending=json.loads(read_regular(self.root/'inbox'/(job_id+'.json'),8192))
+                action=pending.get('action') if isinstance(pending,dict) else None
+            except (FileNotFoundError,ValueError):raise GateError('Maintenance job not found or expired.') from None
+            if not isinstance(action,str) or action not in ('backup','preflight','restore','update-check','update'):action='maintenance'
+            # Only this allowlisted action is exposed, never the queued passphrase/upload fields.
+            return dict(id=job_id,state='queued',action=action,message='Waiting for the maintenance worker.')
 
     def recent(self):
         try:files=sorted((self.root/'results').glob('*.json'),key=lambda p:p.stat().st_mtime,reverse=True)[:20]
