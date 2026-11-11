@@ -1,4 +1,4 @@
-"""Short-lived exact-host TLS certificates under an isolated intermediate CA."""
+"""Shared wildcard TLS contexts under an isolated intermediate CA."""
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -11,6 +11,7 @@ import ssl
 import tempfile
 import time
 
+from .public_suffix import PublicSuffix
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
@@ -38,13 +39,15 @@ class CacheEntry:
 
 
 class CertificateCache:
-    def __init__(self, config, restricted, metrics=None):
+    def __init__(self, config, restricted, metrics=None, group_for_host=None):
         self.metrics=metrics
         self.clock=time.monotonic
         self.utcnow=lambda:dt.datetime.now(dt.timezone.utc)
         self.ttl=86400;self.grace=300;self.renew_before=300
         self.lock=threading.RLock();self.pending={};self.worker=None;self.renew_task=None;self.stopping=False
         self.restricted = restricted
+        self.suffixes=PublicSuffix()
+        self.group_for_host=group_for_host or (lambda name:name if self.restricted(name) else None)
         self.portal_hosts = set(config['portal_hosts'])
         self.directory = Path(config['runtime_dir'])
         self.issuer = x509.load_pem_x509_certificate(Path(config['issuer_cert']).read_bytes())
@@ -72,7 +75,14 @@ class CertificateCache:
         return None
 
     def for_host(self, name):
+        from .dns_export import hostname
         lookup_start=self.clock()
+        requested=hostname(name)
+        name=self.group_for_host(requested)
+        if name is None:raise ValueError('The requested hostname is not managed.')
+        name=self.suffixes.safe_base(name)
+        if requested!=name and not (requested.endswith('.'+name) and requested.count('.')==name.count('.')+1):
+            raise ValueError('Wildcard group does not cover this hostname.')
         with self.lock:
             entry=self.cache.get(name)
             now=self.utcnow();age=self.clock()-entry.created if entry else None
@@ -136,6 +146,7 @@ class CertificateCache:
             finally:self.pending.pop(name,None)
 
     def generate(self,name):
+        name=self.suffixes.safe_base(name)
         now=self.utcnow()
         if expires(self.issuer)<now+dt.timedelta(hours=48,minutes=5):
             raise ValueError('Gateway issuing CA has insufficient lifetime for a full 48-hour certificate; run the supported installer/update provisioning to renew it.')
@@ -146,7 +157,7 @@ class CertificateCache:
             .not_valid_before(now-dt.timedelta(minutes=5))
             .not_valid_after(now+dt.timedelta(hours=48))
             .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
-            .add_extension(x509.SubjectAlternativeName([x509.DNSName(name)]), critical=False)
+            .add_extension(x509.SubjectAlternativeName([x509.DNSName(name),x509.DNSName("*."+name)]), critical=False)
             .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
             .add_extension(x509.KeyUsage(True, False, False, False, False, False, False, False, False), critical=True)
             .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(self.key.public_key()), critical=False)

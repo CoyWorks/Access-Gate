@@ -35,3 +35,14 @@ class DomainPolicy:
             candidate='.'.join(parts[index:])
             if candidate in self.suffix:return (candidate,True)
         return None
+
+
+    def certificate_group(self,value,suffixes):
+        rule=self.match(value)
+        if not rule:return None
+        boundary,children=rule
+        suffixes.safe_base(boundary)
+        if not children or value==boundary:return boundary
+        parent=value.split('.',1)[1]
+        # Exactly one wildcard label; never climb above a configured boundary.
+        return suffixes.safe_base(parent)

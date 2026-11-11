@@ -1,3 +1,8 @@
+# 0.25.0
+
+- Share intercepted TLS contexts by validated base/wildcard group, including apex SANs and correct deep-domain grouping (#34).
+- Preserve exact-domain/live access checks and reject unsafe public/private suffix bases using maintained libpsl data.
+
 # 0.24.0
 
 - Issue 48-hour intercepted website certificates with fixed 24-hour RAM residency and bounded background renewal (#33).

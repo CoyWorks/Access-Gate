@@ -352,7 +352,8 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_real_tls_leaf_matches_deep_hostname_and_unknown_hosts_fail_closed(self):
         reader, writer = await asyncio.open_connection('127.0.0.1', self.port, ssl=self.client_context, server_hostname='a.b.restricted.example')
         cert = writer.get_extra_info('ssl_object').getpeercert()
-        self.assertIn(('DNS', 'a.b.restricted.example'), cert['subjectAltName'])
+        self.assertIn(('DNS', 'b.restricted.example'), cert['subjectAltName'])
+        self.assertIn(('DNS', '*.b.restricted.example'), cert['subjectAltName'])
         writer.close(); await writer.wait_closed()
         with self.assertRaises((ssl.SSLError, ConnectionError)):
             await asyncio.open_connection('127.0.0.1', self.port, ssl=self.client_context, server_hostname='unmanaged.example')

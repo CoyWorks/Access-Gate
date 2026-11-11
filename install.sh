@@ -90,7 +90,7 @@ apt-get update
 extra_packages=()
 if [[ $GATE_WEB_MODE == dedicated ]]; then extra_packages+=(nginx); fi
 if [[ $GATE_DNS_MODE == builtin ]]; then extra_packages+=(python3-dnspython); fi
-apt-get install -y "${extra_packages[@]}" python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
+apt-get install -y "${extra_packages[@]}" libpsl5 python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
 if [[ $resume_install -eq 1 ]]; then
     for unit in access-gate-remote-domains.service access-gate-dns.service access-gate-dns-rules.service access-gate-push.service access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi

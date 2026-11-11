@@ -132,11 +132,14 @@ class Gateway(GatewayActivity):
         self.resolver = None
         self.performance=Metrics('remote' if self.remote else 'local')
         self.policy=None;self.policy_task=None;self.policy_lock=asyncio.Lock();self.policy_last_error=False
-        self.tls = CertificateCache(config,self.is_restricted_sync,metrics=self.performance)
+        self.tls = CertificateCache(config,self.is_restricted_sync,metrics=self.performance,group_for_host=self.certificate_group)
 
     def is_restricted_sync(self,host):
         with self.performance.measure('policy_lookup'):
             return bool(self.policy and self.policy.match(host))
+
+    def certificate_group(self,host):
+        return self.policy.certificate_group(host,self.tls.suffixes) if self.policy else None
 
     async def refresh_policy(self):
         async with self.policy_lock:
