@@ -255,3 +255,5 @@ The request-first UI uses Home, Requests, Sessions, Codes and More, with a deskt
 See [Deployment and service combinations](docs/DEPLOYMENTS.md) for supported topologies, port ownership, existing-service protection and proxy boundaries.
 
 [Public portal and private gateway deployment](docs/PUBLIC_PORTAL.md) is available as an explicit opt-in. Existing installations remain private/local unless configured through the documented root commands.
+
+Gateway latency diagnostics and benchmark procedure: [Performance](docs/PERFORMANCE.md).

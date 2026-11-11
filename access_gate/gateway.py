@@ -4,6 +4,7 @@ import argparse
 import contextlib
 import http.client
 import hashlib
+import hmac
 import ipaddress
 import json
 import math
@@ -23,6 +24,7 @@ from yarl import URL
 from .browser import origin
 from .gateway_activity import GatewayActivity
 from .gateway_tls import CertificateCache, expires
+from .performance import Metrics
 
 HOP = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
        'transfer-encoding', 'upgrade', 'alt-svc', 'alternate-protocol', 'proxy-connection'}
@@ -127,16 +129,22 @@ class Gateway(GatewayActivity):
         self.active_requests=0
         self.local = self.upstream = None
         self.resolver = None
-        self.tls = CertificateCache(config, self.is_restricted_sync)
+        self.performance=Metrics('remote' if self.remote else 'local')
+        self.tls = CertificateCache(config,self.is_restricted_sync,metrics=self.performance)
 
-    def is_restricted_sync(self, host):
+    def is_restricted_sync(self,host):
+        with self.performance.measure('policy_lookup') as sample:return self._is_restricted_sync(host,sample)
+
+    def _is_restricted_sync(self, host,sample):
         connection = http.client.HTTPSConnection(self.api_host,self.api_port,timeout=1,context=self.api_context) if self.remote else http.client.HTTPConnection(self.api_host,self.api_port,timeout=1)
         try:
             connection.request('GET', self.api_path('/internal/gateway/domain')+'?'+urlencode({'host':host}), headers=self.api_headers())
             response = connection.getresponse()
             data = response.read(16385)
-            return response.status == 200 and len(data) <= 16384 and json.loads(data).get('restricted') is True
-        except (OSError, ValueError, http.client.HTTPException): return False
+            if response.status!=200 or len(data)>16384:raise OSError('Policy lookup failed.')
+            return json.loads(data).get('restricted') is True
+        except (OSError, ValueError, http.client.HTTPException):
+            sample['failed']=True;self.performance.increment('policy_error');return False
         finally: connection.close()
 
     def api_path(self,path):
@@ -160,9 +168,23 @@ class Gateway(GatewayActivity):
         self.upstream = aiohttp.ClientSession(connector=connector, trust_env=False,
             cookie_jar=aiohttp.DummyCookieJar(), auto_decompress=False,
             skip_auto_headers={'Accept-Encoding'},
-            timeout=aiohttp.ClientTimeout(total=None, connect=10, sock_read=60))
+            timeout=aiohttp.ClientTimeout(total=None, connect=10, sock_read=60),trace_configs=[self.origin_trace()])
 
         self.start_activity()
+
+    def origin_trace(self):
+        trace=aiohttp.TraceConfig()
+        for start_signal,end_signal,stage in ((trace.on_dns_resolvehost_start,trace.on_dns_resolvehost_end,'origin_dns'),(trace.on_connection_create_start,trace.on_connection_create_end,'origin_connect_tls')):
+            async def start(session,ctx,params,label=stage):setattr(ctx,label,time.monotonic())
+            async def end(session,ctx,params,label=stage):
+                stamp=getattr(ctx,label,None)
+                if stamp is not None:self.performance.observe(label,time.monotonic()-stamp);delattr(ctx,label)
+            start_signal.append(start);end_signal.append(end)
+        async def failure(session,ctx,params):
+            for stage in ('origin_dns','origin_connect_tls'):
+                if hasattr(ctx,stage):self.performance.observe(stage,time.monotonic()-getattr(ctx,stage),True)
+        trace.on_request_exception.append(failure)
+        return trace
 
     async def stop(self, app):
         await self.stop_activity()
@@ -207,7 +229,10 @@ class Gateway(GatewayActivity):
             data = await read_limited(response.content, 65536)
             return response.status, CIMultiDict(response.headers), data
 
-    async def allowed(self, host, cookie, address=None, activity=False):
+    async def allowed(self,host,cookie,address=None,activity=False):
+        with self.performance.measure('authorization'):return await self._allowed(host,cookie,address,activity)
+
+    async def _allowed(self, host, cookie, address=None, activity=False):
         status, headers, data = await self.rpc('/internal/gateway/check', host, cookie, address, activity)
         if status in (401, 403): return False, None, headers
         if status != 200: raise OSError('Authorization service unavailable.')
@@ -250,6 +275,10 @@ class Gateway(GatewayActivity):
             if host in self.portal_hosts:
                 if sni is not None: raise web.HTTPMisdirectedRequest(text='TLS hostname mismatch.')
                 if request.path.startswith('/internal'): raise web.HTTPNotFound()
+                if request.path=='/__access_gate/performance':
+                    expected=self.config.get('local_api_key',self.key)
+                    if request.method!='GET' or not hmac.compare_digest(request.headers.get('X-Gate-Metrics-Key','').encode(),expected.encode()):raise web.HTTPForbidden()
+                    return web.json_response(self.performance.snapshot(),headers={'Cache-Control':'no-store'})
                 if request.path == '/__access_gate/health':
                     if self.remote:
                         status,_,data=await self.rpc('/internal/health',host)
@@ -311,10 +340,12 @@ class Gateway(GatewayActivity):
                 total+=len(chunk)
                 if total>limit:raise OSError('Request body limit exceeded.')
                 yield chunk
+        response_start=time.monotonic()
         async with self.local.request(request.method, self.api_url + request.raw_path, headers=headers,
                 data=bounded_body() if request.can_read_body else None,
                 timeout=aiohttp.ClientTimeout(total=180 if request.path=='/admin/recovery' else 45, connect=2, sock_read=45),
                 allow_redirects=False) as response:
+            self.performance.observe('portal_response_headers',time.monotonic()-response_start)
             result = web.StreamResponse(status=response.status, headers=safe_headers(response.headers))
             request[STARTED] = True
             await result.prepare(request)
@@ -333,10 +364,12 @@ class Gateway(GatewayActivity):
         return headers
 
     async def website(self, request, host, auth):
+        response_start=time.monotonic()
         async with self.upstream.request(request.method, self.upstream_url(request, host),
                 headers=self.website_headers(request, host, auth),
                 data=request.content.iter_chunked(65536) if request.can_read_body else None,
                 allow_redirects=False) as upstream:
+            self.performance.observe('origin_response_headers',time.monotonic()-response_start)
             self.queue_visit(request,host,auth,upstream.status)
             response = web.StreamResponse(status=upstream.status, headers=safe_headers(upstream.headers, upstream=True))
             request[STARTED] = True

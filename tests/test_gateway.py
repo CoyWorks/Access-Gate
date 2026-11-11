@@ -234,6 +234,14 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         self.client = aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=LoopbackResolver(), ssl=self.client_context),
             timeout=aiohttp.ClientTimeout(total=5))
 
+    async def test_performance_requires_private_machine_key(self):
+        response=await self.get(path='/__access_gate/performance')
+        self.assertEqual(response.status,403);await response.read()
+        response=await self.client.get(f'https://portal.example:{self.port}/__access_gate/performance',headers={'Host':'portal.example','X-Gate-Metrics-Key':self.config['api_key']})
+        self.assertEqual(response.status,200)
+        data=await response.json();self.assertEqual(data['format'],1)
+        self.assertNotIn('restricted.example',str(data))
+
     async def test_recovery_upload_streams_through_real_tls_gateway(self):
         jobs=self.flask.extensions['jobs'];jobs.root=self.root/'jobs';(jobs.root/'inbox').mkdir(parents=True)
         form=await self.get(path='/admin/login')

@@ -59,6 +59,19 @@ class Health:
                     self.certificate('Device root CA',root.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now)]
         finally: connection.close()
 
+    def performance(self):
+        target=urlsplit(self.config['portal_url']);context=ssl.create_default_context();context.load_verify_locations(cafile=self.ca_file)
+        connection=http.client.HTTPSConnection(target.hostname,443,timeout=1,context=context)
+        try:
+            connection.sock=context.wrap_socket(socket.create_connection(self.gateway_address,timeout=1),server_hostname=target.hostname)
+            connection.request('GET','/__access_gate/performance',headers={'X-Gate-Metrics-Key':self.config['acl_token'],'Connection':'close'})
+            response=connection.getresponse();data=response.read(32769)
+            if response.status!=200 or len(data)>32768:raise ValueError('Performance snapshot unavailable.')
+            result=json.loads(data)
+            if result.get('format')!=1:raise ValueError('Unknown snapshot format.')
+            return result
+        finally:connection.close()
+
     def collect(self):
         now=self.clock(); checks=[]
         try:

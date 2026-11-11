@@ -1,3 +1,8 @@
+# 0.22.0
+
+- Add bounded, private gateway latency aggregates and administrator performance diagnostics (#31).
+- Add an isolated cold/warm SNI callback benchmark and repeatable client measurement procedure.
+
 # 0.21.0
 
 - Add opt-in public portal TLS/ACME provisioning, verified renewal imports and private-by-default administration (#26).

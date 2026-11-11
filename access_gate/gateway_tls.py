@@ -1,5 +1,6 @@
 """Short-lived exact-host TLS certificates under an isolated intermediate CA."""
 from collections import OrderedDict
+from contextlib import nullcontext
 import datetime as dt
 from pathlib import Path
 import ssl
@@ -26,7 +27,8 @@ def server_context(cert, key=None):
 
 
 class CertificateCache:
-    def __init__(self, config, restricted):
+    def __init__(self, config, restricted, metrics=None):
+        self.metrics=metrics
         self.restricted = restricted
         self.portal_hosts = set(config['portal_hosts'])
         self.directory = Path(config['runtime_dir'])
@@ -55,13 +57,26 @@ class CertificateCache:
         return None
 
     def for_host(self, name):
+        lookup_start=time.monotonic()
         now = dt.datetime.now(dt.timezone.utc)
         if expires(self.issuer) <= now + dt.timedelta(minutes=5): raise ValueError('Gateway issuer has expired.')
         if name in self.cache:
             stamp, context = self.cache.pop(name)
             if stamp > time.monotonic():
                 self.cache[name] = (stamp, context)
+                if self.metrics:self.metrics.observe('certificate_hit',time.monotonic()-lookup_start)
                 return context
+        if self.metrics:self.metrics.observe('certificate_miss',time.monotonic()-lookup_start)
+        with self.metrics.measure('certificate_generate') if self.metrics else nullcontext():
+            context=self.generate(name)
+        self.cache[name]=(time.monotonic()+1800,context)
+        while len(self.cache)>self.limit:
+            self.cache.popitem(last=False)
+            if self.metrics:self.metrics.increment('cache_eviction')
+        return context
+
+    def generate(self,name):
+        now=dt.datetime.now(dt.timezone.utc)
         key = ec.generate_private_key(ec.SECP256R1())
         certificate = (x509.CertificateBuilder()
             .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, 'Access Gate website')]))
@@ -80,6 +95,4 @@ class CertificateCache:
         with tempfile.NamedTemporaryFile(dir=self.directory, prefix='leaf-', suffix='.pem') as handle:
             handle.write(pem); handle.flush()
             context = server_context(handle.name)
-        self.cache[name] = (time.monotonic()+1800, context)
-        while len(self.cache) > self.limit: self.cache.popitem(last=False)
         return context

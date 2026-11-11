@@ -1,6 +1,7 @@
 import datetime as dt
 import functools
 import hmac
+import http.client
 import ipaddress
 import json
 import os
@@ -523,6 +524,19 @@ def create_app(config=None):
     @admin_only
     def system_status():
         return render_template('system.html',health=health.snapshot())
+
+    @app.get('/admin/performance')
+    @admin_only
+    def performance_page():
+        try:result=health.performance()
+        except (OSError,ValueError,http.client.HTTPException):result=None
+        return render_template('performance.html',performance=result)
+
+    @app.get('/admin/api/performance')
+    @admin_only
+    def performance_data():
+        try:return jsonify(health.performance())
+        except (OSError,ValueError,http.client.HTTPException):return jsonify(state='unavailable'),503
 
     @app.get('/admin/api/health')
     @admin_only
