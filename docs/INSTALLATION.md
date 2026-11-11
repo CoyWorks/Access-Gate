@@ -2,6 +2,12 @@
 
 Use a dedicated Ubuntu 24.04 server with a stable IPv4 address (static or DHCP reservation). This release supports a single-host portal and gateway, not arbitrary public reverse proxies or remote authorization servers. Devices must reach this address and trust the installation's CA.
 
+## Interactive installation
+
+Run `sudo bash install.sh` from the cloned source. Choose existing Pi-hole or external DNS (or customize that integration), select the detected server address, enter the portal hostname/IP and client/management CIDRs, review the plan and type INSTALL. Then choose or generate the administrator password. Built-in DNS is tracked in #24 and is not selectable yet.
+
+Installation preflight checks local addresses and TCP 80/443/8088/8089 before apt or service changes. Initial deployment choices are checkpointed privately under /var/lib/access-gate/installation. Use `sudo bash resume.sh` after correcting an interrupted installation; it reuses the checkpoint rather than asking for another environment. Existing complete installations use update.sh. Service choices persist across resume/update.
+
 ## Deployment profile
 
 Create a root-readable JSON profile outside the source checkout. These values are examples:
@@ -9,6 +15,7 @@ Create a root-readable JSON profile outside the source checkout. These values ar
 ```json
 {
   "deployment_version": 1,
+  "dns_mode": "external-pihole",
   "server_ipv4": "192.168.10.20",
   "listen_ipv4": "192.168.10.20",
   "dns_target_ipv4": "192.168.10.20",
@@ -24,6 +31,8 @@ The three IPv4 settings must currently match an address assigned to this server.
 ```bash
 sudo env ACCESS_GATE_INSTALL_CONFIG=/root/access-gate-install.json bash install.sh
 ```
+
+For unattended installation, optionally add `admin_password_file` pointing to a root-owned regular mode-0600 file containing an 8–256 character password. Otherwise a password is generated. Never pass passwords in command-line arguments. The input password is not copied into the reusable profile or installed configuration; a private temporary checkpoint is removed once credentials are stored.
 
 The profile contains deployment settings, not generated secrets. The installer generates credentials and a unique CA locally. Review the completion output and verify its CA fingerprint before trusting the certificate on devices. Configure external DNS using the exported /pihole.conf and permit clients to reach TCP 80/443. Select network ranges deliberately; do not allow all addresses for convenience.
 

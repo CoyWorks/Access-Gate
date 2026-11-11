@@ -29,15 +29,22 @@ for required_item in access_gate access_gate/gateway.py access_gate/gateway_tls.
     fi
 done
 plan_file=$(mktemp /run/access-gate-plan.XXXXXX)
-trap 'rm -f -- "$plan_file"' EXIT
-if [[ $resume_install -eq 1 ]]; then
-    plan_source=/etc/access-gate/config.json
-    (cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment plan "$plan_source") > "$plan_file"
+trap 'rm -f -- "$plan_file" "$plan_file.password"' EXIT
+saved_profile=/var/lib/access-gate/installation/profile.json
+if [[ $resume_install -eq 1 && ! -e /etc/access-gate/config.json && -f $saved_profile ]]; then
+    echo 'Resuming an interrupted initial installation with its saved deployment profile.'
+    cp -- "$saved_profile" "$plan_file"
+    if [[ -f $saved_profile.password ]]; then cp -- "$saved_profile.password" "$plan_file.password"; fi
+    resume_install=0
+elif [[ $resume_install -eq 1 ]]; then
+    (cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment plan /etc/access-gate/config.json) > "$plan_file"
 else
-    if [[ -z ${ACCESS_GATE_INSTALL_CONFIG:-} ]]; then
-        echo 'Set ACCESS_GATE_INSTALL_CONFIG to a deployment profile. See docs/INSTALLATION.md.' >&2; exit 1
+    if [[ -e /etc/access-gate/config.json ]]; then echo 'Access Gate already exists. Use update.sh or resume.sh.' >&2; exit 1; fi
+    if [[ -n ${ACCESS_GATE_INSTALL_CONFIG:-} ]]; then
+        (cd "$bundle_dir" && /usr/bin/python3 -m access_gate.installer "$plan_file" --profile "$ACCESS_GATE_INSTALL_CONFIG")
+    else
+        (cd "$bundle_dir" && /usr/bin/python3 -m access_gate.installer "$plan_file")
     fi
-    (cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment plan "$ACCESS_GATE_INSTALL_CONFIG" --new) > "$plan_file"
 fi
 eval "$(cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment shell "$plan_file")"
 if ! ip -j -4 addr show | /usr/bin/python3 -c 'import json,sys; address=sys.argv[1]; sys.exit(not any(a.get("local")==address for i in json.load(sys.stdin) for a in i.get("addr_info",[])))' "$GATE_SERVER_IP"; then
@@ -49,7 +56,7 @@ if [[ $resume_install -eq 1 ]]; then
             echo "Cannot resume: missing /etc/access-gate/$state_file. Existing state has not been replaced." >&2; exit 1
         fi
     done
-    if [[ ! -s /var/lib/access-gate/data/gate.sqlite3 ]]; then
+    if [[ ! -s /var/lib/access-gate/data/gate.sqlite3 && ( ! -f $saved_profile || -f /var/lib/access-gate/installation/complete ) ]]; then
         echo 'Cannot resume: the existing database is missing. No credentials or certificates were regenerated.' >&2; exit 1
     fi
     /usr/bin/python3 - <<'PY'
@@ -71,6 +78,11 @@ else
     if ss -H -lnt | awk '{print $4}' | grep -Eq ':(80|443|8088)$'; then
         echo 'A required port is in use. Use a dedicated VM.' >&2; exit 1
     fi
+fi
+if [[ $resume_install -eq 0 ]]; then
+    install -d -m 0700 /var/lib/access-gate/installation
+    install -m 0600 "$plan_file" "$saved_profile"
+    if [[ -f $plan_file.password ]]; then install -m 0600 "$plan_file.password" "$saved_profile.password"; fi
 fi
 /usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" check
 export DEBIAN_FRONTEND=noninteractive
@@ -100,10 +112,15 @@ chown -R root:root /opt/access-gate
 chmod -R go-w /opt/access-gate
 
 if [[ $resume_install -eq 0 ]]; then
+if [[ -e /etc/access-gate/ca/root.key && ! -s /etc/access-gate/ca/root.crt ]] || [[ -e /etc/access-gate/ca/root.crt && ! -s /etc/access-gate/ca/root.key ]]; then
+    echo 'Incomplete CA state; restore the matching certificate/key before resuming.' >&2; exit 1
+fi
+if [[ ! -s /etc/access-gate/ca/root.key ]]; then
 openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 3650 \
     -keyout /etc/access-gate/ca/root.key -out /etc/access-gate/ca/root.crt \
     -subj '/CN=Access Gate Root CA' \
     -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign'
+fi
 chown root:root /etc/access-gate/ca/root.key /etc/access-gate/ca/root.crt
 chmod 0640 /etc/access-gate/ca/root.key
 chmod 0644 /etc/access-gate/ca/root.crt
@@ -122,7 +139,8 @@ import json, secrets, os, sys
 from pathlib import Path
 from werkzeug.security import generate_password_hash
 from access_gate.core import Store
-password = secrets.token_urlsafe(20)
+password_file=Path(sys.argv[1]+'.password')
+password = password_file.read_text() if password_file.exists() else secrets.token_urlsafe(20)
 config = dict(secret=secrets.token_hex(32), pepper=secrets.token_hex(32),
               acl_token=secrets.token_hex(32), admin_hash=generate_password_hash(password),
               database='/var/lib/access-gate/data/gate.sqlite3',
@@ -132,6 +150,7 @@ Path('/etc/access-gate/acl-token').write_text(config['acl_token']+'\n')
 Path('/root/access-gate-initial-login.txt').write_text(config['portal_url']+'/admin\nAdmin password: '+password+'\n')
 os.chmod('/root/access-gate-initial-login.txt',0o600)
 Store(config['database'],config['pepper']).initialize()
+Path('/var/lib/access-gate/installation/profile.json.password').unlink(missing_ok=True)
 PY
 else
     echo 'Reusing the existing configuration, database, admin password and certificates.'
@@ -301,3 +320,10 @@ else
     echo "Admin portal: $GATE_PORTAL_URL/admin (existing password unchanged)."
 fi
 printf '\nHTTPS gateway ready. Point restricted DNS names to %s and trust the retained root CA on your devices. See docs/GATEWAY.md.\n' "$GATE_SERVER_IP"
+
+openssl x509 -in /etc/access-gate/ca/root.crt -noout -sha256 -fingerprint
+printf 'Pi-hole feed URL: http://%s/pihole.conf\nDNS target IPv4: %s\n' "$GATE_SERVER_IP" "$GATE_SERVER_IP"
+echo 'Configure portal hostname DNS (if used) and permit selected client networks to TCP 80/443.'
+install -d -m 0700 /var/lib/access-gate/installation
+touch /var/lib/access-gate/installation/complete
+chmod 0600 /var/lib/access-gate/installation/complete

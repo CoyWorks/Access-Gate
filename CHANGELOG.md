@@ -1,3 +1,9 @@
+# 0.17.0
+
+- Add interactive and unattended installation planning with explicit network review, protected password input and persisted DNS component choice (#22).
+- Check addresses/ports before package changes; retain a private initial-install checkpoint for resume and print deployment-specific completion instructions.
+- Built-in DNS is a separate component tracked in #24; it is not selectable until available.
+
 # 0.16.0
 
 - Centralize deployment identity, listeners, DNS target, portal aliases and network policy (#21).
