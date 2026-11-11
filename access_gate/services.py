@@ -16,6 +16,18 @@ def conflicts(c,listener):
     address,port=endpoint(listener)
     required={80,443,8088,8089}|({53} if c['dns_mode']=='builtin' else set())
     if port not in required:return False
+    # The built-in resolver binds one IPv4 address. A loopback stub (or a
+    # listener on another LAN address) does not occupy that socket, regardless
+    # of whether the web server is dedicated or shared.
+    if port==53:
+        if address in ('*','0.0.0.0','::',''):return True
+        try:
+            bound=ipaddress.ip_address(address)
+        except ValueError:
+            return True  # Unknown ss address syntax must fail closed.
+        if isinstance(bound,ipaddress.IPv6Address):
+            bound=bound.ipv4_mapped
+        return bound==ipaddress.ip_address(c['listen_ipv4'])
     if c.get('web_mode','dedicated')=='dedicated':return True
     # A wildcard socket may also occupy IPv4 when shown as [::]. Reject both.
     if address in ('*','0.0.0.0','::',''):return True

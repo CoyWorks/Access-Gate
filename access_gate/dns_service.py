@@ -155,16 +155,48 @@ def servers(config,resolver,port=53):
     return udp,tcp
 
 
+class DNSReadinessError(RuntimeError):pass
+
+
+def wait_for_dns(config,timeout=30,interval=1,clock=time.monotonic,sleep=time.sleep,query=None):
+    """Wait for valid local answers over both transports within one deadline."""
+    if timeout<=0 or interval<=0:raise ValueError('DNS readiness timeout and interval must be positive.')
+    if not config['portal_names']:raise ValueError('DNS portal name is missing.')
+    if query is None:query=dns.message.make_query(config['portal_names'][0],'A')
+    deadline=clock()+timeout
+    last='No DNS response received.'
+    while True:
+        for transport_name,transport in (('UDP',dns.query.udp),('TCP',dns.query.tcp)):
+            remaining=deadline-clock()
+            if remaining<=0:
+                raise DNSReadinessError(f'DNS listener did not become ready within {timeout} seconds. Last result: {last}')
+            try:
+                response=transport(query,config['listen_ipv4'],timeout=min(3,remaining))
+            except (dns.exception.Timeout,OSError) as exc:
+                last=f'{transport_name}: {exc or type(exc).__name__}'
+                break
+            if response.rcode()!=dns.rcode.NOERROR or not any(
+                rrset.name==query.question[0].name and rrset.rdtype==dns.rdatatype.A
+                and any(str(record)==config['dns_target_ipv4'] for record in rrset)
+                for rrset in response.answer
+            ):
+                raise DNSReadinessError(f'{transport_name} listener returned an unexpected answer for {config["portal_names"][0]}.')
+        else:
+            return
+        remaining=deadline-clock()
+        if remaining<=0:
+            raise DNSReadinessError(f'DNS listener did not become ready within {timeout} seconds. Last result: {last}')
+        sleep(min(interval,remaining))
+
+
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('--check',action='store_true');parser.add_argument('--probe',action='store_true');args=parser.parse_args()
     c=read_json('/etc/access-gate/dns.json',65536)
     resolver=Resolver(c,Rules('/var/lib/access-gate/dns/rules.json'))
     if args.check:return
     if args.probe:
-        name=c['portal_names'][0]
-        for transport in (dns.query.udp,dns.query.tcp):
-            response=transport(dns.message.make_query(name,'A'),c['listen_ipv4'],timeout=3)
-            if response.rcode()!=dns.rcode.NOERROR or not any(str(record)==c['dns_target_ipv4'] for rrset in response.answer for record in rrset):raise ValueError('DNS listener did not return the configured local portal address.')
+        try:wait_for_dns(c)
+        except DNSReadinessError as exc:raise SystemExit('DNS readiness failed: '+str(exc)) from exc
         print('DNS UDP/TCP listener verification passed.')
         return
     udp,tcp=servers(c,resolver)

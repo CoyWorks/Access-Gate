@@ -368,7 +368,12 @@ if [[ $GATE_DNS_MODE == builtin ]]; then
     systemctl enable access-gate-dns-rules.service access-gate-dns.service
     systemctl restart access-gate-dns-rules.service access-gate-dns.service
     systemctl is-active access-gate-dns-rules.service access-gate-dns.service
-    /usr/bin/python3 -m access_gate.dns_service --probe
+    if ! /usr/bin/python3 -m access_gate.dns_service --probe; then
+        echo 'Built-in DNS did not become ready. Recent service logs:' >&2
+        journalctl -u access-gate-dns.service -u access-gate-dns-rules.service -n 60 --no-pager >&2 || true
+        echo 'Correct the reported DNS error, then rerun update.sh. Existing configuration and data are retained.' >&2
+        exit 1
+    fi
 fi
 systemctl is-active access-gate.service nginx.service access-gate-gateway.service access-gate-scheduler.service access-gate-push.service
 if ! /usr/bin/python3 -m access_gate.readiness; then
