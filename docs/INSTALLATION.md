@@ -40,8 +40,23 @@ The profile contains deployment settings, not generated secrets. The installer g
 
 Run the usual update.sh. Pre-portability configurations are migrated to their actual legacy listener/target, retained portal URL/aliases and existing permitted networks. Existing administrator policy in the database continues to apply. Certificates, root CA, passwords, codes and database are retained. Update and resume do not take deployment settings from an installation profile.
 
-Configuration is stored in /etc/access-gate/config.json. Do not hand-edit deployment fields on a working installation: generated configuration and portal certificates must be updated together. A safe reconfigure workflow is tracked separately in #23.
+Configuration is stored in /etc/access-gate/config.json. Do not hand-edit deployment fields on a working installation: generated configuration and portal certificates must be updated together. Use the safe reconfigure workflow below.
 
 ## Validation
 
 After installation, check portal/gateway/nginx service status, verified HTTPS readiness, one restricted and one unrelated DNS lookup, and an actual client code/revoke flow. Local health checks do not prove all client paths work. A fresh-host installation still needs real system integration validation; unit tests do not exercise apt/systemd on the target server.
+
+## Reconfigure an installed server
+
+From the installed application directory:
+
+```bash
+cd /opt/access-gate
+sudo python3 -m access_gate.reconfigure
+```
+
+Review the changes and type RECONFIGURE. Assign a new server IP in Ubuntu first; this command does not modify host networking. Alternatively supply `--profile /root/deployment-changes.json` containing only changed deployment fields. `--check` validates/shows the plan without applying it; `--yes` explicitly confirms unattended changes. Component selection is not a deployment-address change.
+
+The command uses the shared maintenance lock, privately stages certificate/gateway/nginx configuration, tests nginx syntax, backs up managed files and verifies HTTPS readiness after restart. On activation failure it restores previous files and verifies rollback readiness; if that also fails, use the printed root-only rollback directory and inspect systemd logs. Existing CA and code records are preserved. Root rollback copies contain private keys and are retained for deliberate operator cleanup.
+
+A changed portal origin clears admin logins and push subscriptions. Sign in again and reinstall/re-enroll the phone app as necessary. Visitor cookies belong to an origin; users who lose their portal browser identity may need a fresh code. IP changes require external DNS, Pi-hole sync URL/target and firewall changes; those are never applied remotely by this command. A successful local readiness check does not prove external clients have been updated.

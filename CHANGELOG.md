@@ -1,3 +1,9 @@
+# 0.18.0
+
+- Add root-only deployment reconfiguration with private staging, retained CA, generated portal certificate SANs and nginx validation (#23).
+- Share maintenance locking, verify new HTTPS readiness and restore prior managed files on activation failure.
+- Apply explicit management-network changes, invalidate admin/push enrollment on portal-origin changes and document client migration/recovery.
+
 # 0.17.0
 
 - Add interactive and unattended installation planning with explicit network review, protected password input and persisted DNS component choice (#22).
