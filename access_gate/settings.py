@@ -11,19 +11,8 @@ from urllib.parse import urlsplit
 def validate(config):
     for name in ('secret','pepper','admin_hash','acl_token','database'):
         if not isinstance(config.get(name),str) or not config[name]: raise ValueError('Missing portal setting: '+name)
-    config=dict(config)
-    config.setdefault('portal_url','https://10.40.22.5')
-    config.setdefault('client_networks',['10.40.0.0/16','127.0.0.1/32','::1/128'])
-    url=urlsplit(config['portal_url'])
-    host=url.hostname or ''
-    if url.scheme!='https' or url.username or url.password or url.port not in (None,443) or url.path not in ('','/') or url.query or url.fragment:
-        raise ValueError('portal_url must be an HTTPS origin without a path, credentials or a query.')
-    try: ipaddress.ip_address(host)
-    except ValueError:
-        if not host or len(host)>253 or not all(re.fullmatch(r'[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?',part) for part in host.split('.')): raise ValueError('Invalid portal hostname.')
-    config['portal_url']=config['portal_url'].rstrip('/')
-    if not isinstance(config['client_networks'],list) or not config['client_networks']: raise ValueError('At least one client network is required.')
-    config['client_networks']=[str(ipaddress.ip_network(n)) for n in config['client_networks']]
+    from .deployment import normalize
+    config=normalize(config)
     if 'admin_networks' in config:
         from .administration import management_networks
         if not isinstance(config['admin_networks'],list): raise ValueError('admin_networks must be a list of networks.')

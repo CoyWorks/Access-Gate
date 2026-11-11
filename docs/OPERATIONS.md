@@ -73,7 +73,7 @@ The home page has **Download CA certificate**, available before code entry/login
 For first-time trust setup when the browser cannot yet open the HTTPS portal, the existing direct HTTP bootstrap URL remains:
 
 ```text
-http://10.40.22.5/ca.crt
+http://192.168.10.20/ca.crt
 ```
 
 After installing/trusting the CA on the device, use the HTTPS portal link normally. See [GATEWAY.md](GATEWAY.md) for device/website checks and [EXCLUSIONS.md](EXCLUSIONS.md) for browser/IP bypass behavior.

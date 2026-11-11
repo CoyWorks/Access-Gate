@@ -1,12 +1,14 @@
 # Access Gate
 
-**Version 0.15.1.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
-Keep selected DNS names pointed at `10.40.22.5` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
+Deployment addresses below are examples. Start with [Installation](docs/INSTALLATION.md); configure your own address, portal identity and permitted networks. Existing installations retain their original settings.
+**Version 0.16.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+
+Keep selected DNS names pointed at `192.168.10.20` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
 
 ## Current deployment
 
-Ubuntu Server 24.04 on `10.40.22.5/24`, gateway `10.40.22.1`. The portal is available at `https://10.40.22.5/`; administration is at `/admin`. The default client range `10.40.0.0/16` covers the existing local and VPN networks without registering individual addresses. The same browser keeps its access deadline when switching between Wi-Fi and VPN.
+Ubuntu Server 24.04 on `192.168.10.20/24`, gateway `192.168.10.1`. The portal is available at `https://192.168.10.20/`; administration is at `/admin`. The default client range `192.168.0.0/16` covers the existing local and VPN networks without registering individual addresses. The same browser keeps its access deadline when switching between Wi-Fi and VPN.
 
 Different browsers have independent sessions, even on the same IP address. Deleting cookies or changing browsers requires a new unused code. An IP address alone never proves browser access.
 
@@ -43,7 +45,7 @@ Enter and confirm the new password (at least 8 characters); input is hidden and 
 
 ## Access exclusions
 
-Signed-in administrators bypass the code requirement in their browser. The normal portal includes Sign in/Sign out; logins last seven idle days and renew with portal/website use. In **Settings → Access exclusions**, add individual addresses (`10.40.32.20/32`) or networks (`10.40.32.0/24`) that should bypass the code requirement without gaining administrator permissions. Leave empty to disable IP exclusions. See [Exclusions, rolling login and enforcement](docs/EXCLUSIONS.md) for trusted-address/VPN/NAT behavior, cookie scope, logout and recovery.
+Signed-in administrators bypass the code requirement in their browser. The normal portal includes Sign in/Sign out; logins last seven idle days and renew with portal/website use. In **Settings → Access exclusions**, add individual addresses (`192.168.20.20/32`) or networks (`192.168.20.0/24`) that should bypass the code requirement without gaining administrator permissions. Leave empty to disable IP exclusions. See [Exclusions, rolling login and enforcement](docs/EXCLUSIONS.md) for trusted-address/VPN/NAT behavior, cookie scope, logout and recovery.
 
 ## Administration
 
@@ -115,7 +117,7 @@ Version 0.5 installs the enforcement gateway alongside the portal. An enabled do
 
 ### Build your Pi-hole domain list
 
-In administration, open **DNS domains** and paste one domain per line. **Domain + all subdomains** is selected by default: `example.com` or `*.example.com` covers the base domain, `www.example.com` and deeper names such as `a.b.example.com`. Choose **Exact hostname only** when needed. Every enabled record points to the fixed target `10.40.22.5`.
+In administration, open **DNS domains** and paste one domain per line. **Domain + all subdomains** is selected by default: `example.com` or `*.example.com` covers the base domain, `www.example.com` and deeper names such as `a.b.example.com`. Choose **Exact hostname only** when needed. Every enabled record points to the configured target `192.168.10.20`.
 
 You can enable/disable, delete or change the match scope of each entry. Adding duplicates keeps their current state/scope. Up to 500,000 entries are stored in SQLite and survive updates/restarts; historical 0.3 rules are not silently reactivated. Search and 100-row pages keep large lists manageable. The preview shows the first 50 enabled rules; feeds/downloads always contain every enabled rule. Code management and browser grants remain independent of this list.
 
@@ -127,7 +129,7 @@ Under **DNS domains → Import a blocklist URL**, paste a public HTTPS raw-text 
 https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts
 ```
 
-The server downloads and parses the list only when submitted by an administrator. It supports hosts rows (`0.0.0.0 example.com`, including multiple aliases), one-domain-per-line lists and simple `||example.com^` rules. Comments, source IPs and local host boilerplate are ignored. Unsupported filters/options/exceptions are skipped and counted. The chosen scope applies to new domains, with **Domain + all subdomains** as the default; existing rows retain their state and scope. Every enabled imported domain uses our fixed target `10.40.22.5`, regardless of the original file's addresses.
+The server downloads and parses the list only when submitted by an administrator. It supports hosts rows (`0.0.0.0 example.com`, including multiple aliases), one-domain-per-line lists and simple `||example.com^` rules. Comments, source IPs and local host boilerplate are ignored. Unsupported filters/options/exceptions are skipped and counted. The chosen scope applies to new domains, with **Domain + all subdomains** as the default; existing rows retain their state and scope. Every enabled imported domain uses our configured target `192.168.10.20`, regardless of the original file's addresses.
 
 The result reports new domains, existing entries, source duplicates and skipped entries. Imports are additive and atomic: fetching/parsing/limit failures do not modify the saved list. Reimport a URL to add newly listed domains; source removals do not delete saved entries. No list is preloaded, and no source subscription or periodic synchronization is installed.
 
@@ -139,14 +141,14 @@ Two read-only feeds are available without login from the configured local/VPN cl
 
 | URL | Content |
 | --- | --- |
-| `http://10.40.22.5/domains.txt` | Hosts-format feed: `10.40.22.5 example.com`. Includes each enabled base/exact hostname. A hosts file cannot express the configured wildcard scopes. |
-| `http://10.40.22.5/pihole.conf` | dnsmasq configuration preserving the target IP and every configured subdomain scope. Use this for whole-domain DNS redirection. |
+| `http://192.168.10.20/domains.txt` | Hosts-format feed: `192.168.10.20 example.com`. Includes each enabled base/exact hostname. A hosts file cannot express the configured wildcard scopes. |
+| `http://192.168.10.20/pihole.conf` | dnsmasq configuration preserving the target IP and every configured subdomain scope. Use this for whole-domain DNS redirection. |
 
 These paths serve plain text over HTTP without an HTTPS/login redirect, even when the portal uses a canonical hostname. The administration pages still require HTTPS and administrator sign-in. Both feeds are also served through the gateway's portal HTTPS listener. They expose only enabled domain rules, not credentials, codes or sessions.
 
 **Download Pi-hole config** still produces a file snapshot. The strict hosts-file download is available only when all enabled entries are exact matches, while `/domains.txt` always publishes the explicitly listed base/exact names with a comment explaining the wildcard limitation.
 
-Pi-hole's ordinary adlist import extracts domain names for blocking; it does not keep the IP mapping from a hosts list. Its DNS answer follows Pi-hole's blocking mode. For the requested `10.40.22.5` destination and whole-domain coverage, fetch `/pihole.conf` and apply it as local DNS configuration. The feeds update automatically in Access Gate, but Pi-hole still needs to fetch and apply a new copy; this release does not install a poller or change Pi-hole's global blocking mode.
+Pi-hole's ordinary adlist import extracts domain names for blocking; it does not keep the IP mapping from a hosts list. Its DNS answer follows Pi-hole's blocking mode. For the requested `192.168.10.20` destination and whole-domain coverage, fetch `/pihole.conf` and apply it as local DNS configuration. The feeds update automatically in Access Gate, but Pi-hole still needs to fetch and apply a new copy; this release does not install a poller or change Pi-hole's global blocking mode.
 
 Follow [Pi-hole import, verification and rollback](docs/PIHOLE.md), including the Pi-hole 6 setting that enables `/etc/dnsmasq.d/`.
 
@@ -160,13 +162,13 @@ The updater installs certificate generation, forwarding and live gateway enforce
 
 ```bash
 systemctl is-active access-gate nginx access-gate-gateway
-curl --noproxy '*' --cacert /etc/access-gate/ca/root.crt -I https://10.40.22.5/
+curl --noproxy '*' --cacert /etc/access-gate/ca/root.crt -I https://192.168.10.20/
 ```
 
 Expected: three `active` results and HTTP 200. For a persistent 502:
 
 ```bash
-curl --noproxy '*' -sS -H 'X-Real-IP: 10.40.22.5' -o /dev/null -w 'Backend HTTP: %{http_code}\n' http://127.0.0.1:8088/
+curl --noproxy '*' -sS -H 'X-Real-IP: 192.168.10.20' -o /dev/null -w 'Backend HTTP: %{http_code}\n' http://127.0.0.1:8088/
 journalctl -u access-gate.service -n 60 --no-pager
 journalctl -u access-gate-gateway.service -n 60 --no-pager
 tail -n 20 /var/log/nginx/error.log
@@ -176,7 +178,7 @@ A 502 is not necessarily a startup race. Use the actual upstream/backend error. 
 
 ## HTTPS and settings
 
-The existing public CA is available at `http://10.40.22.5/ca.crt`. Verify its fingerprint on the server before trusting it on a device:
+The existing public CA is available at `http://192.168.10.20/ca.crt`. Verify its fingerprint on the server before trusting it on a device:
 
 ```bash
 openssl x509 -in /etc/access-gate/ca/root.crt -noout -fingerprint -sha256
@@ -191,7 +193,7 @@ cd /opt/access-gate
 python3 configure.py --check
 ```
 
-The configured portal URL must have matching DNS and certificate coverage. Apply settings through the normal updater so gateway settings are regenerated and all services restart consistently. Gunicorn binds only to loopback. The gateway uses the actual HTTPS client peer address, trusts forwarded addresses only from the loopback HTTP proxy, strips private headers and hides `/internal/` from browsers. Do not expose the private API or upload config secrets, code exports, private keys or the runtime database to GitHub.
+The configured portal URL must have matching DNS and certificate coverage. The updater preserves deployment settings. Use the documented deployment profile for new installations; do not hand-edit listener or identity fields on an installed server. Gunicorn binds only to loopback. The gateway uses the actual HTTPS client peer address, trusts forwarded addresses only from the loopback HTTP proxy, strips private headers and hides `/internal/` from browsers. Do not expose the private API or upload config secrets, code exports, private keys or the runtime database to GitHub.
 
 ## Runtime paths
 

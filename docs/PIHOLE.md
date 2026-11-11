@@ -1,13 +1,13 @@
 # Pi-hole domain list
 
-The optional **DNS domains** screen creates your own list of domains pointing to `10.40.22.5`. This list is stored in the Access Gate database and preserved during updates. It is available at stable feed URLs as well as file downloads; the portal does not connect to or modify Pi-hole automatically.
+The optional **DNS domains** screen creates your own list of domains pointing to `192.168.10.20`. This list is stored in the Access Gate database and preserved during updates. It is available at stable feed URLs as well as file downloads; the portal does not connect to or modify Pi-hole automatically.
 
 ## Live feed URLs
 
-- `http://10.40.22.5/domains.txt`: a conventional hosts-format list, one enabled base/exact hostname per line, such as `10.40.22.5 example.com`. It is available even if subdomain scopes are enabled, but the comments explicitly state that those scopes cannot be represented in this format. It does not enumerate or invent subdomains.
-- `http://10.40.22.5/pihole.conf`: the full dnsmasq configuration, preserving all enabled exact/subdomain rules and the target `10.40.22.5`. Use this for the actual whole-domain redirect setup.
+- `http://192.168.10.20/domains.txt`: a conventional hosts-format list, one enabled base/exact hostname per line, such as `192.168.10.20 example.com`. It is available even if subdomain scopes are enabled, but the comments explicitly state that those scopes cannot be represented in this format. It does not enumerate or invent subdomains.
+- `http://192.168.10.20/pihole.conf`: the full dnsmasq configuration, preserving all enabled exact/subdomain rules and the target `192.168.10.20`. Use this for the actual whole-domain redirect setup.
 
-Both URLs update from the current saved list on every fetch and need no administrator login, session cookie or private API key. Access is limited to the configured client networks (by default `10.40.0.0/16` and loopback) and the existing trusted reverse-proxy boundary. The HTTP listener serves only these feed paths and the public CA without redirecting to HTTPS; the portal/admin still use HTTPS. HTTPS access to the feeds remains available through the existing listener and certificate.
+Both URLs update from the current saved list on every fetch and need no administrator login, session cookie or private API key. Access is limited to the configured client networks (by default `192.168.0.0/16` and loopback) and the existing trusted reverse-proxy boundary. The HTTP listener serves only these feed paths and the public CA without redirecting to HTTPS; the portal/admin still use HTTPS. HTTPS access to the feeds remains available through the existing listener and certificate.
 
 A hosts file follows the same text shape as lists such as StevenBlack/hosts. That shape alone does not tell Pi-hole to preserve its destination IP. Ordinary **adlist** import stores the extracted domains for blocking, and the DNS answer follows Pi-hole's global blocking mode. It also cannot infer all subdomains from one hosts row. Do not change global blocking settings merely to make this list redirect, since that affects unrelated blocked domains too. Use the local dnsmasq config feed for the requested mapping/scope.
 
@@ -15,7 +15,7 @@ The portal does not install a Pi-hole polling job. List edits appear immediately
 
 ```bash
 curl --fail --silent --show-error --connect-timeout 5 --max-time 20 \
-  http://10.40.22.5/pihole.conf -o /tmp/99-access-gate.conf
+  http://192.168.10.20/pihole.conf -o /tmp/99-access-gate.conf
 ```
 
 Proceed only after a successful fetch, then apply and verify the dedicated file as described below. Do not pipe a downloaded config into a shell.
@@ -30,7 +30,7 @@ Proceed only after a successful fetch, then apply and verify the dedicated file 
 
 ## Import domains from an external blocklist
 
-Instead of entering domains manually, use **DNS domains → Import a blocklist URL**. Paste a public HTTPS raw-file URL, choose the match scope and click **Import from URL**. A source such as `https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts` is an input to Access Gate: the portal extracts its domains and adds them to your own restricted list, always using `10.40.22.5` in the output. It does not copy the source's destination IPs or modify Pi-hole directly.
+Instead of entering domains manually, use **DNS domains → Import a blocklist URL**. Paste a public HTTPS raw-file URL, choose the match scope and click **Import from URL**. A source such as `https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts` is an input to Access Gate: the portal extracts its domains and adds them to your own restricted list, always using `192.168.10.20` in the output. It does not copy the source's destination IPs or modify Pi-hole directly.
 
 Supported input formats are IPv4/IPv6 hosts records with one or more hostnames, plain domain lines and simple `||domain^` entries. Comments, blank lines, local host boilerplate and IP literals used as hostnames are ignored. Unsupported filter syntax, options and allowlist exceptions are skipped and counted, rather than being turned into potentially broader restriction rules. In exact mode, `*.domain` entries are skipped; in subdomain mode they are normalized to the base name. No base/registrable domain is guessed from a source hostname.
 
@@ -48,11 +48,11 @@ Example export:
 
 ```ini
 # Domain + all subdomains
-address=/example.com/10.40.22.5
+address=/example.com/192.168.10.20
 local=/example.com/
 
 # Exact hostname only
-host-record=single.example.org,10.40.22.5
+host-record=single.example.org,192.168.10.20
 ```
 
 The `local=` line is intentional. In modern dnsmasq, an IPv4-only `address=` rule alone can still forward other query types upstream. Combining the two makes this wildcard scope local, so an upstream AAAA or HTTPS/SVCB answer does not escape that rule. It also suppresses upstream MX/TXT and other record types for that scope. The export does not create an IPv6 destination.
@@ -66,7 +66,7 @@ Use a dedicated Access Gate file so unrelated local DNS configuration is retaine
 For the existing DNS server, a copy from the machine holding the download might be:
 
 ```bash
-scp 99-access-gate.conf root@10.40.22.10:/tmp/99-access-gate.conf
+scp 99-access-gate.conf root@192.168.10.10:/tmp/99-access-gate.conf
 ```
 
 The following commands run **on Pi-hole**, not on the portal server.
@@ -113,14 +113,14 @@ In a container, run the syntax check inside the container and use its normal res
 For a listed domain such as `example.com`, test against the actual DNS server:
 
 ```bash
-dig @10.40.22.10 example.com A +short
-dig @10.40.22.10 www.example.com A +short
-dig @10.40.22.10 a.b.example.com A +short
-dig @10.40.22.10 example.com AAAA
-dig @10.40.22.10 a.b.example.com HTTPS
+dig @192.168.10.10 example.com A +short
+dig @192.168.10.10 www.example.com A +short
+dig @192.168.10.10 a.b.example.com A +short
+dig @192.168.10.10 example.com AAAA
+dig @192.168.10.10 a.b.example.com HTTPS
 ```
 
-The first three should return `10.40.22.5` for a subdomain rule. The last two should not return a public IPv6 address or upstream HTTPS record for that scope. Also test an unrelated domain, and test that an exact-only rule leaves its subdomains unaffected. Clear old client/browser DNS caches or wait for their cached answers to expire; a configuration import cannot revoke cached public answers already held by clients.
+The first three should return `192.168.10.20` for a subdomain rule. The last two should not return a public IPv6 address or upstream HTTPS record for that scope. Also test an unrelated domain, and test that an exact-only rule leaves its subdomains unaffected. Clear old client/browser DNS caches or wait for their cached answers to expire; a configuration import cannot revoke cached public answers already held by clients.
 
 Pi-hole Local DNS/hosts entries and DHCP leases can override `address=` for individual names; more-specific server/forwarding rules can also change the result. Resolve conflicting entries when the actual query result differs. Disabling or deleting a child entry does not make an exception to an enabled parent subdomain rule.
 
@@ -145,6 +145,11 @@ Disable the Access Gate adlist and enable loading `/etc/dnsmasq.d` first as desc
 ```bash
 curl -fS --max-time 30 https://raw.githubusercontent.com/CoyWorks/Access-Gate/main/scripts/sync_pihole.sh -o /tmp/access-gate-pihole-sync
 install -m 0755 /tmp/access-gate-pihole-sync /usr/local/sbin/access-gate-pihole-sync
+install -d -m 0755 /etc/default
+cat > /etc/default/access-gate-pihole-sync <<'CONFIG'
+ACCESS_GATE_FEED_URL=http://192.168.10.20/pihole.conf
+ACCESS_GATE_TARGET_IP=192.168.10.20
+CONFIG
 /usr/local/sbin/access-gate-pihole-sync
 ```
 
@@ -154,4 +159,6 @@ After a successful first run, create `/etc/cron.d/access-gate-pihole`:
 */5 * * * * root /usr/local/sbin/access-gate-pihole-sync >> /var/log/access-gate-pihole-sync.log 2>&1
 ```
 
-The helper fetches `http://10.40.22.5/pihole.conf` directly without environment proxies, locks against concurrent runs and skips unchanged downloads. It validates the export header and DNS syntax, rolls back failed validation/restart and restarts FTL only for changes. An empty managed list still exports the identifying header and clears the old mappings. No Gravity rebuild or allowlist changes are performed. This is for a normal Linux installation, not Docker volume management. Stop scheduled sync by removing the cron file; the last mappings remain loaded.
+The helper fetches `http://192.168.10.20/pihole.conf` directly without environment proxies, locks against concurrent runs and skips unchanged downloads. It validates the export header and DNS syntax, rolls back failed validation/restart and restarts FTL only for changes. An empty managed list still exports the identifying header and clears the old mappings. No Gravity rebuild or allowlist changes are performed. This is for a normal Linux installation, not Docker volume management. Stop scheduled sync by removing the cron file; the last mappings remain loaded.
+
+Existing helpers already installed on Pi-hole keep their current settings until you replace them. Before installing the new helper, create the settings file above using your actual portal address and target.

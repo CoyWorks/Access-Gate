@@ -4,7 +4,7 @@ Access Gate 0.5 includes the built-in HTTPS gateway described in [GATEWAY.md](GA
 
 ## Redirect versus authorization
 
-A redirect to `https://10.40.22.5/` gives the user a working code form and temporary browser session. It does not itself change a firewall rule, change a DNS answer back to the original site, or forward that site's content.
+A redirect to `https://192.168.10.20/` gives the user a working code form and temporary browser session. It does not itself change a firewall rule, change a DNS answer back to the original site, or forward that site's content.
 
 For website access, the client-facing gateway must check the portal's authorization and enforce its deadline. With DNS-assisted proxying, selected domains remain pointed at the gateway throughout the session. The gateway fetches the real upstream using an independent resolver. Four-hour upstream DNS TTLs then do not determine authorization expiry.
 

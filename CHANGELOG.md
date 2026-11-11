@@ -1,3 +1,9 @@
+# 0.16.0
+
+- Centralize deployment identity, listeners, DNS target, portal aliases and network policy (#21).
+- Preserve legacy settings explicitly on update; generate certificates, gateway and nginx from validated deployment values.
+- Use direct verified TLS probes with configured SNI; parameterize external Pi-hole sync and provide neutral installation examples.
+
 # 0.15.1
 
 - Standardize administration headers through shared breadcrumb/title/description/action components.

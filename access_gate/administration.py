@@ -4,6 +4,7 @@ import ipaddress
 import json
 import secrets
 import time
+from .deployment import normalize
 
 
 def management_networks(value):
@@ -31,7 +32,7 @@ class Administration:
         return dict(password_hash=row['password_hash'] if row and row['password_hash'] else config['admin_hash'],
                     version=row['version'] if row else fallback,
                     exclusions=json.loads(row['exclusions']) if row else [],
-                    networks=json.loads(row['networks']) if row and row['networks'] else config.get('admin_networks',config.get('client_networks',['10.40.0.0/16','127.0.0.1/32','::1/128'])))
+                    networks=json.loads(row['networks']) if row and row['networks'] else config.get('admin_networks',normalize(config)['client_networks']))
 
     def save_admin_security(self,config,expected_version=None,password_hash=None,networks=None,reset_networks=False,exclusions=None):
         from .core import GateError

@@ -26,11 +26,11 @@ Code grants are not consumed, paused, extended or reset by a login/exclusion. Th
 Open **Settings → Access exclusions**. Enter one CIDR per line, for example:
 
 ```text
-10.40.32.20/32
-10.40.33.0/24
+192.168.20.20/32
+192.168.30.0/24
 ```
 
-A /32 excludes one IPv4 address; /24 excludes the whole aligned network. IPv6 CIDRs are parsed as well, where the deployment actually receives IPv6 clients. Up to 64 entries are supported. Duplicates are removed; invalid or misaligned networks such as 10.40.32.20/24 are rejected rather than silently broadening the exception. Leave the field empty to disable IP exclusions. Saving requires the current administrator password, valid CSRF and a fresh settings version, and signs out existing admin logins like other security-policy changes.
+A /32 excludes one IPv4 address; /24 excludes the whole aligned network. IPv6 CIDRs are parsed as well, where the deployment actually receives IPv6 clients. Up to 64 entries are supported. Duplicates are removed; invalid or misaligned networks such as 192.168.20.20/24 are rejected rather than silently broadening the exception. Leave the field empty to disable IP exclusions. Saving requires the current administrator password, valid CSRF and a fresh settings version, and signs out existing admin logins like other security-policy changes.
 
 These are **access exclusions**, not management networks. They do not change which addresses can reach the portal/gateway, which domains are managed, or who can open administration. Only configured client networks and managed HTTPS hostnames remain eligible.
 

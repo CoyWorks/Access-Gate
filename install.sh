@@ -28,7 +28,21 @@ for required_item in access_gate access_gate/gateway.py access_gate/gateway_tls.
         echo "Missing source item: $required_item. Extract the complete repository archive first." >&2; exit 1
     fi
 done
-if ! ip -4 addr show | grep -q 'inet 10.40.22.5/24'; then echo 'Expected server address: 10.40.22.5/24.' >&2; exit 1; fi
+plan_file=$(mktemp /run/access-gate-plan.XXXXXX)
+trap 'rm -f -- "$plan_file"' EXIT
+if [[ $resume_install -eq 1 ]]; then
+    plan_source=/etc/access-gate/config.json
+    (cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment plan "$plan_source") > "$plan_file"
+else
+    if [[ -z ${ACCESS_GATE_INSTALL_CONFIG:-} ]]; then
+        echo 'Set ACCESS_GATE_INSTALL_CONFIG to a deployment profile. See docs/INSTALLATION.md.' >&2; exit 1
+    fi
+    (cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment plan "$ACCESS_GATE_INSTALL_CONFIG" --new) > "$plan_file"
+fi
+eval "$(cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment shell "$plan_file")"
+if ! ip -j -4 addr show | /usr/bin/python3 -c 'import json,sys; address=sys.argv[1]; sys.exit(not any(a.get("local")==address for i in json.load(sys.stdin) for a in i.get("addr_info",[])))' "$GATE_SERVER_IP"; then
+    echo "Configured listener address is not assigned locally: $GATE_SERVER_IP" >&2; exit 1
+fi
 if [[ $resume_install -eq 1 ]]; then
     for state_file in config.json acl-token ca/root.key ca/root.crt portal.key portal.crt; do
         if [[ ! -s /etc/access-gate/$state_file ]]; then
@@ -88,19 +102,14 @@ chmod -R go-w /opt/access-gate
 if [[ $resume_install -eq 0 ]]; then
 openssl req -x509 -newkey rsa:3072 -nodes -sha256 -days 3650 \
     -keyout /etc/access-gate/ca/root.key -out /etc/access-gate/ca/root.crt \
-    -subj '/CN=Home Access Gate Root CA' \
+    -subj '/CN=Access Gate Root CA' \
     -addext 'basicConstraints=critical,CA:TRUE' -addext 'keyUsage=critical,keyCertSign,cRLSign'
 chown root:root /etc/access-gate/ca/root.key /etc/access-gate/ca/root.crt
 chmod 0640 /etc/access-gate/ca/root.key
 chmod 0644 /etc/access-gate/ca/root.crt
 openssl req -new -newkey rsa:2048 -nodes -keyout /etc/access-gate/portal.key \
-    -out /etc/access-gate/portal.csr -subj '/CN=toegang.coyseinri.nl'
-cat > /etc/access-gate/portal.ext <<'EXT'
-subjectAltName=DNS:toegang.coyseinri.nl,IP:10.40.22.5
-basicConstraints=critical,CA:FALSE
-keyUsage=critical,digitalSignature,keyEncipherment
-extendedKeyUsage=serverAuth
-EXT
+    -out /etc/access-gate/portal.csr -subj "/CN=$GATE_PORTAL_HOST"
+(cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment certificate "$plan_file") > /etc/access-gate/portal.ext
 openssl x509 -req -in /etc/access-gate/portal.csr -CA /etc/access-gate/ca/root.crt \
     -CAkey /etc/access-gate/ca/root.key -CAcreateserial -days 365 -sha256 \
     -extfile /etc/access-gate/portal.ext -out /etc/access-gate/portal.crt
@@ -108,8 +117,8 @@ chmod 0600 /etc/access-gate/portal.key
 install -m 0644 /etc/access-gate/ca/root.crt /var/lib/access-gate/public/ca.crt
 
 cd /opt/access-gate
-/usr/bin/python3 - <<'PY'
-import json, secrets, os
+/usr/bin/python3 - "$plan_file" <<'PY'
+import json, secrets, os, sys
 from pathlib import Path
 from werkzeug.security import generate_password_hash
 from access_gate.core import Store
@@ -117,10 +126,10 @@ password = secrets.token_urlsafe(20)
 config = dict(secret=secrets.token_hex(32), pepper=secrets.token_hex(32),
               acl_token=secrets.token_hex(32), admin_hash=generate_password_hash(password),
               database='/var/lib/access-gate/data/gate.sqlite3',
-              portal_url='https://10.40.22.5',client_networks=['10.40.0.0/16','127.0.0.1/32','::1/128'])
+              **json.loads(Path(sys.argv[1]).read_text()))
 Path('/etc/access-gate/config.json').write_text(json.dumps(config,indent=2)+'\n')
 Path('/etc/access-gate/acl-token').write_text(config['acl_token']+'\n')
-Path('/root/access-gate-initial-login.txt').write_text('https://10.40.22.5/admin\nAdmin password: '+password+'\n')
+Path('/root/access-gate-initial-login.txt').write_text(config['portal_url']+'/admin\nAdmin password: '+password+'\n')
 os.chmod('/root/access-gate-initial-login.txt',0o600)
 Store(config['database'],config['pepper']).initialize()
 PY
@@ -138,32 +147,13 @@ chown -R accessgate:accessgate /var/lib/access-gate/data
 /usr/bin/python3 -m access_gate.gateway_setup
 runuser -u accessgate-gateway -- /usr/bin/python3 -m access_gate.gateway --check
 
-cat > /etc/nginx/sites-available/access-gate <<'NGINX'
-server {
-    listen 10.40.22.5:80;
-    server_name 10.40.22.5 toegang.coyseinri.nl;
-    include /etc/access-gate/client-networks.nginx;
-    location = /ca.crt {
-        root /var/lib/access-gate/public;
-        default_type application/x-x509-ca-cert;
-        add_header Cache-Control no-store;
-    }
-    location ~ ^/(domains\.txt|pihole\.conf)$ {
-        proxy_pass http://127.0.0.1:8088;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For "";
-        proxy_set_header X-Gate-Key "";
-        access_log off;
-    }
-    location / {
-        proxy_pass http://127.0.0.1:8089;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For "";
-        proxy_set_header X-Gate-Key "";
-    }
-}
+/usr/bin/python3 - <<'NGINX'
+import json
+from pathlib import Path
+from access_gate.deployment import normalize,names
+c=normalize(json.loads(Path('/etc/access-gate/config.json').read_text()))
+template=Path('/opt/access-gate/access_gate/nginx-http.conf.in').read_text()
+Path('/etc/nginx/sites-available/access-gate').write_text(template.replace('@@LISTEN@@',c['listen_ipv4']).replace('@@NAMES@@',' '.join(names(c))))
 NGINX
 ln -sfn /etc/nginx/sites-available/access-gate /etc/nginx/sites-enabled/access-gate
 if [[ -L /etc/nginx/sites-enabled/default ]]; then rm /etc/nginx/sites-enabled/default; fi
@@ -300,14 +290,14 @@ if ! /usr/bin/python3 -m access_gate.readiness; then
     exit 1
 fi
 /usr/bin/python3 "$bundle_dir/scripts/record_deployment.py" "$bundle_dir"
-printf '\nInstallation complete. CA certificate: http://10.40.22.5/ca.crt\n'
+printf '\nInstallation complete. CA certificate: http://%s/ca.crt\n' "$GATE_SERVER_IP"
 printf 'Completed mode: %s; version: %s\n' "$install_mode" "$(cat /opt/access-gate/VERSION)"
 if [[ $resume_install -eq 1 ]]; then
-    echo 'Admin portal: https://10.40.22.5/admin'
+    echo "Admin portal: $GATE_PORTAL_URL/admin"
     echo 'Your existing admin password is unchanged. Initial login details, if still valid: /root/access-gate-initial-login.txt.'
 elif [[ -f /root/access-gate-initial-login.txt ]]; then
     cat /root/access-gate-initial-login.txt
 else
-    echo 'Admin portal: https://10.40.22.5/admin (existing password unchanged).'
+    echo "Admin portal: $GATE_PORTAL_URL/admin (existing password unchanged)."
 fi
-printf '\nHTTPS gateway ready. Keep restricted DNS names pointing to 10.40.22.5 and trust the retained root CA on your browser devices. See docs/GATEWAY.md for verification and supported transports.\n'
+printf '\nHTTPS gateway ready. Point restricted DNS names to %s and trust the retained root CA on your devices. See docs/GATEWAY.md.\n' "$GATE_SERVER_IP"

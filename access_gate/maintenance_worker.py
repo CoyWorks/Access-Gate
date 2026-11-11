@@ -45,7 +45,8 @@ class Worker:
     def apply(self,stage):
         """Called only with stopped services and a fully validated private stage."""
         from .gateway_setup import prepare
-        config=json.loads((stage/'etc/access-gate/config.json').read_text());config['secret']=os.urandom(32).hex()
+        from .deployment import normalize,render_http
+        config=normalize(json.loads((stage/'etc/access-gate/config.json').read_text()));config['secret']=os.urandom(32).hex()
         invalidate(stage/'database',config)
         (stage/'etc/access-gate/config.json').write_text(json.dumps(config))
         for name in STATE_FILES:
@@ -63,6 +64,10 @@ class Worker:
         else:prepare(self.root,gid=self.gid)
         write_private(self.root/'var/lib/access-gate/public/ca.crt',(stage/'etc/access-gate/ca/root.crt').read_bytes(),0o644)
         atomic_write(self.root/'etc/access-gate/client-networks.nginx',''.join('allow '+n+';\n' for n in config['client_networks'])+'deny all;\n',0o644)
+
+        nginx_file=self.root/'etc/nginx/sites-available/access-gate'
+        nginx_file.parent.mkdir(parents=True,exist_ok=True)
+        atomic_write(nginx_file,render_http(config),0o644)
 
     def restore(self,job_id,preview):
         original=json.loads(read_regular(self.private/(preview+'.json'),MAX_ARCHIVE+8192))

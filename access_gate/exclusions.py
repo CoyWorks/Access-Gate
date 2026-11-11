@@ -18,7 +18,7 @@ def exclusion_networks(value):
     try:
         # Require network-aligned CIDRs so a mistyped /24 cannot silently expand access.
         return list(dict.fromkeys(str(ipaddress.ip_network(p,strict=True)) for p in parts))
-    except ValueError: raise GateError('Use valid network-aligned CIDRs such as 10.40.32.20/32 or 10.40.32.0/24.')
+    except ValueError: raise GateError('Use valid network-aligned CIDRs such as 192.168.20.20/32 or 192.168.20.0/24.')
 
 
 class Exclusions:

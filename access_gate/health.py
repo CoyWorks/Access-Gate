@@ -13,9 +13,10 @@ from cryptography import x509
 
 
 class Health:
-    def __init__(self,config,store,clock=time.time,ca_file='/var/lib/access-gate/public/ca.crt',gateway_address=('10.40.22.5',443)):
-        self.config=config; self.store=store; self.clock=clock
-        self.ca_file=ca_file; self.gateway_address=gateway_address
+    def __init__(self,config,store,clock=time.time,ca_file='/var/lib/access-gate/public/ca.crt',gateway_address=None):
+        from .deployment import normalize
+        self.config=normalize(config); self.store=store; self.clock=clock
+        self.ca_file=ca_file; self.gateway_address=gateway_address or (self.config['listen_ipv4'],443)
         self.cached=None; self.checked=0; self.lock=threading.Lock()
 
     @staticmethod
@@ -38,7 +39,7 @@ class Health:
         ca=Path(self.ca_file)
         root=x509.load_pem_x509_certificate(ca.read_bytes())
         context=ssl.create_default_context(cafile=str(ca))
-        target=urlsplit(self.config.get('portal_url','https://10.40.22.5'))
+        target=urlsplit(self.config['portal_url'])
         connection=http.client.HTTPSConnection(target.hostname,443,timeout=1,context=context)
         try:
             connection.sock=context.wrap_socket(socket.create_connection(self.gateway_address,timeout=1),server_hostname=target.hostname)

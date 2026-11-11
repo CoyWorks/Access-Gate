@@ -4,13 +4,17 @@ set -euo pipefail
 if [[ $EUID -ne 0 ]]; then echo 'Run this command as root.' >&2; exit 1; fi
 exec 9>/run/lock/access-gate-pihole-sync.lock
 flock -n 9 || exit 0
+# Store these two non-secret settings in /etc/default/access-gate-pihole-sync.
+if [[ -f /etc/default/access-gate-pihole-sync ]]; then source /etc/default/access-gate-pihole-sync; fi
+: "${ACCESS_GATE_FEED_URL:?Set ACCESS_GATE_FEED_URL to the portal /pihole.conf URL}"
+: "${ACCESS_GATE_TARGET_IP:?Set ACCESS_GATE_TARGET_IP to the DNS redirect IPv4}"
 work_dir=$(mktemp -d)
 trap 'rm -rf -- "$work_dir"' EXIT
 config_file=/etc/dnsmasq.d/99-access-gate.conf
 curl --noproxy '*' --fail --silent --show-error --connect-timeout 5 --max-time 60 \
-    http://10.40.22.5/pihole.conf --output "$work_dir/new.conf"
+    "$ACCESS_GATE_FEED_URL" --output "$work_dir/new.conf"
 # Refuse empty/error-page responses before touching the active configuration.
-if ! head -n 1 "$work_dir/new.conf" | grep -Fxq '# Access Gate DNS mappings: 10.40.22.5'; then
+if ! head -n 1 "$work_dir/new.conf" | grep -Fxq "# Access Gate DNS mappings: $ACCESS_GATE_TARGET_IP"; then
     echo 'Downloaded content is not an Access Gate DNS configuration; nothing changed.' >&2
     exit 1
 fi

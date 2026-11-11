@@ -13,7 +13,7 @@ from flask import Flask,Request,abort,redirect,render_template,request,session,f
 from werkzeug.security import check_password_hash,generate_password_hash
 from .core import Store,GateError,TZ,STATUSES
 from .browser import TOKEN
-from .dns_export import TARGET_IP
+from .deployment import normalize
 from .blocklist import download_blocklist
 from .administration import management_networks
 from .health import Health
@@ -39,6 +39,8 @@ class PortalRequest(Request):
 def create_app(config=None):
     if config is None:
         config=json.loads(Path(os.environ.get('ACCESS_GATE_CONFIG','/etc/access-gate/config.json')).read_text())
+    config=normalize(config)
+    target_ip=config['dns_target_ipv4']
     app=Flask(__name__,template_folder='../templates',static_folder='../static')
     app.request_class=PortalRequest
     app.config.update(SECRET_KEY=config['secret'],SESSION_COOKIE_SECURE=True,
@@ -47,8 +49,8 @@ def create_app(config=None):
     store=Store(config['database'],config['pepper']); app.extensions['store']=store
     health=Health(config,store); app.extensions['health']=health
     jobs=Jobs(config.get('maintenance_jobs','/var/lib/access-gate/jobs'));app.extensions['jobs']=jobs
-    networks=[ipaddress.ip_network(n) for n in config.get('client_networks',['10.40.0.0/16','127.0.0.1/32','::1/128'])]
-    portal_url=config.get('portal_url','https://10.40.22.5').rstrip('/')
+    networks=[ipaddress.ip_network(n) for n in config['client_networks']]
+    portal_url=config['portal_url'].rstrip('/')
 
     def client_ip():
         if request.remote_addr not in ('127.0.0.1','::1'): abort(403)
@@ -161,11 +163,11 @@ def create_app(config=None):
 
     @app.get('/domains.txt')
     def hosts_feed():
-        return app.response_class(store.dns_hosts_feed(), mimetype='text/plain')
+        return app.response_class(store.dns_hosts_feed(target_ip=target_ip), mimetype='text/plain')
 
     @app.get('/pihole.conf')
     def dnsmasq_feed():
-        return app.response_class(store.export_dns_domains('dnsmasq'), mimetype='text/plain')
+        return app.response_class(store.export_dns_domains('dnsmasq', target_ip=target_ip), mimetype='text/plain')
 
     @app.route('/',methods=['GET','POST'])
     def index():
@@ -586,8 +588,8 @@ def create_app(config=None):
         page = store.dns_domain_page(request.args.get('q', ''), request.args.get('page', '1'))
         summary = store.dns_summary()
         return render_template('dns_domains.html', domains=page['items'], domain_page=page, summary=summary,
-                               target_ip=TARGET_IP, enabled_count=summary['enabled'], wildcard_count=summary['wildcard'],
-                               preview=store.export_dns_domains('dnsmasq', limit=50), value=value, scope=scope,
+                               target_ip=target_ip, enabled_count=summary['enabled'], wildcard_count=summary['wildcard'],
+                               preview=store.export_dns_domains('dnsmasq', limit=50, target_ip=target_ip), value=value, scope=scope,
                                error=error, csrf=csrf(), import_error=import_error,
                                import_url=import_url, import_scope=import_scope), 400 if error or import_error else 200
 
@@ -618,7 +620,7 @@ def create_app(config=None):
     def export_dns_domains(kind):
         if kind not in ('hosts', 'dnsmasq'): abort(404)
         filename = 'access-gate.hosts' if kind == 'hosts' else '99-access-gate.conf'
-        response = app.response_class(store.export_dns_domains(kind), mimetype='text/plain')
+        response = app.response_class(store.export_dns_domains(kind, target_ip=target_ip), mimetype='text/plain')
         response.headers['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response
 

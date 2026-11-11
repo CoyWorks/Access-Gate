@@ -3,7 +3,8 @@ import ipaddress
 import re
 import time
 
-TARGET_IP = '10.40.22.5'
+from .deployment import LEGACY
+TARGET_IP = LEGACY['dns_target_ipv4']  # Compatibility for callers without deployment context.
 MAX_DOMAINS = 500000
 LABEL = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
 
@@ -38,13 +39,14 @@ class DNSExports:
             if not parents: return False
             return bool(db.execute('SELECT 1 FROM dns_export_domains WHERE enabled=1 AND include_subdomains=1 AND domain IN (' + ','.join('?' for _ in parents) + ') LIMIT 1', parents).fetchone())
 
-    def dns_hosts_feed(self):
-        lines = ['# Access Gate hosts feed: ' + TARGET_IP,
+    def dns_hosts_feed(self, target_ip=TARGET_IP):
+        target_ip = str(ipaddress.IPv4Address(target_ip))
+        lines = ['# Access Gate hosts feed: ' + target_ip,
                  '# Enabled base/exact hostnames only; hosts files cannot express wildcards.',
                  '# Use /pihole.conf for the configured subdomain scopes and DNS redirects.',
                  '# Pi-hole adlists use domain names for blocking; they do not preserve this IP.']
         with self.connect() as db:
-            lines += [f"{TARGET_IP} {row['domain']}" for row in db.execute('SELECT domain FROM dns_export_domains WHERE enabled=1 ORDER BY domain')]
+            lines += [f"{target_ip} {row['domain']}" for row in db.execute('SELECT domain FROM dns_export_domains WHERE enabled=1 ORDER BY domain')]
         return '\n'.join(lines) + '\n'
 
     def initialize_dns_exports(self, db):
@@ -125,21 +127,22 @@ class DNSExports:
             self._event(db,'domain.changed',details=dict(reason=action,domain=name))
             db.commit()
 
-    def export_dns_domains(self, kind, limit=None):
+    def export_dns_domains(self, kind, limit=None, target_ip=TARGET_IP):
+        target_ip = str(ipaddress.IPv4Address(target_ip))
         from .core import GateError
         if kind not in ('hosts', 'dnsmasq'): raise GateError('Unknown DNS export format.')
         if kind == 'hosts' and self.dns_summary()['wildcard']:
             raise GateError('Hosts files cannot represent subdomain rules. Download the Pi-hole config to preserve wildcard coverage.')
-        lines = ['# Access Gate DNS mappings: ' + TARGET_IP,
+        lines = ['# Access Gate DNS mappings: ' + target_ip,
                  '# Subdomain rules cover the base domain and all subdomain levels.',
                  '# Import as local DNS configuration, not as a Pi-hole adlist.']
         with self.connect() as db:
             rows = db.execute('SELECT * FROM dns_export_domains WHERE enabled=1 ORDER BY domain' + (' LIMIT ?' if limit is not None else ''), (limit,) if limit is not None else ())
             for row in rows:
                 name = row['domain']
-                if kind == 'hosts': lines.append(f'{TARGET_IP} {name}')
+                if kind == 'hosts': lines.append(f'{target_ip} {name}')
                 elif row['include_subdomains']:
                     # local= prevents non-A queries (including AAAA/HTTPS) going upstream.
-                    lines += [f'address=/{name}/{TARGET_IP}', f'local=/{name}/']
-                else: lines.append(f'host-record={name},{TARGET_IP}')
+                    lines += [f'address=/{name}/{target_ip}', f'local=/{name}/']
+                else: lines.append(f'host-record={name},{target_ip}')
         return '\n'.join(lines) + '\n'

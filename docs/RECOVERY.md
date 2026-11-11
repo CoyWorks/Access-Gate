@@ -15,7 +15,7 @@ Backups are capped at 64 MiB and downloads expire after seven days. Job summarie
 
 ## Restore
 
-1. Install a matching Access Gate schema version on the dedicated Ubuntu server at `10.40.22.5`. Use a working fresh install for replacement-host recovery. Install the same source release first; restore does not downgrade application code.
+1. Install a matching Access Gate schema version on the dedicated Ubuntu server at `192.168.10.20`. Use a working fresh install for replacement-host recovery. Install the same source release first; restore does not downgrade application code.
 2. Upload the encrypted archive and enter its passphrase and the current server's admin password.
 3. Wait for **Preflight passed**. Review the saved version/date/counts. Database integrity, schema, required components, configuration and certificate/key consistency are checked in private staging before live data is touched.
 4. Within 15 minutes, enter the current password again and type `REVOKE` to confirm.

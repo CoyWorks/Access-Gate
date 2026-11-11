@@ -18,7 +18,8 @@ from .settings import atomic_write
 def prepare(root=Path('/'), gid=None):
     root = Path(root)
     base = root/'etc/access-gate'; directory = base/'gateway'
-    config = json.loads((base/'config.json').read_text())
+    from .deployment import normalize, names
+    config = normalize(json.loads((base/'config.json').read_text()))
     ca = x509.load_pem_x509_certificate((base/'ca/root.crt').read_bytes())
     ca_key = serialization.load_pem_private_key((base/'ca/root.key').read_bytes(), password=None)
     now = dt.datetime.now(dt.timezone.utc)
@@ -64,8 +65,8 @@ def prepare(root=Path('/'), gid=None):
         atomic_write(cert_path, cert.public_bytes(serialization.Encoding.PEM).decode())
     portal_host = urlsplit(config['portal_url']).hostname
     gateway = dict(api_url='http://127.0.0.1:8088', api_key=config['acl_token'],
-        portal_url=config['portal_url'], portal_hosts=sorted({portal_host, '10.40.22.5', 'toegang.coyseinri.nl'}),
-        client_networks=config['client_networks'], listen_host='10.40.22.5', listen_port=443,
+        portal_url=config['portal_url'], portal_hosts=names(config),
+        client_networks=config['client_networks'], listen_host=config['listen_ipv4'], listen_port=443,
         http_host='127.0.0.1', http_port=8089, runtime_dir='/run/access-gate-gateway',
         issuer_cert='/etc/access-gate/gateway/issuer.crt', issuer_key='/etc/access-gate/gateway/issuer.key',
         portal_cert='/etc/access-gate/portal.crt', portal_key='/etc/access-gate/portal.key')

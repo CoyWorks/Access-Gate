@@ -14,9 +14,9 @@ The installed roles are:
 
 | Component | Listener | Role |
 | --- | --- | --- |
-| `access-gate-gateway` | `10.40.22.5:443` | Portal HTTPS and dynamic restricted-site HTTPS |
+| `access-gate-gateway` | `192.168.10.20:443` | Portal HTTPS and dynamic restricted-site HTTPS |
 | `access-gate-gateway` | `127.0.0.1:8089` | HTTP hostname handling behind Nginx |
-| `nginx` | `10.40.22.5:80` | Hosts/config feeds, public CA download and forwarding to the gateway's HTTP handler |
+| `nginx` | `192.168.10.20:80` | Hosts/config feeds, public CA download and forwarding to the gateway's HTTP handler |
 | `access-gate` | `127.0.0.1:8088` | Existing Flask portal and authenticated private gateway API |
 
 The updater releases Nginx's old 443 listener before starting the gateway. It installs Ubuntu's `python3-aiohttp` and `python3-cryptography` packages and a dedicated `accessgate-gateway` service user. Only the port-binding capability is granted; the gateway runs without root, has a read-only application/configuration filesystem and can write only its private runtime directory. Known reset cleanup includes the gateway service.
@@ -27,8 +27,8 @@ An unrelated/custom 443 listener must not occupy this VM's address. Do not insta
 
 ## DNS and device prerequisites
 
-- Keep the selected hostname's DNS answer pointed at `10.40.22.5` for the whole session. Apply the managed [Pi-hole config](PIHOLE.md); a normal adlist does not preserve the destination IP.
-- Permit the actual client subnet to reach this VM on TCP 80/443. The default `10.40.0.0/16` includes `10.40.134.0/24` and `10.40.135.0/24`.
+- Keep the selected hostname's DNS answer pointed at `192.168.10.20` for the whole session. Apply the managed [Pi-hole config](PIHOLE.md); a normal adlist does not preserve the destination IP.
+- Permit the actual client subnet to reach this VM on TCP 80/443. The default `192.168.0.0/16` includes `192.168.40.0/24` and `192.168.50.0/24`.
 - Trust the retained public Access Gate root CA in the intended browser/device. A device that already trusts the correct retained CA does not need a different CA installed after this update.
 - The VM needs outbound verified HTTPS to public origins and the public DNS-over-HTTPS providers. The gateway bootstraps Cloudflare (`1.1.1.1`/`1.0.0.1`) and Google (`8.8.8.8`/`8.8.4.4`) independently of Pi-hole, retaining provider hostname/certificate validation. This avoids resolving the real website back to the gateway itself. Upstream IPv4 addresses must be public; local, private, loopback, link-local and reserved answers are refused.
 
@@ -65,8 +65,8 @@ The Pi-hole wildcard config's `local=` rule suppresses fresh upstream AAAA/HTTPS
 ```bash
 systemctl is-active nginx access-gate access-gate-gateway
 ss -lntp
-curl --noproxy '*' --cacert /etc/access-gate/ca/root.crt https://10.40.22.5/__access_gate/health
-curl --noproxy '*' --cacert /etc/access-gate/ca/root.crt -I https://10.40.22.5/
+curl --noproxy '*' --cacert /etc/access-gate/ca/root.crt https://192.168.10.20/__access_gate/health
+curl --noproxy '*' --cacert /etc/access-gate/ca/root.crt -I https://192.168.10.20/
 ```
 
 Expect three active services, the listeners listed above, gateway health JSON and a trusted HTTP 200 for the portal.
@@ -75,7 +75,7 @@ Choose an enabled restricted hostname and substitute it in both places below:
 
 ```bash
 curl --noproxy '*' \
-  --resolve 'restricted.example:443:10.40.22.5' \
+  --resolve 'restricted.example:443:192.168.10.20' \
   --cacert /etc/access-gate/ca/root.crt \
   -I https://restricted.example/
 ```

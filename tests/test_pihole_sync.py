@@ -29,7 +29,7 @@ class PiHoleSyncTests(unittest.TestCase):
         }
         for name,body in commands.items():
             p=self.bin/name; p.write_text('#!/usr/bin/env bash\nset -eu\n'+body+'\n'); p.chmod(0o755)
-        self.env=dict(os.environ,PATH=str(self.bin)+os.pathsep+os.environ['PATH'],DOWNLOAD=str(self.download),RESTART_LOG=str(self.log),FAIL_MARKER=str(self.root/'failed'))
+        self.env=dict(os.environ,ACCESS_GATE_FEED_URL='http://10.40.22.5/pihole.conf',ACCESS_GATE_TARGET_IP='10.40.22.5',PATH=str(self.bin)+os.pathsep+os.environ['PATH'],DOWNLOAD=str(self.download),RESTART_LOG=str(self.log),FAIL_MARKER=str(self.root/'failed'))
     def tearDown(self): self.temp.cleanup()
     def run_sync(self,**env):
         return subprocess.run(['bash',str(self.script)],env=dict(self.env,**env),capture_output=True,text=True)

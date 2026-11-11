@@ -1,11 +1,15 @@
 """Wait for the actual HTTPS portal, not merely an active service process."""
 import ssl
+import http.client
+import socket
+from urllib.parse import urlsplit
 import sys
 import time
 import urllib.error
 import urllib.request
 
-URL='https://10.40.22.5/'
+from .deployment import LEGACY
+URL=LEGACY['portal_url']+'/'
 CAFILE='/etc/access-gate/ca/root.crt'
 
 
@@ -16,12 +20,21 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self,req,fp,code,msg,headers,newurl): return None
 
 
-def https_probe(cafile=CAFILE,url=URL):
+def https_probe(cafile=CAFILE,url=URL,address=None):
     context=ssl.create_default_context(cafile=cafile)
     # Local checks must never travel through an environment-configured proxy.
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                      urllib.request.HTTPSHandler(context=context),NoRedirect())
     def probe(timeout):
+        if address is not None:
+            target=urlsplit(url)
+            connection=http.client.HTTPSConnection(target.hostname,443,timeout=timeout,context=context)
+            try:
+                connection.sock=context.wrap_socket(socket.create_connection((address,443),timeout=timeout),server_hostname=target.hostname)
+                connection.request('GET',target.path or '/',headers={'Connection':'close'})
+                response=connection.getresponse(); response.read(1)
+                return response.status
+            finally: connection.close()
         with opener.open(url,timeout=timeout) as response:
             response.read(1)
             return response.status
@@ -56,9 +69,10 @@ def main():
     try:
         import json
         from pathlib import Path
-        config=json.loads(Path('/etc/access-gate/config.json').read_text())
+        from .deployment import normalize
+        config=normalize(json.loads(Path('/etc/access-gate/config.json').read_text()))
         endpoint=config.get('portal_url',URL.rstrip('/')).rstrip('/')+'/'
-        wait_for_portal(https_probe(url=endpoint))
+        wait_for_portal(https_probe(url=endpoint,address=config['listen_ipv4']))
     except (ReadinessError,OSError,ValueError) as exc:
         print('Portal readiness failed: '+str(exc),file=sys.stderr)
         return 1
