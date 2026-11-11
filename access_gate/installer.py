@@ -37,6 +37,17 @@ def password_file(path):
     return value
 
 
+def service_conflicts(root=Path('/')):
+    root=Path(root)
+    if (root/'etc/cloudpanel').exists() or (root/'home/clp').exists():
+        raise ValueError('CloudPanel host detected. Install Access Gate on a separate VM; shared web-server deployment is not supported. See docs/DEPLOYMENTS.md.')
+    enabled=root/'etc/nginx/sites-enabled'
+    if enabled.exists() and any(enabled.iterdir()):
+        raise ValueError('Existing enabled nginx sites detected. Use a dedicated Access Gate VM; no existing sites were changed. See docs/DEPLOYMENTS.md.')
+    for relative in ('etc/nginx/sites-available/access-gate','etc/systemd/system/access-gate.service','etc/systemd/system/access-gate-dns.service'):
+        if (root/relative).exists() or (root/relative).is_symlink():raise ValueError('An Access Gate target file already exists; inspect the installation or use resume instead of overwriting it.')
+
+
 def preflight(c,addresses=None, listeners=None):
     if not any(ipaddress.ip_address(c['listen_ipv4']) in ipaddress.ip_network(n) for n in c['client_networks']):raise ValueError('Include the server IPv4 (or its /32) in client networks for local HTTPS/DNS verification.')
     if c['listen_ipv4'] not in (local_addresses() if addresses is None else addresses): raise ValueError('The selected IPv4 address is not assigned to this server.')
@@ -87,6 +98,7 @@ def wizard():
 def main():
     parser=argparse.ArgumentParser();parser.add_argument('destination');parser.add_argument('--profile');args=parser.parse_args()
     if os.geteuid()!=0: raise SystemExit('Run the installation planner as root.')
+    service_conflicts()
     if args.profile:
         raw=json.loads(Path(args.profile).read_text());c=profile(raw);preflight(c)
         password=password_file(raw['admin_password_file']) if raw.get('admin_password_file') else ''

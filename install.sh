@@ -177,7 +177,14 @@ template=Path('/opt/access-gate/access_gate/nginx-http.conf.in').read_text()
 Path('/etc/nginx/sites-available/access-gate').write_text(template.replace('@@LISTEN@@',c['listen_ipv4']).replace('@@NAMES@@',' '.join(names(c))))
 NGINX
 ln -sfn /etc/nginx/sites-available/access-gate /etc/nginx/sites-enabled/access-gate
-if [[ -L /etc/nginx/sites-enabled/default ]]; then rm /etc/nginx/sites-enabled/default; fi
+if [[ $resume_install -eq 0 && -L /etc/nginx/sites-enabled/default ]]; then
+    # Fresh-install preflight refused pre-existing enabled sites. This default was installed by apt.
+    if [[ $(readlink -f /etc/nginx/sites-enabled/default) == /etc/nginx/sites-available/default ]]; then
+        rm /etc/nginx/sites-enabled/default
+    else
+        echo 'Unexpected nginx default link; inspect it before continuing.' >&2; exit 1
+    fi
+fi
 cat > /etc/systemd/system/access-gate.service <<'UNIT'
 [Unit]
 Description=Access Gate portal

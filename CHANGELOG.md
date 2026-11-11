@@ -1,3 +1,9 @@
+# 0.19.1
+
+- Document supported separate-host service combinations and deferred shared CloudPanel/Pi-hole arrangements (#25).
+- Reject existing enabled nginx/CloudPanel configurations before fresh installation.
+- Preserve unrelated nginx/Squid services during reset and restrict default-site removal to fresh installs.
+
 # 0.19.0
 
 - Offer optional built-in DNS in the installation wizard and unattended profiles (#24).
