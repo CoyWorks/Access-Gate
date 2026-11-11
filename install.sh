@@ -127,7 +127,7 @@ chown root:root /etc/access-gate/ca/root.key /etc/access-gate/ca/root.crt
 chmod 0640 /etc/access-gate/ca/root.key
 chmod 0644 /etc/access-gate/ca/root.crt
 openssl req -new -newkey rsa:2048 -nodes -keyout /etc/access-gate/portal.key \
-    -out /etc/access-gate/portal.csr -subj "/CN=$GATE_PORTAL_HOST"
+    -out /etc/access-gate/portal.csr -subj '/CN=Access Gate portal'
 (cd "$bundle_dir" && /usr/bin/python3 -m access_gate.deployment certificate "$plan_file") > /etc/access-gate/portal.ext
 openssl x509 -req -in /etc/access-gate/portal.csr -CA /etc/access-gate/ca/root.crt \
     -CAkey /etc/access-gate/ca/root.key -CAcreateserial -days 365 -sha256 \
@@ -292,7 +292,8 @@ PrivateTmp=true
 WantedBy=multi-user.target
 UNIT
 if [[ $GATE_DNS_MODE == builtin ]]; then
-    id accessgate-dns >/dev/null 2>&1 || useradd --system --home /nonexistent --shell /usr/sbin/nologin accessgate-dns
+    getent group accessgate-dns >/dev/null 2>&1 || groupadd --system accessgate-dns
+    id accessgate-dns >/dev/null 2>&1 || useradd --system --gid accessgate-dns --home /nonexistent --shell /usr/sbin/nologin accessgate-dns
     /usr/bin/python3 -m access_gate.dns_setup
     cat > /etc/systemd/system/access-gate-dns-rules.service <<'UNIT'
 [Unit]

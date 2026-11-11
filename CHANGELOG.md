@@ -1,3 +1,8 @@
+# 0.19.3
+
+- Explicitly create the isolated DNS service group rather than relying on host useradd defaults.
+- Keep the portal certificate common name neutral; selected hostnames remain in SANs, including long valid DNS names.
+
 # 0.19.2
 
 - Document the proposed public portal/private gateway trust boundaries, browser handoff, enrollment, outage policy and acceptance matrix (#26).
