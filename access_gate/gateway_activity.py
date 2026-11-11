@@ -33,7 +33,7 @@ class GatewayActivity:
         except asyncio.QueueFull:self.activity_dropped+=1
 
     async def activity_post(self,path,data):
-        async with self.local.post(self.api_url+path,json=data,headers={'X-Gate-Key':self.key},allow_redirects=False) as response:
+        async with self.local.post(self.api_url+(self.api_path(path) if hasattr(self,'api_path') else path),json=data,headers=self.api_headers() if hasattr(self,'api_headers') else {'X-Gate-Key':self.key},allow_redirects=False) as response:
             body=await response.content.read(1025)
             if len(body)>1024 or response.status!=200:raise OSError('Activity delivery failed.')
 
@@ -51,7 +51,7 @@ class GatewayActivity:
                         except (aiohttp.ClientError,asyncio.TimeoutError,OSError):
                             if attempt:self.activity_dropped+=1
                 finally:self.activity_queue.task_done()
-            if time.monotonic()-last_cleanup>=60:
+            if not getattr(self,'remote',False) and time.monotonic()-last_cleanup>=60:
                 try:await self.activity_post('/internal/activity/cleanup',{})
                 except (aiohttp.ClientError,asyncio.TimeoutError,OSError):pass
                 last_cleanup=time.monotonic()

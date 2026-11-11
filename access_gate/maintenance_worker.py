@@ -10,7 +10,7 @@ import tempfile
 import time
 from .core import GateError,Store
 from .maintenance import Jobs,JOB_ID,MAX_ARCHIVE,read_regular,write_private
-from .recovery import STATE_FILES,DATABASE,snapshot,encrypt,preflight,invalidate,database_account
+from .recovery import STATE_FILES,OPTIONAL_STATE_FILES,DATABASE,snapshot,encrypt,preflight,invalidate,database_account
 from .settings import atomic_write
 
 
@@ -46,13 +46,18 @@ class Worker:
         """Called only with stopped services and a fully validated private stage."""
         from .gateway_setup import prepare
         from .deployment import normalize,render_http
-        config=normalize(json.loads((stage/'etc/access-gate/config.json').read_text()));config['secret']=os.urandom(32).hex()
+        config=normalize(json.loads((stage/'etc/access-gate/config.json').read_text()));config['secret']=os.urandom(32).hex();config['public_admin']=False;config['remote_gateway']=False
         invalidate(stage/'database',config)
         (stage/'etc/access-gate/config.json').write_text(json.dumps(config))
-        for name in STATE_FILES:
+        for name in STATE_FILES+OPTIONAL_STATE_FILES:
             dest=self.root/'etc/access-gate'/name
             if dest.is_symlink():raise GateError('Server state must not contain symlinks.')
-            write_private(dest,(stage/'etc/access-gate'/name).read_bytes())
+            source=stage/'etc/access-gate'/name
+            if name.startswith('remote/'):
+                dest.unlink(missing_ok=True)
+                continue
+            if source.exists():write_private(dest,source.read_bytes())
+            elif name in OPTIONAL_STATE_FILES:dest.unlink(missing_ok=True)
         database=self.root/DATABASE.lstrip('/')
         for suffix in ('-wal','-shm'):Path(str(database)+suffix).unlink(missing_ok=True)
         write_private(database,(stage/'database').read_bytes())

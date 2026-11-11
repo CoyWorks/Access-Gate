@@ -33,3 +33,5 @@ On replacement failure the worker attempts rollback with the same fail-closed re
 ## Verified recovery exercise
 
 Automated synthetic-server tests exercise committed WAL backup, authenticated encryption, wrong-password/corruption/schema refusal, preview without replacement, full restore and post-restore revocation, readiness failure/rollback, duplicate jobs, symlink/path refusal and admin/CSRF/password controls. The exercise uses temporary certificate/database state and mocked service commands; final service/route/CA acceptance on the real server remains an operator check.
+
+Public/remote deployments additionally restore with registrations in the restored authority database revoked, MFA/recovery cleared and public-admin/remote-node mode disabled. Private-node credential/activation files are discarded; revoke the retired private-node ID on the separate authority as well. Retained inspection CAs are preserved. Re-enroll deliberately using [Public portal recovery](PUBLIC_PORTAL.md); ACME account/source directories remain external to this backup.

@@ -43,3 +43,9 @@ class ServiceCombinationTests(unittest.TestCase):
             root=Path(temp)
             with self.assertRaises(ValueError):check_shared_nginx(root,runner=runner)
             (root/'etc/nginx/sites-enabled').mkdir(parents=True);check_shared_nginx(root,runner=runner)
+
+    def test_nginx_include_globs_match_the_managed_conf_filename(self):
+        from access_gate.services import includes_managed_site
+        self.assertTrue(includes_managed_site('include /etc/nginx/sites-enabled/*;'))
+        self.assertTrue(includes_managed_site('include /etc/nginx/sites-enabled/*.conf;'))
+        self.assertFalse(includes_managed_site('# include /etc/nginx/sites-enabled/*;\ninclude /etc/nginx/sites-enabled/other-*.conf;'))

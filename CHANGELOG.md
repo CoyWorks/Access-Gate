@@ -1,3 +1,12 @@
+# 0.21.0
+
+- Add opt-in public portal TLS/ACME provisioning, verified renewal imports and private-by-default administration (#26).
+- Add separate mTLS gateway enrollment, one-use activation, rotation/revocation, gateway-bound browser handoffs and live remote authorization.
+- Add per-node DNS rule mirroring using the private target address and last-known-good retention.
+- Add encrypted TOTP state, replay protection, one-use recovery codes and mandatory MFA for explicitly public administration.
+- Add schema 11, bounded public/API budgets, payload/concurrency limits and restore invalidation of remote credentials/MFA.
+- Cover real HTTPS/mTLS code/request handoffs, verified origin forwarding, rejected identities and authority failures.
+
 # 0.20.0
 
 - Add explicit shared-nginx installation mode with address-aware web/DNS conflicts and preserved CloudPanel/Pi-hole ownership (#25).

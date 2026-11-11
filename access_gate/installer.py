@@ -43,11 +43,11 @@ def service_conflicts(root=Path('/'),web_mode='dedicated'):
         from .services import check_shared_nginx
         check_shared_nginx(root)
     if web_mode!='shared-nginx' and ((root/'etc/cloudpanel').exists() or (root/'home/clp').exists()):
-        raise ValueError('CloudPanel host detected. Install Access Gate on a separate VM; shared web-server deployment is not supported. See docs/DEPLOYMENTS.md.')
+        raise ValueError('CloudPanel host detected. Choose shared-nginx with a reserved gateway address or use a dedicated VM. See docs/DEPLOYMENTS.md.')
     enabled=root/'etc/nginx/sites-enabled'
     if web_mode!='shared-nginx' and enabled.exists() and any(enabled.iterdir()):
-        raise ValueError('Existing enabled nginx sites detected. Use a dedicated Access Gate VM; no existing sites were changed. See docs/DEPLOYMENTS.md.')
-    for relative in ('etc/nginx/sites-available/access-gate','etc/systemd/system/access-gate.service','etc/systemd/system/access-gate-dns.service'):
+        raise ValueError('Existing enabled nginx sites detected. Choose shared-nginx with a reserved gateway address or use a dedicated VM; no sites were changed. See docs/DEPLOYMENTS.md.')
+    for relative in ('etc/nginx/sites-enabled/access-gate.conf','etc/nginx/sites-available/access-gate','etc/systemd/system/access-gate.service','etc/systemd/system/access-gate-dns.service'):
         if (root/relative).exists() or (root/relative).is_symlink():raise ValueError('An Access Gate target file already exists; inspect the installation or use resume instead of overwriting it.')
 
 

@@ -110,7 +110,7 @@ class DNSExportTests(unittest.TestCase):
         self.assertEqual(restarted.list_dns_domains()[0]['domain'], 'example.com')
         restarted.redeem(codes[1], '10.40.22.100', 1001, browser_token='b'*64)
         with restarted.connect() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 10)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0], 11)
             self.assertEqual(db.execute('PRAGMA foreign_key_check').fetchall(), [])
             self.assertEqual(db.execute('SELECT domain FROM domain_rules').fetchone()[0], 'archived.example')
 

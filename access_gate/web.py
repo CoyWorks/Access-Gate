@@ -33,7 +33,7 @@ DNS_FEED_PATHS = frozenset(('/domains.txt', '/pihole.conf'))
 class PortalRequest(Request):
     @property
     def max_content_length(self):
-        return MAX_ARCHIVE+16384 if self.path=='/admin/recovery' else 16384
+        return MAX_ARCHIVE+16384 if self.path in ('/admin/recovery','/internal/remote-domains') else 16384
 
 
 def create_app(config=None):
@@ -56,7 +56,7 @@ def create_app(config=None):
         if request.remote_addr not in ('127.0.0.1','::1'): abort(403)
         try: ip=ipaddress.ip_address(request.headers.get('X-Real-IP',''))
         except ValueError: abort(403)
-        if not any(ip in net for net in networks): abort(403)
+        if not any(ip in net for net in networks) and (not config['public_portal'] or request.path in DNS_FEED_PATHS): abort(403)
         return str(ip)
 
     def browser():
@@ -71,12 +71,12 @@ def create_app(config=None):
     def csrf(): return session.setdefault('csrf',secrets.token_urlsafe(32))
 
     def current_exclusion():
-        if store.ip_excluded(client_ip(),config):return dict(kind='ip',expires=None)
+        if not config['public_portal'] and store.ip_excluded(client_ip(),config):return dict(kind='ip',expires=None)
         if getattr(g,'admin_login',None):return dict(kind='admin',expires=g.admin_login['expires'])
         return None
 
     def website_handoff(entry_id,token,entry):
-        if store.ip_excluded(client_ip(),config):return redirect(entry['origin']+'/',code=303)
+        if not config['public_portal'] and store.ip_excluded(client_ip(),config):return redirect(entry['origin']+'/',code=303)
         if getattr(g,'admin_login',None):target,ticket=store.issue_admin_handoff(entry_id,g.admin_login['id'],config)
         else:target,ticket=store.issue_handoff(entry_id,token)
         return redirect(target+'/__access_gate/complete?'+urlencode({'ticket':ticket}),code=303)
@@ -89,12 +89,27 @@ def create_app(config=None):
 
     @app.before_request
     def guard():
+        g.gateway_id=None
+        if request.path.startswith('/gateway/v1/'):
+            if not config['public_portal']:abort(404)
+            expected=config['acl_token']
+            if request.remote_addr not in ('127.0.0.1','::1') or not hmac.compare_digest(request.headers.get('X-Gate-Key','').encode(),expected.encode()):abort(403)
+            peer=store.authenticate_gateway(request.headers.get('X-Gate-Peer-Fingerprint',''),request.headers.get('X-Gateway-Key',''))
+            if not peer:abort(403)
+            if request.path!='/gateway/v1/activate' and not peer['activated']:abort(403)
+            g.gateway_id=peer['id']
+            if not store.public_limit('gateway:'+g.gateway_id,6000):abort(429)
+            return
         if request.path.startswith('/internal/'):
+
             expected=config.get('acl_token','')
             if request.remote_addr not in ('127.0.0.1','::1') or not expected or not hmac.compare_digest(request.headers.get('X-Gate-Key','').encode(),expected.encode()): abort(403)
             return
         if request.path!='/admin/recovery' and request.content_length and request.content_length>16384:abort(413)
         address=client_ip()
+        if config['public_portal'] and request.method=='POST':
+            # Check the global budget first, bounding attacker-controlled source keys.
+            if not store.public_limit('visitor-global',300) or not store.public_limit('visitor:'+address,20):abort(429)
         g.admin_security=store.admin_security(config)
         # Polling/static/feed requests validate but never renew an idle login.
         activity=request.path not in ('/admin/manifest.webmanifest','/admin/sw.js','/admin/icon-192.png','/admin/icon-512.png') and request.path not in DNS_FEED_PATHS and request.path not in ('/status','/request-access/status') and not request.path.startswith(('/static/','/admin/api/'))
@@ -109,12 +124,15 @@ def create_app(config=None):
         else:
             for key in ('admin','auth_version'):session.pop(key,None)
         if request.path=='/admin' or request.path.startswith('/admin/'):
+            from .public_security import private_address
+            if config['public_portal'] and not config['public_admin'] and not private_address(address):abort(403)
             if not any(ipaddress.ip_address(address) in ipaddress.ip_network(n) for n in g.admin_security['networks']):
                 abort(403,'Administration is not available from this network. The code portal is still available.')
         if request.path not in DNS_FEED_PATHS and urlsplit('https://'+request.host).hostname!=urlsplit(portal_url).hostname:
             if request.method in ('GET','HEAD'):
                 return redirect(portal_url+request.full_path.rstrip('?'),code=308)
             abort(400,'Open the canonical portal address and reload the form.')
+        if request.path=='/admin/recovery' and request.method=='POST' and not g.admin_login:abort(403)
         if request.method=='POST' and (not session.get('csrf') or not hmac.compare_digest(session.get('csrf','').encode(),request.form.get('csrf','').encode())):
             abort(400,'The form has expired. Please reload the page.')
 
@@ -181,7 +199,7 @@ def create_app(config=None):
                 try: store.redeem(request.form.get('code',''),ip,browser_token=token)
                 except GateError as exc:
                     store.audit('code.failed',actor='Visitor',details=dict(reason='invalid_or_unavailable'))
-                    error=str(exc)
+                    error='Code unavailable or invalid.' if config['public_portal'] else str(exc)
                 else:
                     if entry:
                         # End the form navigation on a portal document before leaving
@@ -211,7 +229,7 @@ def create_app(config=None):
             ip = client_ip()
             if not store.attempt('login:'+ip, 5):
                 error = 'Too many attempts. Please wait 15 minutes.'
-            elif check_password_hash(g.admin_security['password_hash'], request.form.get('password','')):
+            elif check_password_hash(g.admin_security['password_hash'], request.form.get('password','')) and (not config['public_admin'] or (store.attempt('public-admin-factor',5) and store.verify_mfa(request.form.get('factor','')))):
                 token,login_state=store.new_admin_login(browser(),config,expected_version=g.admin_security['version'])
                 g.new_admin_cookie=token;g.clear_admin_cookie=False;g.admin_login=login_state
                 session.clear()
@@ -223,8 +241,8 @@ def create_app(config=None):
                 return redirect('/admin')
             else:
                 store.audit('admin.login_failed',actor='Visitor',details=dict(reason='incorrect_password'))
-                error = 'Incorrect password.'
-        return render_template('login.html', csrf=csrf(), error=error,portal=portal,entry_id=entry_id)
+                error = 'Incorrect sign-in details.' if config['public_admin'] else 'Incorrect password.'
+        return render_template('login.html', csrf=csrf(), error=error,portal=portal,entry_id=entry_id,mfa_required=config['public_admin'])
 
     @app.post('/admin/logout')
     @admin_only
@@ -588,7 +606,7 @@ def create_app(config=None):
         page = store.dns_domain_page(request.args.get('q', ''), request.args.get('page', '1'))
         summary = store.dns_summary()
         return render_template('dns_domains.html', domains=page['items'], domain_page=page, summary=summary,
-                               target_ip=target_ip, dns_mode=config['dns_mode'], enabled_count=summary['enabled'], wildcard_count=summary['wildcard'],
+                               target_ip=target_ip, dns_mode=config['dns_mode'], public_authority=config['public_portal'], enabled_count=summary['enabled'], wildcard_count=summary['wildcard'],
                                preview=store.export_dns_domains('dnsmasq', limit=50, target_ip=target_ip), value=value, scope=scope,
                                error=error, csrf=csrf(), import_error=import_error,
                                import_url=import_url, import_scope=import_scope), 400 if error or import_error else 200
@@ -773,12 +791,12 @@ def create_app(config=None):
                 if not store.restricted_host(target[8:]): return jsonify(active=False),403
             except GateError: return jsonify(active=False),403
         grant=None
-        if require_domain and request.method=='GET' and store.ip_excluded(request.headers.get('X-Gate-Client-IP'),config):
+        if require_domain and not g.gateway_id and request.method=='GET' and store.ip_excluded(request.headers.get('X-Gate-Client-IP'),config):
             grant=dict(expires=time.time()+60,session_id='ip-exclusion',kind='ip')
         if not grant:
             try:
                 grant=store.admin_site_grant(data.get('token'),data.get('origin'),config,
-                    activity=request.method=='GET' and request.headers.get('X-Gate-Activity')=='1') or store.gateway_grant(data.get('token'),data.get('origin'))
+                    activity=request.method=='GET' and request.headers.get('X-Gate-Activity')=='1',gateway_id=g.gateway_id) or store.gateway_grant(data.get('token'),data.get('origin'),gateway_id=g.gateway_id)
             except GateError:grant=None
         if not grant: return jsonify(active=False),401
         response=jsonify(active=True,expires=grant['expires'],session_id=grant['session_id'])
@@ -790,9 +808,14 @@ def create_app(config=None):
         response.headers['X-Gate-Upstream-Cookie']='; '.join(part.strip() for part in request.headers.get('Cookie','').split(';') if part.strip() and part.strip().split('=',1)[0] not in reserved)
         return response
 
+    @app.post('/gateway/v1/activity/visit')
     @app.post('/internal/activity/visit')
     def record_visit():
-        store.record_visit(request.get_json(silent=True))
+        payload=request.get_json(silent=True)
+        if g.gateway_id:
+            with store.connect() as db:
+                if not isinstance(payload,dict) or not db.execute('SELECT 1 FROM gateway_tokens WHERE gateway_id=? AND session_id=? LIMIT 1',(g.gateway_id,payload.get('session_id'))).fetchone():abort(403)
+        store.record_visit(payload)
         return jsonify(ok=True)
 
     @app.post('/internal/activity/cleanup')
@@ -800,32 +823,74 @@ def create_app(config=None):
         store.cleanup_activity()
         return jsonify(ok=True)
 
+    @app.get('/gateway/v1/domain')
     @app.get('/internal/gateway/domain')
     def gateway_domain():
         try: allowed = store.restricted_host(request.args.get('host', ''))
         except GateError: allowed = False
         return jsonify(restricted=allowed)
 
+    @app.get('/gateway/v1/check')
     @app.get('/internal/gateway/check')
     def gateway_check():
         return check(require_domain=True)
 
+    @app.get('/gateway/v1/start')
     @app.get('/internal/start')
     def start_gateway_browser():
         target=request.headers.get('X-Gate-Origin')
-        nonce=secrets.token_hex(32); entry_id=store.new_entry(target,nonce)
+        if g.gateway_id:
+            if not store.restricted_host(urlsplit(target or '').hostname or ''):abort(403)
+            if not store.public_limit('entry:'+g.gateway_id,120):abort(429)
+        nonce=secrets.token_hex(32); entry_id=store.new_entry(target,nonce,gateway_id=g.gateway_id)
         response=redirect(portal_url+'/?'+urlencode({'entry':entry_id}),code=302)
         response.set_cookie(CHALLENGE_COOKIE,nonce,max_age=300,secure=True,httponly=True,samesite='Lax',path='/')
         return response
 
+    @app.get('/gateway/v1/finish')
     @app.get('/internal/finish')
     def finish_gateway_browser():
         target=request.headers.get('X-Gate-Origin')
-        result=store.accept_admin_handoff(request.args.get('ticket'),request.cookies.get(CHALLENGE_COOKIE),target,config) or store.accept_handoff(request.args.get('ticket'),request.cookies.get(CHALLENGE_COOKIE),target)
+        result=store.accept_admin_handoff(request.args.get('ticket'),request.cookies.get(CHALLENGE_COOKIE),target,config,gateway_id=g.gateway_id) or store.accept_handoff(request.args.get('ticket'),request.cookies.get(CHALLENGE_COOKIE),target,gateway_id=g.gateway_id)
         from .browser import origin
         response=redirect(origin(target)+'/',code=303)
         response.set_cookie(SITE_COOKIE,result['token'],max_age=365*86400,secure=True,httponly=True,samesite='Lax',path='/')
         response.delete_cookie(CHALLENGE_COOKIE,secure=True,httponly=True,samesite='Lax',path='/')
         return response
+
+    @app.get('/gateway/v1/rules')
+    def gateway_remote_rules():
+        return jsonify(domains=[dict(domain=r['domain'],include_subdomains=bool(r['include_subdomains'])) for r in store.list_dns_domains() if r['enabled']])
+
+    @app.post('/internal/remote-domains')
+    def apply_remote_domains():
+        if not config['remote_gateway']:abort(403)
+        from .dns_export import hostname,MAX_DOMAINS
+        payload=request.get_json();rows=payload.get('domains') if isinstance(payload,dict) else None
+        if not isinstance(rows,list) or len(rows)>MAX_DOMAINS:abort(400)
+        target=urlsplit(config['remote_portal_url']).hostname
+        validated={}
+        for row in rows:
+            if not isinstance(row,dict):abort(400)
+            name=hostname(row.get('domain'))
+            if not isinstance(row.get('include_subdomains'),bool):abort(400)
+            if name==target or (row['include_subdomains'] and target.endswith('.'+name)):abort(400,'The public authority must remain outside the restricted domain rules.')
+            validated[name]=row['include_subdomains']
+        with store.connect() as db:
+            db.execute('BEGIN IMMEDIATE');db.execute('DELETE FROM dns_export_domains')
+            db.executemany('INSERT INTO dns_export_domains(domain,enabled,include_subdomains,created) VALUES(?,1,?,?)',[(name,int(scope),time.time()) for name,scope in validated.items()]);db.execute('INSERT INTO remote_sync_status VALUES(1,?) ON CONFLICT(id) DO UPDATE SET updated=excluded.updated',(time.time(),));db.commit()
+        return jsonify(ok=True)
+
+    @app.post('/gateway/v1/activate')
+    def activate_gateway_peer():
+        with store.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            if not db.execute('UPDATE remote_gateways SET activated=1 WHERE id=? AND activated=0',(g.gateway_id,)).rowcount:abort(409)
+            db.commit()
+        return jsonify(gateway=g.gateway_id,ready=True)
+
+    @app.get('/gateway/v1/health')
+    def gateway_peer_health():
+        return jsonify(gateway=g.gateway_id,ready=True)
 
     return app

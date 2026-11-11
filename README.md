@@ -2,7 +2,7 @@
 
 
 Deployment addresses below are examples. Start with [Installation](docs/INSTALLATION.md); configure your own address, portal identity and permitted networks. Existing installations retain their original settings.
-**Version 0.20.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+**Version 0.21.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
 Keep selected DNS names pointed at `192.168.10.20` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
 
@@ -254,4 +254,4 @@ The request-first UI uses Home, Requests, Sessions, Codes and More, with a deskt
 
 See [Deployment and service combinations](docs/DEPLOYMENTS.md) for supported topologies, port ownership, existing-service protection and proxy boundaries.
 
-A [public portal/private gateway architecture proposal](docs/PUBLIC_PORTAL.md) is tracked in #26. Public remote deployment is not enabled or supported in this release.
+[Public portal and private gateway deployment](docs/PUBLIC_PORTAL.md) is available as an explicit opt-in. Existing installations remain private/local unless configured through the documented root commands.

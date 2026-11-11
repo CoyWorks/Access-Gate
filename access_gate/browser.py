@@ -61,7 +61,7 @@ class BrowserSessions:
                 WHERE g.browser_hash=? AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0''',(digest,now)).fetchone()
             return dict(row) if row else None
 
-    def new_entry(self,target,nonce,now=None):
+    def new_entry(self,target,nonce,now=None,gateway_id=None):
         from .core import GateError
         now=time.time() if now is None else now
         target=origin(target)
@@ -70,7 +70,7 @@ class BrowserSessions:
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             db.execute('DELETE FROM gateway_entries WHERE expires<?',(now-300,))
-            db.execute('INSERT INTO gateway_entries(id,origin,nonce_hash,expires) VALUES(?,?,?,?)',(entry,target,self.browser_digest(nonce),now+300))
+            db.execute('INSERT INTO gateway_entries(id,origin,nonce_hash,expires,gateway_id) VALUES(?,?,?,?,?)',(entry,target,self.browser_digest(nonce),now+300,gateway_id))
             db.commit()
         return entry
 
@@ -97,7 +97,7 @@ class BrowserSessions:
             db.commit()
         return entry['origin'],ticket
 
-    def accept_handoff(self,ticket,nonce,target,now=None):
+    def accept_handoff(self,ticket,nonce,target,now=None,gateway_id=None):
         from .core import GateError
         target=origin(target)
         ticket_hash=self.browser_digest(ticket); nonce_hash=self.browser_digest(nonce)
@@ -106,20 +106,20 @@ class BrowserSessions:
             now=time.time() if now is None else now
             row=db.execute('''SELECT e.*,g.expires AS access_end FROM gateway_entries e JOIN grants g ON g.session_id=e.session_id
                 JOIN codes c ON c.id=g.code JOIN batches b ON b.id=c.batch
-                WHERE e.ticket_hash=? AND e.nonce_hash=? AND e.origin=? AND e.used=0 AND e.expires>? AND e.ticket_expires>?
-                AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0''',(ticket_hash,nonce_hash,target,now,now,now)).fetchone()
+                WHERE e.gateway_id IS ? AND e.ticket_hash=? AND e.nonce_hash=? AND e.origin=? AND e.used=0 AND e.expires>? AND e.ticket_expires>?
+                AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0''',(gateway_id,ticket_hash,nonce_hash,target,now,now,now)).fetchone()
             if not row: raise GateError('The website handoff is invalid, expired or already used.')
             token=secrets.token_hex(32)
-            db.execute('INSERT INTO gateway_tokens VALUES(?,?,?)',(self.browser_digest(token),row['session_id'],target))
+            db.execute('INSERT INTO gateway_tokens(digest,session_id,origin,gateway_id) VALUES(?,?,?,?)',(self.browser_digest(token),row['session_id'],target,gateway_id))
             db.execute('UPDATE gateway_entries SET used=1 WHERE id=?',(row['id'],))
             db.commit()
             return {'token':token,'expires':row['access_end'],'session_id':row['session_id']}
 
-    def gateway_grant(self,token,target,now=None):
+    def gateway_grant(self,token,target,now=None,gateway_id=None):
         now=time.time() if now is None else now
         target=origin(target); digest=self.browser_digest(token)
         with self.connect() as db:
             row=db.execute('''SELECT g.session_id,g.expires FROM gateway_tokens t JOIN grants g ON g.session_id=t.session_id
-                JOIN codes c ON c.id=g.code JOIN batches b ON b.id=c.batch WHERE t.digest=? AND t.origin=?
-                AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0''',(digest,target,now)).fetchone()
+                JOIN codes c ON c.id=g.code JOIN batches b ON b.id=c.batch WHERE t.gateway_id IS ? AND t.digest=? AND t.origin=?
+                AND g.expires>? AND g.revoked=0 AND c.revoked=0 AND b.revoked=0''',(gateway_id,digest,target,now)).fetchone()
             return dict(row) if row else None

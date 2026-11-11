@@ -92,7 +92,7 @@ if [[ $GATE_WEB_MODE == dedicated ]]; then extra_packages+=(nginx); fi
 if [[ $GATE_DNS_MODE == builtin ]]; then extra_packages+=(python3-dnspython); fi
 apt-get install -y "${extra_packages[@]}" python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
 if [[ $resume_install -eq 1 ]]; then
-    for unit in access-gate-dns.service access-gate-dns-rules.service access-gate-push.service access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
+    for unit in access-gate-remote-domains.service access-gate-dns.service access-gate-dns-rules.service access-gate-push.service access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
     done
     backup_dir=$(mktemp -d /root/access-gate-resume.XXXXXX)
@@ -172,12 +172,20 @@ runuser -u accessgate-gateway -- /usr/bin/python3 -m access_gate.gateway --check
 /usr/bin/python3 - <<'NGINX'
 import json
 from pathlib import Path
-from access_gate.deployment import normalize,names
+from access_gate.deployment import normalize,names,render_http
 c=normalize(json.loads(Path('/etc/access-gate/config.json').read_text()))
 template=Path('/opt/access-gate/access_gate/nginx-http.conf.in').read_text()
-Path('/etc/nginx/sites-available/access-gate').write_text(template.replace('@@LISTEN@@',c['listen_ipv4']).replace('@@NAMES@@',' '.join(names(c))))
+Path('/etc/nginx/sites-available/access-gate').write_text(render_http(c))
 NGINX
-ln -sfn /etc/nginx/sites-available/access-gate /etc/nginx/sites-enabled/access-gate
+site_link=/etc/nginx/sites-enabled/access-gate
+old_site_link=/etc/nginx/sites-enabled/access-gate.conf
+if [[ $GATE_WEB_MODE == shared-nginx ]]; then
+    site_link=/etc/nginx/sites-enabled/access-gate.conf
+    old_site_link=/etc/nginx/sites-enabled/access-gate
+fi
+if [[ -e $site_link && ! -L $site_link ]]; then echo 'The managed nginx site name is occupied by a regular file; inspect it before continuing.' >&2; exit 1; fi
+ln -sfn /etc/nginx/sites-available/access-gate "$site_link"
+if [[ -L $old_site_link && $(readlink -f "$old_site_link") == /etc/nginx/sites-available/access-gate ]]; then rm -- "$old_site_link"; fi
 if [[ $GATE_WEB_MODE == dedicated && $resume_install -eq 0 && -L /etc/nginx/sites-enabled/default ]]; then
     # Fresh-install preflight refused pre-existing enabled sites. This default was installed by apt.
     if [[ $(readlink -f /etc/nginx/sites-enabled/default) == /etc/nginx/sites-available/default ]]; then
@@ -373,6 +381,7 @@ if ! /usr/bin/python3 -m access_gate.readiness; then
     echo 'Correct the reported backend/proxy error, then rerun update.sh. Do not reset the installation.' >&2
     exit 1
 fi
+/usr/bin/python3 -m access_gate.remote_domains --install --start
 /usr/bin/python3 "$bundle_dir/scripts/record_deployment.py" "$bundle_dir"
 printf '\nInstallation complete. CA certificate: http://%s/ca.crt\n' "$GATE_SERVER_IP"
 printf 'Completed mode: %s; version: %s\n' "$install_mode" "$(cat /opt/access-gate/VERSION)"

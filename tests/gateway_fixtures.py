@@ -38,10 +38,10 @@ def leaf(issuer, issuer_key, name, cert_file, key_file):
     write_pair(cert, key, cert_file, key_file)
 
 
-def settings(root, portal_config, rsa_root=False):
+def settings(root, portal_config, rsa_root=False, ca_name='Test Access Gate root'):
     root = Path(root); base = root/'etc/access-gate'; (base/'ca').mkdir(parents=True)
     (base/'config.json').write_text(json.dumps(portal_config))
-    cert, key = ca('Test Access Gate root', rsa_root=rsa_root)
+    cert, key = ca(ca_name, rsa_root=rsa_root)
     write_pair(cert, key, base/'ca/root.crt', base/'ca/root.key')
     leaf(cert, key, 'portal.example', base/'portal.crt', base/'portal.key')
     config = prepare(root, gid=os.getgid())

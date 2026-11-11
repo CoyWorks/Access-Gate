@@ -22,6 +22,7 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
 
 def https_probe(cafile=CAFILE,url=URL,address=None):
     context=ssl.create_default_context(cafile=cafile)
+    context.load_default_certs()
     # Local checks must never travel through an environment-configured proxy.
     opener=urllib.request.build_opener(urllib.request.ProxyHandler({}),
                                      urllib.request.HTTPSHandler(context=context),NoRedirect())
@@ -71,7 +72,7 @@ def main():
         from pathlib import Path
         from .deployment import normalize
         config=normalize(json.loads(Path('/etc/access-gate/config.json').read_text()))
-        endpoint=config.get('portal_url',URL.rstrip('/')).rstrip('/')+'/'
+        endpoint=config.get('portal_url',URL.rstrip('/')).rstrip('/')+('/__access_gate/health' if config['remote_gateway'] else '/')
         wait_for_portal(https_probe(url=endpoint,address=config['listen_ipv4']))
     except (ReadinessError,OSError,ValueError) as exc:
         print('Portal readiness failed: '+str(exc),file=sys.stderr)

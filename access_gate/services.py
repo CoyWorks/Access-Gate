@@ -1,6 +1,8 @@
 """Service ownership and listener checks for dedicated/shared deployments."""
 import ipaddress
 import json
+import fnmatch
+import re
 from pathlib import Path
 import subprocess
 
@@ -21,12 +23,17 @@ def conflicts(c,listener):
     return address==c['listen_ipv4']
 
 
+def includes_managed_site(text):
+    text='\n'.join(line.split('#',1)[0] for line in text.splitlines())
+    return any(fnmatch.fnmatch('/etc/nginx/sites-enabled/access-gate.conf',pattern.strip("\"'")) for pattern in re.findall(r'\binclude\s+([^;\s]+)\s*;',text))
+
+
 def check_shared_nginx(root=Path('/'),runner=subprocess.run):
     root=Path(root)
     if not (root/'etc/nginx/sites-enabled').is_dir():raise ValueError('Shared nginx needs /etc/nginx/sites-enabled support.')
     if root!=Path('/'):return
     result=runner(['/usr/sbin/nginx','-T'],capture_output=True,text=True,timeout=10,check=False)
-    if result.returncode or 'include /etc/nginx/sites-enabled/' not in result.stdout:
+    if result.returncode or not includes_managed_site(result.stdout):
         raise ValueError('The existing nginx configuration must validate and include /etc/nginx/sites-enabled/*. Do not overwrite its nginx.conf.')
     active=runner(['/usr/bin/systemctl','is-active','--quiet','nginx.service'],check=False,timeout=5)
     if active.returncode:raise ValueError('Start the existing nginx service before selecting shared-nginx mode.')

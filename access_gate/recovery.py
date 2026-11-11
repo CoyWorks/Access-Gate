@@ -15,6 +15,7 @@ from .maintenance import MAX_ARCHIVE,read_regular,write_private
 
 MAGIC=b'ACCESSGATE-BACKUP-1\n'
 STATE_FILES=('config.json','acl-token','ca/root.key','ca/root.crt','portal.key','portal.crt','gateway/issuer.key','gateway/issuer.crt')
+OPTIONAL_STATE_FILES=('authority/ca.crt','authority/ca.key','remote/client.crt','remote/client.key','remote/peer.json','remote/activation.json')
 DATABASE='/var/lib/access-gate/data/gate.sqlite3'
 
 
@@ -61,7 +62,7 @@ def snapshot(root,version):
     root=Path(root);base=root/'etc/access-gate'
     config=validate(json.loads(read_regular(base/'config.json',65536)))
     if config['database']!=DATABASE:raise GateError('Only the standard dedicated-server database path is supported.')
-    files={name:base64.b64encode(read_regular(base/name,1024*1024)).decode() for name in STATE_FILES}
+    files={name:base64.b64encode(read_regular(base/name,1024*1024)).decode() for name in STATE_FILES+tuple(n for n in OPTIONAL_STATE_FILES if (base/n).exists())}
     source=root/DATABASE.lstrip('/')
     with tempfile.TemporaryDirectory() as tmp:
         import os
@@ -84,7 +85,7 @@ def preflight(data,password,directory):
     bundle=json.loads(decrypt(data,password))
     if bundle.get('format')!=1 or bundle.get('schema')!=SCHEMA_VERSION:raise GateError('Backup schema does not match this installed version. Install a matching version first.')
     files=bundle.get('files')
-    if not isinstance(files,dict) or set(files)!=set(STATE_FILES)|{'database'}:raise GateError('Backup has missing or unexpected components.')
+    if not isinstance(files,dict) or not set(STATE_FILES)|{'database'} <= set(files) or set(files)-set(STATE_FILES)-set(OPTIONAL_STATE_FILES)-{'database'}:raise GateError('Backup has missing or unexpected components.')
     total=0
     for name,value in files.items():
         if not isinstance(value,str):raise GateError('Invalid backup component.')
@@ -124,9 +125,13 @@ def preflight(data,password,directory):
     from .gateway_tls import expires
     root_cert=x509.load_pem_x509_certificate((directory/'etc/access-gate/ca/root.crt').read_bytes())
     public=root_cert.public_key()
-    if cert.issuer!=root_cert.subject or expires(cert)<=dt.datetime.now(dt.timezone.utc):raise GateError('Portal certificate is expired or has the wrong issuer.')
-    if isinstance(public,rsa.RSAPublicKey):public.verify(cert.signature,cert.tbs_certificate_bytes,padding.PKCS1v15(),cert.signature_hash_algorithm)
-    else:public.verify(cert.signature,cert.tbs_certificate_bytes,ec.ECDSA(cert.signature_hash_algorithm))
+    if config['public_portal']:
+        from .public_deploy import validate_tls
+        validate_tls((directory/'etc/access-gate/portal.crt').read_bytes(),(directory/'etc/access-gate/portal.key').read_bytes(),urlsplit(config['portal_url']).hostname)
+    else:
+        if cert.issuer!=root_cert.subject or expires(cert)<=dt.datetime.now(dt.timezone.utc):raise GateError('Portal certificate is expired or has the wrong issuer.')
+        if isinstance(public,rsa.RSAPublicKey):public.verify(cert.signature,cert.tbs_certificate_bytes,padding.PKCS1v15(),cert.signature_hash_algorithm)
+        else:public.verify(cert.signature,cert.tbs_certificate_bytes,ec.ECDSA(cert.signature_hash_algorithm))
     host=urlsplit(config['portal_url']).hostname
     san=cert.extensions.get_extension_for_class(x509.SubjectAlternativeName).value
     try:matched=ipaddress.ip_address(host) in san.get_values_for_type(x509.IPAddress)
@@ -139,6 +144,7 @@ def invalidate(database,config):
     store=Store(database,config['pepper'])
     with store.connect() as db:
         db.execute('BEGIN IMMEDIATE')
+        db.execute('UPDATE remote_gateways SET enabled=0');db.execute('DELETE FROM admin_mfa');db.execute('DELETE FROM mfa_recovery');db.execute('DELETE FROM public_limits')
         db.execute('DELETE FROM push_deliveries');db.execute('DELETE FROM push_subscriptions')
         db.execute('UPDATE schedules SET enabled=0')
         db.execute("UPDATE schedule_runs SET payload=NULL,status='invalidated' WHERE status='ready'")

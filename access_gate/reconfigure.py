@@ -69,7 +69,10 @@ def apply(root,c,runner=command,gid=None):
         stage=Path(temp);base=stage/'etc/access-gate'
         shutil.copytree(root/'etc/access-gate',base)
         atomic_write(base/'config.json',json.dumps(c,indent=2)+'\n')
-        if names(c)!=names(current):portal_certificate(base,c)
+        if c['public_portal']:
+            from .public_deploy import validate_tls
+            validate_tls((base/'portal.crt').read_bytes(),(base/'portal.key').read_bytes(),urlsplit(c['portal_url']).hostname)
+        elif names(c)!=names(current):portal_certificate(base,c)
         prepare(stage,gid=gid)
         if c['dns_mode']=='builtin':
             from .dns_setup import public_config

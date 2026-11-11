@@ -3,6 +3,7 @@ import asyncio
 import argparse
 import contextlib
 import http.client
+import hashlib
 import ipaddress
 import json
 import math
@@ -41,7 +42,7 @@ def safe_headers(headers, upstream=False):
     omit = HOP | {name.strip().lower() for name in headers.get('Connection', '').split(',')}
     return CIMultiDict((key, value) for key, value in headers.items()
         if key.lower() not in omit and not key.lower().startswith(('x-gate-', 'x-forwarded-', 'x-real-ip'))
-        and not (upstream and key.lower() == 'set-cookie' and value.split('=', 1)[0].strip() in RESERVED_COOKIES))
+        and key.lower()!='x-gateway-key' and not (upstream and key.lower() == 'set-cookie' and value.split('=', 1)[0].strip() in RESERVED_COOKIES))
 
 
 def answer_addresses(answer):
@@ -107,9 +108,15 @@ class Gateway(GatewayActivity):
     def __init__(self, config, *, upstream_connector=None, upstream_port=443, poll_interval=0.5):
         self.config = config
         api = urlsplit(config['api_url'])
-        if api.scheme != 'http' or api.hostname != '127.0.0.1' or not api.port or api.path or api.query or api.fragment or api.username:
-            raise ValueError('The gateway API must be a fixed loopback HTTP origin.')
-        self.api_host, self.api_port = api.hostname, api.port
+        self.remote=bool(config.get('remote_gateway'))
+        if self.remote:
+            if api.scheme!='https' or not api.hostname or api.username or api.password or api.path or api.query or api.fragment:raise ValueError('Remote authorization requires a fixed verified HTTPS origin.')
+            self.api_context=ssl.create_default_context(cafile=config.get('api_ca_file'))
+            self.api_context.load_cert_chain(config['api_client_cert'],config['api_client_key'])
+        else:
+            if api.scheme!='http' or api.hostname!='127.0.0.1' or not api.port or api.path or api.query or api.fragment or api.username:raise ValueError('The gateway API must be a fixed loopback HTTP origin.')
+            self.api_context=None
+        self.api_host, self.api_port = api.hostname, api.port or 443
         self.api_url = config['api_url']
         self.key = config['api_key']
         self.networks = [ipaddress.ip_network(value) for value in config['client_networks']]
@@ -117,22 +124,33 @@ class Gateway(GatewayActivity):
         self.upstream_connector = upstream_connector
         self.upstream_port = upstream_port
         self.poll_interval = poll_interval
+        self.active_requests=0
         self.local = self.upstream = None
         self.resolver = None
         self.tls = CertificateCache(config, self.is_restricted_sync)
 
     def is_restricted_sync(self, host):
-        connection = http.client.HTTPConnection(self.api_host, self.api_port, timeout=1)
+        connection = http.client.HTTPSConnection(self.api_host,self.api_port,timeout=1,context=self.api_context) if self.remote else http.client.HTTPConnection(self.api_host,self.api_port,timeout=1)
         try:
-            connection.request('GET', '/internal/gateway/domain?' + urlencode({'host': host}), headers={'X-Gate-Key': self.key})
+            connection.request('GET', self.api_path('/internal/gateway/domain')+'?'+urlencode({'host':host}), headers=self.api_headers())
             response = connection.getresponse()
             data = response.read(16385)
             return response.status == 200 and len(data) <= 16384 and json.loads(data).get('restricted') is True
         except (OSError, ValueError, http.client.HTTPException): return False
         finally: connection.close()
 
+    def api_path(self,path):
+        if not self.remote:return path
+        mapping={'/internal/health':'/gateway/v1/health','/internal/gateway/domain':'/gateway/v1/domain','/internal/gateway/check':'/gateway/v1/check','/internal/start':'/gateway/v1/start','/internal/finish':'/gateway/v1/finish','/internal/activity/visit':'/gateway/v1/activity/visit'}
+        base,sep,query=path.partition('?')
+        if base not in mapping:raise OSError('This operation is not available to a remote gateway.')
+        return mapping[base]+(sep+query if sep else '')
+
+    def api_headers(self):
+        return {'X-Gateway-Key':self.key,'Host':urlsplit(self.api_url).hostname} if self.remote else {'X-Gate-Key':self.key}
+
     async def start(self, app):
-        self.local = aiohttp.ClientSession(trust_env=False, cookie_jar=aiohttp.DummyCookieJar(),
+        self.local = aiohttp.ClientSession(connector=aiohttp.TCPConnector(ssl=self.api_context,limit=32) if self.remote else None,trust_env=False, cookie_jar=aiohttp.DummyCookieJar(),
             auto_decompress=False, skip_auto_headers={'Accept-Encoding'}, timeout=aiohttp.ClientTimeout(total=2))
         connector = self.upstream_connector
         if connector is None:
@@ -158,7 +176,7 @@ class Gateway(GatewayActivity):
         app.router.add_route('*', '/{path:.*}', self.handle)
         return app
 
-    def client_address(self, request, secure):
+    def client_address(self, request, secure,public=False):
         peer = request.transport.get_extra_info('peername')
         if not peer: raise web.HTTPForbidden(text='Unknown client.')
         value = peer[0]
@@ -167,7 +185,7 @@ class Gateway(GatewayActivity):
             value = request.headers.get('X-Real-IP', '')
         try: address = ipaddress.ip_address(value)
         except ValueError: raise web.HTTPForbidden(text='Invalid client address.')
-        if not any(address in network for network in self.networks): raise web.HTTPForbidden(text='Client network not allowed.')
+        if not public and not any(address in network for network in self.networks): raise web.HTTPForbidden(text='Client network not allowed.')
         return str(address)
 
     @staticmethod
@@ -182,10 +200,10 @@ class Gateway(GatewayActivity):
         except (ValueError, UnicodeError): raise web.HTTPBadRequest(text='Invalid hostname.')
 
     async def rpc(self, path, host, cookie='', address=None, activity=False):
-        headers = {'X-Gate-Key': self.key, 'X-Gate-Origin': 'https://' + host, 'Cookie': cookie}
+        headers = dict(self.api_headers(),**{'X-Gate-Origin':'https://'+host,'Cookie':cookie})
         if address is not None:headers['X-Gate-Client-IP']=address
         if activity:headers['X-Gate-Activity']='1'
-        async with self.local.get(self.api_url + path, headers=headers, allow_redirects=False) as response:
+        async with self.local.get(self.api_url + self.api_path(path), headers=headers, allow_redirects=False) as response:
             data = await read_limited(response.content, 65536)
             return response.status, CIMultiDict(response.headers), data
 
@@ -209,12 +227,18 @@ class Gateway(GatewayActivity):
         if request.transport is not None: request.transport.abort()
         task.cancel()
 
-    async def handle(self, request):
+    async def handle(self,request):
+        if self.active_requests>=128:return web.Response(status=503,text='Gateway busy. Try again shortly.',headers={'Retry-After':'5'})
+        self.active_requests+=1
+        try:return await self._handle(request)
+        finally:self.active_requests-=1
+
+    async def _handle(self, request):
         if not request.raw_path.startswith('/'):
             raise web.HTTPBadRequest(text='Origin-form requests are required.')
         secure = request.transport.get_extra_info('ssl_object') is not None
-        address = self.client_address(request, secure)
         host = self.host(request)
+        address = self.client_address(request,secure,public=bool(self.config.get('public_portal') and host in self.portal_hosts))
         if request.method in ('CONNECT', 'TRACE'): raise web.HTTPMethodNotAllowed(request.method, ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
         try:
             if not secure:
@@ -227,7 +251,11 @@ class Gateway(GatewayActivity):
                 if sni is not None: raise web.HTTPMisdirectedRequest(text='TLS hostname mismatch.')
                 if request.path.startswith('/internal'): raise web.HTTPNotFound()
                 if request.path == '/__access_gate/health':
+                    if self.remote:
+                        status,_,data=await self.rpc('/internal/health',host)
+                        if status!=200 or json.loads(data).get('ready') is not True:raise OSError('Remote authority health failed.')
                     return web.json_response({'gateway': 'ready', 'issuer_expires': expires(self.tls.issuer).isoformat(),'activity_queue':self.activity_queue.qsize(),'activity_dropped':self.activity_dropped,'activity_last_success':self.activity_last_success})
+                if self.remote:return web.Response(status=303,headers={'Location':self.config['portal_url'],'Cache-Control':'no-store'})
                 return await self.portal(request, address)
             if sni != host: raise web.HTTPMisdirectedRequest(text='TLS hostname mismatch.')
             if not await asyncio.to_thread(self.is_restricted_sync, host): raise web.HTTPMisdirectedRequest(text='This hostname is not managed.')
@@ -261,8 +289,30 @@ class Gateway(GatewayActivity):
     async def portal(self, request, address):
         headers = safe_headers(request.headers)
         headers['Host'] = request.headers['Host']; headers['X-Real-IP'] = address
+        if request.path.startswith('/gateway/v1/'):
+            methods={'/gateway/v1/domain':'GET','/gateway/v1/check':'GET','/gateway/v1/start':'GET','/gateway/v1/finish':'GET','/gateway/v1/rules':'GET','/gateway/v1/health':'GET','/gateway/v1/activate':'POST','/gateway/v1/activity/visit':'POST'}
+            if methods.get(request.path)!=request.method or request.raw_path.partition('?')[0]!=request.path:raise web.HTTPNotFound()
+            if not self.config.get('public_portal'):raise web.HTTPNotFound()
+            tls=request.transport.get_extra_info('ssl_object');peer=tls.getpeercert(binary_form=True) if tls else None
+            if not peer:raise web.HTTPForbidden(text='An enrolled client certificate is required.')
+            headers['X-Gate-Key']=self.key
+            headers['X-Gate-Peer-Fingerprint']=hashlib.sha256(peer).hexdigest()
+            headers['X-Gateway-Key']=request.headers.get('X-Gateway-Key','')
+            for name in ('X-Gate-Origin','X-Gate-Client-IP','X-Gate-Activity'):
+                if name in request.headers:headers[name]=request.headers[name]
+        async def bounded_body():
+            total=0;deadline=time.monotonic()+180
+            limit=64*1024*1024+16384 if request.path=='/admin/recovery' else 16384
+            while True:
+                remaining=deadline-time.monotonic()
+                if remaining<=0:raise OSError('Request body deadline exceeded.')
+                chunk=await asyncio.wait_for(request.content.read(65536),min(10,remaining))
+                if not chunk:break
+                total+=len(chunk)
+                if total>limit:raise OSError('Request body limit exceeded.')
+                yield chunk
         async with self.local.request(request.method, self.api_url + request.raw_path, headers=headers,
-                data=request.content.iter_chunked(65536) if request.can_read_body else None,
+                data=bounded_body() if request.can_read_body else None,
                 timeout=aiohttp.ClientTimeout(total=180 if request.path=='/admin/recovery' else 45, connect=2, sock_read=45),
                 allow_redirects=False) as response:
             result = web.StreamResponse(status=response.status, headers=safe_headers(response.headers))
@@ -330,6 +380,7 @@ async def serve(config):
         done = asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT): loop.add_signal_handler(sig, done.set)
+        loop.add_signal_handler(signal.SIGHUP,lambda:gateway.tls.context.load_cert_chain(config['portal_cert'],config['portal_key']))
         await done.wait()
     finally: await runner.cleanup()
 

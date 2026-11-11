@@ -14,7 +14,7 @@ fi
 /usr/bin/python3 "$source_dir/scripts/reset_install.py" check
 /usr/bin/python3 "$source_dir/scripts/legacy_upgrade.py" check
 echo 'Resetting Access Gate on this dedicated VM. Installed dependency packages will remain.'
-for unit in access-gate-dns.service access-gate-dns-rules.service access-gate-push.service access-gate-scheduler.service access-gate-maintenance.service access-gate-gateway.service access-gate.service access-gate-keeper.service access-gate-network.service; do
+for unit in access-gate-remote-domains.service access-gate-public-tls.timer access-gate-public-tls.service access-gate-dns.service access-gate-dns-rules.service access-gate-push.service access-gate-scheduler.service access-gate-maintenance.service access-gate-gateway.service access-gate.service access-gate-keeper.service access-gate-network.service; do
     if systemctl cat "$unit" >/dev/null 2>&1; then systemctl disable --now "$unit"; fi
 done
 # Retire only the recognized legacy integration; independent Squid stays untouched.

@@ -9,8 +9,8 @@
 | Dedicated Access Gate VM and another external DNS server | Implemented with manual integration | Operator applies equivalent exact/subdomain mappings and prevents upstream AAAA/HTTPS bypass. |
 | CloudPanel on another VM alongside a dedicated Access Gate VM | Independent services | CloudPanel keeps its web ports/configuration; restricted names point directly to the Access Gate VM. |
 | Access Gate and CloudPanel/existing nginx on one OS | Implemented with address separation | Choose shared-nginx; existing listeners must leave the gateway IPv4 free on 80/443. |
-| Access Gate with bundled full Pi-hole on one OS | Deferred | Pi-hole adds separate lifecycle, UI/web-port and DNS ownership concerns. Built-in DNS is the supported bundled option. |
-| Public portal with a remote private gateway | Design milestone #26 | Not enabled by changing a URL; see PUBLIC_PORTAL.md when available. |
+| Full Pi-hole installation/lifecycle | Independent by design | Existing Pi-hole can coexist on the same host; built-in DNS is the self-contained installer option. |
+| Public portal with a remote private gateway | Explicit opt-in from 0.21.0 | Verified public TLS, enrolled mTLS control and gateway-bound proofs; see PUBLIC_PORTAL.md. |
 
 This matrix distinguishes implemented topology from target-system acceptance: local DNS UDP/TCP and Pi-hole-helper flows have automated tests; a fresh Ubuntu/CloudPanel combination has not been deployed in this workspace. Verify the documented install/network flows on target hosts before release.
 

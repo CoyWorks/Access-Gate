@@ -98,7 +98,7 @@ class Exclusions:
             db.commit()
         return entry['origin'],ticket
 
-    def accept_admin_handoff(self,ticket,nonce,target,config,now=None):
+    def accept_admin_handoff(self,ticket,nonce,target,config,now=None,gateway_id=None):
         from .core import GateError
         now=time.time() if now is None else now
         target=origin(target);digest=self.browser_digest(ticket)
@@ -107,23 +107,23 @@ class Exclusions:
             if not db.execute('SELECT 1 FROM admin_handoffs WHERE ticket_hash=?',(digest,)).fetchone():return None
             version=self._admin_security(db,config)['version']
             row=db.execute('''SELECT l.id,l.expires FROM admin_handoffs h JOIN gateway_entries e ON e.id=h.entry_id JOIN admin_logins l ON l.id=h.login_id
-                WHERE h.ticket_hash=? AND h.expires>? AND e.expires>? AND e.used=0 AND e.nonce_hash=? AND e.origin=?
-                AND l.version=? AND l.revoked=0 AND l.expires>?''',(digest,now,now,self.browser_digest(nonce),target,version,now)).fetchone()
+                WHERE e.gateway_id IS ? AND h.ticket_hash=? AND h.expires>? AND e.expires>? AND e.used=0 AND e.nonce_hash=? AND e.origin=?
+                AND l.version=? AND l.revoked=0 AND l.expires>?''',(gateway_id,digest,now,now,self.browser_digest(nonce),target,version,now)).fetchone()
             if not row:raise GateError('The administrator website handoff is invalid, expired or already used.')
             token=secrets.token_hex(32)
-            db.execute('INSERT INTO admin_site_tokens VALUES(?,?,?)',(self.browser_digest(token),row['id'],target))
+            db.execute('INSERT INTO admin_site_tokens(digest,login_id,origin,gateway_id) VALUES(?,?,?,?)',(self.browser_digest(token),row['id'],target,gateway_id))
             db.execute('UPDATE gateway_entries SET used=1 WHERE id=(SELECT entry_id FROM admin_handoffs WHERE ticket_hash=?)',(digest,))
             db.commit()
         return dict(token=token,expires=row['expires'],session_id='admin:'+row['id'],kind='admin')
 
-    def admin_site_grant(self,token,target,config,activity=False,now=None):
+    def admin_site_grant(self,token,target,config,activity=False,now=None,gateway_id=None):
         now=time.time() if now is None else now
         target=origin(target);digest=self.browser_digest(token)
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE' if activity else 'BEGIN')
             version=self._admin_security(db,config)['version']
             row=db.execute('''SELECT l.id,l.expires FROM admin_site_tokens t JOIN admin_logins l ON l.id=t.login_id
-                WHERE t.digest=? AND t.origin=? AND l.version=? AND l.revoked=0 AND l.expires>?''',(digest,target,version,now)).fetchone()
+                WHERE t.gateway_id IS ? AND t.digest=? AND t.origin=? AND l.version=? AND l.revoked=0 AND l.expires>?''',(gateway_id,digest,target,version,now)).fetchone()
             if not row:return None
             end=max(row['expires'],now+ADMIN_IDLE_SECONDS) if activity else row['expires']
             if activity:db.execute('UPDATE admin_logins SET expires=?,last_seen=? WHERE id=?',(end,now,row['id']))

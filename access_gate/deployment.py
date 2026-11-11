@@ -65,6 +65,11 @@ def normalize(config, legacy=True):
             if str(address)==c['listen_ipv4'] or address.is_loopback or address.is_unspecified or address.is_multicast or address.is_reserved: raise ValueError('DNS upstream must not be this resolver, loopback or an unusable address.')
             checked.append(str(address))
         c['dns_upstreams']=list(dict.fromkeys(checked))
+    for key in ('public_portal','public_admin','remote_gateway','acme_http'):
+        c.setdefault(key,False)
+        if not isinstance(c[key],bool):raise ValueError(key+' must be boolean.')
+    if c['public_admin'] and not c['public_portal']:raise ValueError('Public administration requires public portal mode.')
+    if c['remote_gateway'] and c['public_portal']:raise ValueError('A remote gateway node cannot also be the public authority.')
     c['deployment_version']=1
     return c
 
@@ -85,7 +90,11 @@ def certificate_extensions(config):
 
 def render_http(config):
     c=normalize(config)
-    return Path(__file__).with_name('nginx-http.conf.in').read_text().replace('@@LISTEN@@',c['listen_ipv4']).replace('@@NAMES@@',' '.join(names(c)))
+    text=Path(__file__).with_name('nginx-http.conf.in').read_text().replace('@@LISTEN@@',c['listen_ipv4']).replace('@@NAMES@@',' '.join(names(c)))
+    if c['acme_http']:
+        text=text.replace('    location = /ca.crt {', '    location ^~ /.well-known/acme-challenge/ {\n        allow all;\n        root /var/lib/access-gate/acme;\n        try_files $uri =404;\n        access_log off;\n    }\n    location = /ca.crt {')
+    if c['public_portal']:text=text.replace('    location / {','    location / {\n        allow all;')
+    return text
 
 
 def main():

@@ -70,6 +70,24 @@ class RecoveryTests(unittest.TestCase):
             self.assertFalse(db.execute('PRAGMA foreign_key_check').fetchall());self.assertEqual(db.execute('PRAGMA integrity_check').fetchone()[0],'ok');self.assertEqual(db.execute('SELECT count(*) FROM push_subscriptions').fetchone()[0],0)
         self.assertFalse((self.worker.private/(job+'.json')).exists())
         self.assertEqual(len(list(self.worker.private.glob('*.rollback'))),1)
+    def test_remote_restore_discards_credentials_and_requires_fresh_enrollment(self):
+        from access_gate.public_deploy import enrollment
+        base=self.root/'etc/access-gate';config=json.loads((base/'config.json').read_text())
+        config.update(remote_gateway=True,remote_portal_url='https://authority.example')
+        peer=enrollment(self.store,dict(config,portal_url='https://authority.example'),'Saved node',base=base,gid=os.getgid())
+        remote=base/'remote';remote.mkdir()
+        (remote/'client.crt').write_text(peer['cert']);(remote/'client.key').write_text(peer['private_key'])
+        (remote/'peer.json').write_text(json.dumps({k:peer[k] for k in ('id','portal_url','key','expires')}))
+        (remote/'activation.json').write_text('{"bundle_hash":"old"}')
+        (base/'config.json').write_text(json.dumps(config))
+        archive=self.backup();job=self.jobs.submit('preflight',passphrase=PASSWORD,archive=archive);self.worker.run_once()
+        self.assertTrue(self.jobs.status(job)['confirm'])
+        restore=self.jobs.submit('restore',preview=job);self.worker.run_once()
+        self.assertEqual(self.jobs.status(restore)['state'],'complete')
+        restored=json.loads((base/'config.json').read_text());self.assertFalse(restored['remote_gateway']);self.assertFalse(restored['public_admin'])
+        self.assertFalse(any(remote.iterdir()))
+        with self.store.connect() as db:self.assertEqual(db.execute('SELECT enabled FROM remote_gateways WHERE id=?',(peer['id'],)).fetchone()[0],0)
+
     def test_restore_service_failure_attempts_safe_rollback(self):
         archive=self.backup();job=self.jobs.submit('preflight',passphrase=PASSWORD,archive=archive);self.worker.run_once()
         calls=[]

@@ -64,3 +64,5 @@ A changed portal origin clears admin logins and push subscriptions. Sign in agai
 For the optional DNS component, see [Built-in DNS](DNS.md). In unattended profiles set `dns_mode` to `builtin` and supply `dns_upstreams`, for example `["1.1.1.1", "9.9.9.9"]`. External modes install no DNS listener or extra DNS package.
 
 For an existing nginx/CloudPanel host, select `web_mode: "shared-nginx"` and follow [address-separated service combinations](DEPLOYMENTS.md). Default dedicated behavior is unchanged.
+
+For a public authority or private remote gateway, first complete the normal private installation, then use the explicit root configuration/enrollment flow in [Public portal deployment](PUBLIC_PORTAL.md). Initial profiles do not silently expose public administration or replace trusted certificates.

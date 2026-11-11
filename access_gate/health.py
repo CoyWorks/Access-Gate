@@ -38,7 +38,8 @@ class Health:
         # Use the public CA copy, never the protected root-key directory.
         ca=Path(self.ca_file)
         root=x509.load_pem_x509_certificate(ca.read_bytes())
-        context=ssl.create_default_context(cafile=str(ca))
+        context=ssl.create_default_context()
+        context.load_verify_locations(cafile=str(ca))
         target=urlsplit(self.config['portal_url'])
         connection=http.client.HTTPSConnection(target.hostname,443,timeout=1,context=context)
         try:
@@ -69,7 +70,7 @@ class Health:
             checks.append(self.item('Database','healthy','Application database is readable.'))
         except Exception:
             checks.append(self.item('Database','failed','Application database is unavailable.','Check portal service logs and data-directory permissions.'))
-        for name in ('access-gate','access-gate-gateway','access-gate-maintenance','access-gate-scheduler','access-gate-push','nginx')+(('access-gate-dns','access-gate-dns-rules') if self.config['dns_mode']=='builtin' else ()):
+        for name in ('access-gate','access-gate-gateway','access-gate-maintenance','access-gate-scheduler','access-gate-push','nginx')+(('access-gate-dns','access-gate-dns-rules') if self.config['dns_mode']=='builtin' else ())+(('access-gate-remote-domains',) if self.config['remote_gateway'] else ()):
             try:
                 # is-active returns non-zero for inactive/failed; show gives the state without that ambiguity.
                 state=self.command(['systemctl','show',name+'.service','--property=ActiveState','--value'])
@@ -77,6 +78,10 @@ class Health:
                 checks.append(self.item(name,'healthy' if state=='active' else 'failed','Service state: '+state+'.','Inspect this service with systemctl status.' if state!='active' else ''))
             except (OSError,ValueError,subprocess.SubprocessError):
                 checks.append(self.item(name,'unknown','Service status could not be read.','Check systemd availability and service logs on the server.'))
+        if self.config['remote_gateway']:
+            with self.store.connect() as db:stamp=db.execute('SELECT updated FROM remote_sync_status WHERE id=1').fetchone()
+            good=bool(stamp and now-stamp[0]<90)
+            checks.append(self.item('Remote DNS synchronization','healthy' if good else 'warning','Remote rules synchronized.' if good else 'Remote rule synchronization is missing or stale.','Check access-gate-remote-domains.service.' if not good else ''))
         if self.config['dns_mode']=='builtin':
             try:
                 status=json.loads(Path('/var/lib/access-gate/dns/status.json').read_text())

@@ -70,8 +70,20 @@ def prepare(root=Path('/'), gid=None):
         http_host='127.0.0.1', http_port=8089, runtime_dir='/run/access-gate-gateway',
         issuer_cert='/etc/access-gate/gateway/issuer.crt', issuer_key='/etc/access-gate/gateway/issuer.key',
         portal_cert='/etc/access-gate/portal.crt', portal_key='/etc/access-gate/portal.key')
+    gateway['public_portal']=config['public_portal']
+    if config['public_portal']:gateway['gateway_client_ca']='/etc/access-gate/authority/ca.crt'
+    if config['remote_gateway']:
+        peer=json.loads((base/'remote/peer.json').read_text())
+        gateway['local_api_key']=config['acl_token']
+        gateway.update(remote_gateway=True,api_url=peer['portal_url'],portal_url=peer['portal_url'],api_key=peer['key'],
+            api_client_cert='/etc/access-gate/remote/client.crt',api_client_key='/etc/access-gate/remote/client.key')
     atomic_write(config_path, json.dumps(gateway, indent=2)+'\n')
     if gid is None: gid = grp.getgrnam('accessgate-gateway').gr_gid
+    if config['public_portal']:
+        authority=base/'authority'
+        if not (authority/'ca.crt').is_file() or not (authority/'ca.key').is_file():raise ValueError('Public mode requires the retained enrollment authority.')
+        from .public_deploy import ensure_authority
+        ensure_authority(base,gid=gid)
     os.chown(directory, 0 if os.geteuid()==0 else os.geteuid(), gid); directory.chmod(0o750)
     # OpenSSL under the installer's umask 027 can leave an existing public certificate
     # root:root 0640. The separate gateway needs group access to BOTH cert and key.

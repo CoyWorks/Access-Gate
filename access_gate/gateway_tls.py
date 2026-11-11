@@ -35,6 +35,9 @@ class CertificateCache:
         self.limit = 256
         self.cache = OrderedDict()
         self.context = server_context(config['portal_cert'], config['portal_key'])
+        if config.get('public_portal'):
+            self.context.load_verify_locations(cafile=config['gateway_client_ca'])
+            self.context.verify_mode=ssl.CERT_OPTIONAL
         self.context.set_servername_callback(self.select)
 
     def select(self, ssl_object, server_name, initial_context):
