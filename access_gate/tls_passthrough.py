@@ -62,7 +62,7 @@ def parse_hello_sni(hello):
     size, pos = part(hello, pos, 1)
     _, pos = part(hello, pos, size[0])
     if pos == len(hello):
-        raise ValueError('Missing TLS SNI.')
+        return None  # Legitimate TLS without SNI uses the portal certificate.
     size, pos = part(hello, pos, 2)
     end = pos + int.from_bytes(size, 'big')
     if end != len(hello):
@@ -91,8 +91,8 @@ def parse_hello_sni(hello):
                     return hostname(raw.decode('ascii'))
                 except (ValueError, UnicodeError, GateError) as exc:
                     raise ValueError('Invalid SNI hostname.') from exc
-        raise ValueError('Missing DNS SNI.')
-    raise ValueError('Missing TLS SNI.')
+        return None
+    return None
 
 
 class TLSRouter:
@@ -145,7 +145,7 @@ class TLSRouter:
                 # Never treat a stale/unavailable policy as permission to proxy.
                 if not self.gateway.policy or not self.gateway.policy.fresh():
                     return
-                managed = name in self.gateway.portal_hosts or self.gateway.is_restricted_sync(name)
+                managed = name is None or name in self.gateway.portal_hosts or self.gateway.is_restricted_sync(name)
                 if managed:
                     upstream = await asyncio.wait_for(
                         asyncio.open_connection('127.0.0.1', self.internal_port), 5)
