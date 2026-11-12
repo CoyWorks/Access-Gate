@@ -3,6 +3,7 @@ from dataclasses import dataclass
 import time
 from .dns_export import hostname, MAX_DOMAINS
 from .core import GateError
+from .domain_match import match_rule
 
 
 @dataclass(frozen=True)
@@ -28,13 +29,7 @@ class DomainPolicy:
 
     def match(self,value,clock=time.monotonic):
         if not self.fresh(clock):return None
-        # Callers normalize the hostname using the shared runtime validator.
-        if value in self.exact:return (value,False)
-        parts=value.split('.')
-        for index in range(len(parts)-1):
-            candidate='.'.join(parts[index:])
-            if candidate in self.suffix:return (candidate,True)
-        return None
+        return match_rule(value,self.exact,self.suffix)
 
 
     def certificate_group(self,value,suffixes):

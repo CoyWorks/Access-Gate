@@ -19,6 +19,8 @@ import dns.rdataclass
 import dns.rdatatype
 import dns.rrset
 
+from .domain_match import match_rule
+
 MAX_RULE_BYTES=64*1024*1024
 
 
@@ -53,8 +55,8 @@ class Rules:
 
     def restricted(self,name):
         self.reload();exact,suffix=self.current
-        name=name.rstrip('.').lower();parts=name.split('.')
-        return name in exact or any('.'.join(parts[i:]) in suffix for i in range(len(parts)))
+        name=name.rstrip('.').lower()
+        return bool(match_rule(name,exact,suffix))
 
 
 class Resolver:

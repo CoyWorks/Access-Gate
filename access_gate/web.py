@@ -538,6 +538,20 @@ def create_app(config=None):
         try:return jsonify(health.performance())
         except (OSError,ValueError,http.client.HTTPException):return jsonify(state='unavailable'),503
 
+    @app.get('/admin/domain-policy')
+    @admin_only
+    def domain_policy_preview():
+        name=request.args.get('hostname','').strip();result=None;error=None
+        if name:
+            try:result=store.policy_preview(name,config)
+            except GateError as exc:error=str(exc)
+        return render_template('domain_policy.html',hostname=name,result=result,error=error),400 if error else 200
+
+    @app.get('/admin/api/domain-policy')
+    @admin_only
+    def domain_policy_data():
+        return jsonify(store.policy_preview(request.args.get('hostname',''),config))
+
     @app.get('/admin/client-diagnostics')
     @admin_only
     def client_diagnostics():

@@ -1,3 +1,7 @@
+# 0.27.0
+
+- Add administrator-only domain-policy explanations with shared runtime matching, DNS behavior preview and explicit client-proof limits (#28).
+
 # 0.26.0
 
 - Add guided real-device diagnostics and a downloadable redacted client-side DNS/network/TLS/portal checker (#27).

@@ -32,12 +32,29 @@ class DNSExports:
         from .core import GateError
         if not isinstance(value, str): raise GateError('Invalid restricted hostname.')
         name = origin('https://' + value)[8:]
-        parts = name.split('.')
-        parents = ['.'.join(parts[i:]) for i in range(1, len(parts)-1)]
+        return bool(self.domain_decision(name)['match'])
+
+    def domain_decision(self,value):
+        from .domain_match import match_rule
+        name=hostname(value);parts=name.split('.')
+        candidates=['.'.join(parts[i:]) for i in range(len(parts)-1)]
         with self.connect() as db:
-            if db.execute('SELECT 1 FROM dns_export_domains WHERE domain=? AND enabled=1', (name,)).fetchone(): return True
-            if not parents: return False
-            return bool(db.execute('SELECT 1 FROM dns_export_domains WHERE enabled=1 AND include_subdomains=1 AND domain IN (' + ','.join('?' for _ in parents) + ') LIMIT 1', parents).fetchone())
+            rows=[dict(r) for r in db.execute('SELECT domain,enabled,include_subdomains FROM dns_export_domains WHERE domain IN ('+','.join('?' for _ in candidates)+') ORDER BY length(domain) DESC',candidates)]
+        exact={r['domain'] for r in rows if r['enabled'] and not r['include_subdomains']}
+        suffix={r['domain'] for r in rows if r['enabled'] and r['include_subdomains']}
+        matched=match_rule(name,exact,suffix)
+        return dict(hostname=name,restricted=bool(matched),match=dict(domain=matched[0],include_subdomains=matched[1]) if matched else None,
+                    ignored=[dict(domain=r['domain'],reason='Disabled' if not r['enabled'] else 'Exact rule does not cover descendants') for r in rows if not r['enabled'] or (r['domain']!=name and not r['include_subdomains'])])
+
+    def policy_preview(self,value,config):
+        from .deployment import names
+        result=self.domain_decision(value);portal=result['hostname'] in names(config)
+        mapped=portal or result['restricted']
+        result.update(target=config['dns_target_ipv4'],dns_mode=config['dns_mode'],portal_hostname=portal,
+                      gateway_behavior='Portal endpoint' if portal else ('Restricted website; live browser authorization required' if mapped else 'Unmanaged hostname; intercepted SNI rejected'),
+                      builtin_records={kind:(config['dns_target_ipv4'] if kind=='A' else 'NOERROR / NODATA') if mapped else 'Forward to configured upstreams' for kind in ('A','AAAA','HTTPS','SVCB')},
+                      scope='Configured global policy only. This does not prove client DNS, CA trust, routing or live gateway snapshot freshness. Pi-hole must fetch/apply its dedicated config. Profiles are not enabled.')
+        return result
 
     def dns_hosts_feed(self, target_ip=TARGET_IP):
         target_ip = str(ipaddress.IPv4Address(target_ip))

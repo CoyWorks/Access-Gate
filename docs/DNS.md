@@ -42,3 +42,9 @@ Updates preserve the selected component. Reconfigure updates its public identity
 ## Implementation references
 
 The forwarder uses [dnspython UDP/TCP query support](https://dnspython.readthedocs.io/en/stable/query.html) and [message construction](https://dnspython.readthedocs.io/en/stable/message-make.html). A forwarding boundary is intentional: ordinary dnsmasq host records can forward other query types, while local-domain directives also affect child names. See the [dnsmasq maintainer discussion of local host query types](https://lists.thekelleys.org.uk/pipermail/dnsmasq-discuss/2026q4/018576.html). The built-in component therefore applies its exact/suffix decision before sending any record type upstream.
+
+## Explain a domain rule
+
+Open **Restricted domains → Explain a domain rule** and enter a hostname. The administrator-only, read-only preview normalizes IDNA, identifies the most-specific enabled exact/suffix match, explains disabled/exact-only candidate rules and displays configured built-in A/AAAA/HTTPS/SVCB behavior. DNS, gateway snapshots and this preview share the same match function. No DNS or website request is made.
+
+A portal hostname is explicitly identified as a portal endpoint. Unmanaged names are forwarded by built-in DNS; intercepted SNI for them is rejected. For Pi-hole, the table is an explanation of the optional built-in resolver, not a promise about Pi-hole's currently loaded settings: suffix rules export address/local entries, while exact host-record mappings may leave non-A answers upstream. Apply the dedicated config and run client diagnostics to establish the actual path. Profile-specific grants remain outside this global preview until access profiles are implemented.
