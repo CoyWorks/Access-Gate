@@ -7,7 +7,7 @@ from cryptography.hazmat.primitives.asymmetric import ec,rsa,padding
 from .maintenance import read_regular
 
 PLATFORMS=('ios','android','windows')
-LOCAL_SETUP_PATHS=frozenset(('/setup','/setup/bootstrap','/ca.crt','/static/gate.css','/static/gate.js'))
+LOCAL_SETUP_PATHS=frozenset(('/setup','/setup/bootstrap','/setup/apple.mobileconfig','/setup/windows.ps1','/ca.crt','/static/gate.css','/static/gate.js'))
 
 
 def public_root(path):
@@ -28,5 +28,10 @@ def setup_context(config,ca_path):
     if config['public_portal']:return result
     try:
         ca=public_root(ca_path);result['ca']={k:v for k,v in ca.items() if k!='der'}
-    except Exception:result['ca_error']='The published device CA is missing, invalid or expired. Ask the administrator to check System status and the public CA copy. No certificate was replaced.'
+        from .client_profiles import apple_profile,windows_script
+        import hashlib
+        result['artifact_hashes']={kind:hashlib.sha256(builder(config,ca_path)).hexdigest().upper() for kind,builder in (('apple',apple_profile),('windows',windows_script))}
+    except Exception:
+        result['ca']=None
+        result['ca_error']='The published device CA is missing, invalid or expired. Ask the administrator to check System status and the public CA copy. No certificate was replaced.'
     return result

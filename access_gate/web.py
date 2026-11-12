@@ -189,6 +189,17 @@ def create_app(config=None):
             except GateError as exc:error=str(exc)
         return render_template('setup.html',setup=setup_context(config,PUBLIC_CA),platform=platform,hostname=name,error=error),400 if error else 200
 
+    @app.get('/setup/apple.mobileconfig')
+    @app.get('/setup/windows.ps1')
+    def device_profile():
+        import io
+        if config['public_portal']:abort(404)
+        from .client_profiles import apple_profile,windows_script
+        apple=request.path.endswith('.mobileconfig')
+        try:data=(apple_profile if apple else windows_script)(config,PUBLIC_CA)
+        except Exception:raise GateError('The device CA is unavailable or invalid. Ask the administrator to check setup.') from None
+        return send_file(io.BytesIO(data),mimetype='application/x-apple-aspen-config' if apple else 'text/plain',as_attachment=True,download_name='access-gate.mobileconfig' if apple else 'access-gate-client.ps1',max_age=0)
+
     @app.get('/setup/bootstrap')
     def device_setup_bootstrap():
         from .onboarding import setup_context

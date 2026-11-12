@@ -1,3 +1,8 @@
+# 0.31.0
+
+- Add removable CA/Web Clip Apple profiles and explicit, reversible current-user Windows client setup with artifact hashes (#38).
+- Preserve Android/manual CA guidance and existing DNS/VPN configuration.
+
 # 0.30.0
 
 - Add platform-specific client onboarding, independent CA fingerprint verification and local HTTP bootstrap (#37).

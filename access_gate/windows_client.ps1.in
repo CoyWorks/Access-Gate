@@ -1,0 +1,74 @@
+# Access Gate personal-device setup. Review this file and independently verify its hash and CA fingerprint.
+# No administrator rights, DNS/VPN changes, execution-policy changes, network downloads or credentials.
+[CmdletBinding()]
+param(
+    [ValidateSet('Inspect','Install','Remove')][string]$Action = 'Inspect',
+    [switch]$ConfirmTrust
+)
+$ErrorActionPreference = 'Stop'
+$settings = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('@@PUBLIC_DATA@@')) | ConvertFrom-Json
+function Get-CertificateSha256($Certificate) {
+    $hasher = [Security.Cryptography.SHA256]::Create()
+    try { return [BitConverter]::ToString($hasher.ComputeHash($Certificate.RawData)).Replace('-','') }
+    finally { $hasher.Dispose() }
+}
+$certificate = New-Object Security.Cryptography.X509Certificates.X509Certificate2 -ArgumentList (,[Convert]::FromBase64String($settings.Certificate))
+if ((Get-CertificateSha256 $certificate) -cne $settings.RootSha256) { throw 'Embedded CA fingerprint mismatch. No changes made.' }
+if ($certificate.NotAfter -le (Get-Date) -or $certificate.NotBefore -gt (Get-Date)) { throw 'CA is not currently valid. No changes made.' }
+Write-Output ('Portal: ' + $settings.Portal)
+Write-Output ('Device CA SHA-256: ' + $settings.RootSha256)
+Write-Output 'Scope: CurrentUser Trusted Root store and a deployment-specific desktop shortcut only.'
+if ($Action -eq 'Inspect') { return }
+if (-not $ConfirmTrust) { throw 'Verify this script and CA fingerprint with the administrator, then explicitly use -ConfirmTrust for Install or Remove.' }
+$stateDirectory = Join-Path $env:LOCALAPPDATA 'AccessGate'
+$statePath = Join-Path $stateDirectory ($settings.Deployment + '.json')
+$desktop = [Environment]::GetFolderPath('Desktop')
+if (-not $desktop) { throw 'Current-user desktop is unavailable.' }
+$shortcutPath = Join-Path $desktop ('Access Gate-' + $settings.Deployment + '.url')
+$shortcutContent = "[InternetShortcut]`r`nURL=$($settings.Portal)`r`n"
+$state = $null
+if (Test-Path -LiteralPath $statePath) {
+    $state = Get-Content -LiteralPath $statePath -Raw | ConvertFrom-Json
+    if ($state.Deployment -cne $settings.Deployment -or $state.RootSha256 -cne $settings.RootSha256) { throw 'Existing setup belongs to a different CA. Keep the old setup script for removal and ask the administrator before replacing it.' }
+}
+$store = New-Object Security.Cryptography.X509Certificates.X509Store -ArgumentList 'Root','CurrentUser'
+$store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+try {
+    $existingCertificates = @($store.Certificates | Where-Object { (Get-CertificateSha256 $_) -ceq $settings.RootSha256 })
+    if ($Action -eq 'Remove') {
+        if (-not $state) { Write-Output 'No owned setup record found. Existing certificates and shortcuts were preserved.'; return }
+        $otherReferences = @(Get-ChildItem -LiteralPath $stateDirectory -Filter '*.json' -File | Where-Object { $_.FullName -ne $statePath } | ForEach-Object {
+            try { $other = Get-Content -LiteralPath $_.FullName -Raw | ConvertFrom-Json; if ($other.RootSha256 -ceq $settings.RootSha256) { $true } } catch { $true }
+        })
+        if ($state.OwnedRoot -eq $true -and $otherReferences.Count -eq 0) {
+            foreach ($match in $existingCertificates) { $store.Remove($match) }
+        } else { Write-Output 'CA was pre-existing or is referenced by another setup; it was preserved.' }
+        if ($state.OwnedShortcut -eq $true -and (Test-Path -LiteralPath $shortcutPath) -and (Get-Content -LiteralPath $shortcutPath -Raw) -ceq $shortcutContent) {
+            Remove-Item -LiteralPath $shortcutPath
+        }
+        Remove-Item -LiteralPath $statePath
+        Write-Output 'Owned setup additions removed. DNS/VPN and unrelated trust were not changed.'
+        return
+    }
+    if ((Test-Path -LiteralPath $shortcutPath) -and (Get-Content -LiteralPath $shortcutPath -Raw) -cne $shortcutContent) { throw 'A different desktop shortcut occupies this path. Nothing was overwritten.' }
+    $ownedRoot = [bool]($state -and $state.OwnedRoot -eq $true)
+    $ownedShortcut = [bool]($state -and $state.OwnedShortcut -eq $true)
+    $addedRoot = $false; $addedShortcut = $false; $temporaryState = $null
+    try {
+        if ($existingCertificates.Count -eq 0) { $store.Add($certificate); $ownedRoot = $true; $addedRoot = $true }
+        if (-not (Test-Path -LiteralPath $shortcutPath)) {
+            [IO.File]::WriteAllText($shortcutPath,$shortcutContent,[Text.UTF8Encoding]::new($false)); $ownedShortcut = $true; $addedShortcut = $true
+        }
+        [IO.Directory]::CreateDirectory($stateDirectory) | Out-Null
+        $record = @{ Deployment=$settings.Deployment; RootSha256=$settings.RootSha256; OwnedRoot=$ownedRoot; OwnedShortcut=$ownedShortcut }
+        $temporaryState = Join-Path $stateDirectory ([Guid]::NewGuid().ToString() + '.tmp')
+        [IO.File]::WriteAllText($temporaryState,($record | ConvertTo-Json),[Text.UTF8Encoding]::new($false))
+        if (Test-Path -LiteralPath $statePath) { [IO.File]::Replace($temporaryState,$statePath,$null) }
+        else { [IO.File]::Move($temporaryState,$statePath) }
+        Write-Output 'Current-user CA/portal setup is installed. Repeating Install preserves ownership. Reopen the browser and test a restricted website.'
+    } catch {
+        if ($addedShortcut -and (Test-Path -LiteralPath $shortcutPath) -and (Get-Content -LiteralPath $shortcutPath -Raw) -ceq $shortcutContent) { Remove-Item -LiteralPath $shortcutPath }
+        if ($addedRoot) { $store.Remove($certificate) }
+        throw
+    } finally { if ($temporaryState -and (Test-Path -LiteralPath $temporaryState)) { Remove-Item -LiteralPath $temporaryState } }
+} finally { $store.Close(); $certificate.Dispose() }
