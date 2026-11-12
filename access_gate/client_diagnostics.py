@@ -49,7 +49,8 @@ def run_checks(hostname,gateway,portal,*,resolver=None,ca_file=None,port=443):
         row('Network','failed','Gateway TCP 443 is unreachable/refused. Check VPN routing, firewall policy and HTTPS listener.')
         row('TLS','unknown','Not tested because the listener is unreachable.');row('Gateway','unknown','Not tested.');row('Portal','unknown','Not tested.')
         result['success']=False;return result
-    context=ssl.create_default_context(cafile=ca_file)
+    context=ssl.create_default_context()
+    if ca_file:context.load_verify_locations(cafile=ca_file)
     try:
         status,location,body=get_page(hostname,gateway,port,'/',context)
         row('TLS','healthy','Verified certificate chain and requested hostname. Confirm trust independently in the browser.')

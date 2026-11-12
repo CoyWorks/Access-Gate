@@ -124,6 +124,7 @@ class DNSExports:
             created = time.time()
             db.executemany('INSERT INTO dns_export_domains(domain,include_subdomains,created) VALUES(?,?,?)',
                            ((name, int(scope == 'subdomains'), created) for name in sorted(additions)))
+            self.own_manual(db,names)
             self._event(db,'domains.merged',details=dict(count=len(additions)))
             db.commit()
         return len(additions), len(names & existing)
@@ -134,6 +135,7 @@ class DNSExports:
         if action not in ('enable', 'disable', 'delete', 'exact', 'subdomains'): raise GateError('Unknown domain action.')
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            old=db.execute('SELECT * FROM dns_export_domains WHERE domain=?',(name,)).fetchone()
             if action == 'delete':
                 changed = db.execute('DELETE FROM dns_export_domains WHERE domain=?', (name,))
             elif action in ('exact', 'subdomains'):
@@ -141,6 +143,9 @@ class DNSExports:
             else:
                 changed = db.execute('UPDATE dns_export_domains SET enabled=? WHERE domain=?', (int(action == 'enable'), name))
             if not changed.rowcount: raise GateError('That hostname is no longer in the list. Reload the page.')
+            if action=='delete':
+                db.execute('INSERT OR REPLACE INTO domain_manual(domain,enabled,include_subdomains,deleted) VALUES(?,0,?,1)',(name,old['include_subdomains']))
+            else:self.own_manual(db,[name])
             self._event(db,'domain.changed',details=dict(reason=action,domain=name))
             db.commit()
 

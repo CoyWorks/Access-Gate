@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from urllib.parse import urlencode,urlsplit
 
-from flask import Flask,Request,abort,redirect,render_template,request,session,flash,jsonify,url_for,g,send_file
+from flask import Flask,Request,abort,redirect,render_template,request,session,flash,jsonify,url_for,g,send_file,Response
 from werkzeug.security import check_password_hash,generate_password_hash
 from .core import Store,GateError,TZ,STATUSES
 from .browser import TOKEN
@@ -629,6 +629,38 @@ def create_app(config=None):
     def batches():
         return render_template('batches.html',batches=store.list_batches(page=page_number(),view=request.args.get('view','active'),include_approvals=False),view=request.args.get('view','active'),
                                csrf=csrf(),now=time.time())
+
+    @app.route('/admin/subscriptions',methods=['GET','POST'])
+    @admin_only
+    def subscriptions_page():
+        if request.method=='POST':
+            if config['remote_gateway']:raise GateError('Manage subscriptions on the authority; this node mirrors its rules.')
+            sid=store.create_subscription(request.form.get('name',''),request.form.get('url',''),request.form.get('scope','subdomains'),request.form.get('interval','86400'))
+            try:store.refresh_subscription(sid)
+            except GateError as exc:flash(str(exc),'error')
+            return redirect(url_for('subscription_page',source_id=sid),code=303)
+        return render_template('subscriptions.html',sources=store.subscriptions(),remote_gateway=config['remote_gateway'],csrf=csrf())
+
+    @app.get('/admin/subscriptions/<source_id>/snapshot/<revision>')
+    @admin_only
+    def subscription_snapshot(source_id,revision):
+        source=store.subscription_detail(source_id)
+        if revision not in (source['applied'],source['previous'],source['pending']):abort(404)
+        def rows():
+            with store.connect() as db:
+                for row in db.execute('SELECT domain FROM blocklist_members WHERE revision=? ORDER BY domain',(revision,)):yield row[0]+'\n'
+        return Response(rows(),mimetype='text/plain',headers={'Content-Disposition':'attachment; filename="subscription-domains.txt"'})
+
+    @app.route('/admin/subscriptions/<source_id>',methods=['GET','POST'])
+    @admin_only
+    def subscription_page(source_id):
+        if request.method=='POST':
+            if config['remote_gateway']:raise GateError('Manage subscriptions on the authority.')
+            action=request.form.get('action','')
+            if action=='refresh':store.refresh_subscription(source_id)
+            else:store.subscription_action(source_id,action,request.form.get('revision',''))
+            return redirect(url_for('subscriptions_page') if action=='remove' else url_for('subscription_page',source_id=source_id),code=303)
+        return render_template('subscription.html',source=store.subscription_detail(source_id),remote_gateway=config['remote_gateway'],csrf=csrf())
 
     @app.route('/admin/dns-domains', methods=['GET', 'POST'])
     @admin_only

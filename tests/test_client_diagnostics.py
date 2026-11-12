@@ -25,6 +25,12 @@ class ClientDiagnosticsTests(unittest.TestCase):
         for secret in ('10.40.22.5','restricted.example','portal.example','private-token'):
             self.assertNotIn(secret,json.dumps(result))
 
+    def test_additional_ca_keeps_default_roots(self):
+        resolver=MagicMock();resolver.resolve.side_effect=lambda host,kind,**kw:Answer(['10.40.22.5'] if kind=='A' else [])
+        with patch('dns.resolver.Resolver',return_value=resolver),patch('socket.create_connection'),patch('ssl.create_default_context') as trust,patch('access_gate.client_diagnostics.get_page',side_effect=[(302,'https://portal.example/?entry=token',b''),(200,'',b'<input id="code">')]):
+            self.assertTrue(run_checks('restricted.example','10.40.22.5','https://portal.example',ca_file='extra-ca.crt')['success'])
+            trust.assert_called_once_with();trust.return_value.load_verify_locations.assert_called_once_with(cafile='extra-ca.crt')
+
     def test_wrong_dns_timeout_network_tls_and_redirect_are_distinct(self):
         result,_=self.run_case(wrong=True);self.assertEqual(result['layers'][0]['state'],'failed')
         result,_=self.run_case(dns_error=dns.resolver.LifetimeTimeout());self.assertEqual(result['layers'][0]['state'],'unknown')

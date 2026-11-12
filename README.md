@@ -259,3 +259,5 @@ See [Deployment and service combinations](docs/DEPLOYMENTS.md) for supported top
 Gateway latency diagnostics and benchmark procedure: [Performance](docs/PERFORMANCE.md).
 
 Actual client path checks: [Client diagnostics](docs/CLIENT_DIAGNOSTICS.md).
+
+Optional managed list refresh: [Reviewed blocklist subscriptions](docs/SUBSCRIPTIONS.md).

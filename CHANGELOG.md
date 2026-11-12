@@ -1,3 +1,9 @@
+# 0.28.0
+
+- Add reviewed blocklist subscriptions, bounded scheduled refresh, independent manual/source ownership and rollback (#29).
+- Migrate existing rules as manual ownership in schema 12 and preserve atomic DNS snapshots.
+- Preserve system trust roots when adding an explicit CA to client diagnostics.
+
 # 0.27.0
 
 - Add administrator-only domain-policy explanations with shared runtime matching, DNS behavior preview and explicit client-proof limits (#28).
