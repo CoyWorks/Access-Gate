@@ -28,6 +28,9 @@ class SNIParserTests(unittest.TestCase):
         for n in (0, 1, 3, 4, 5, len(wire)-1):
             self.assertEqual(client_hello_sni(wire[:n]), (None, False))
 
+    def test_tls_without_sni_can_use_portal_fallback(self):
+        self.assertEqual(client_hello_sni(hello(None)), (None, True))
+
     def test_malformed_and_non_tls_fail_closed(self):
         for data in (b'GET / HTTP/1.1\r\n', b'\x16\x01\x00\x00\x00', b'\x17\x03\x03\x00\x00'):
             with self.subTest(data=data), self.assertRaises(ValueError):
@@ -105,7 +108,7 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.managed_received, [])
 
     async def test_managed_domain_and_portal_route_to_existing_gateway(self):
-        for host in ('restricted.example', 'portal.example'):
+        for host in ('restricted.example', 'portal.example', None):
             wire, response = await self.send(host)
             self.assertEqual(response, b'MANAGED')
             self.assertEqual(self.managed_received[-1][1], wire)
