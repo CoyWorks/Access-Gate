@@ -123,6 +123,7 @@ class Gateway(GatewayActivity):
         self.api_url = config['api_url']
         self.key = config['api_key']
         self.networks = [ipaddress.ip_network(value) for value in config['client_networks']]
+        self.proxy_clients = {}  # managed TLS connections relayed by the SNI router
         self.portal_hosts = set(config['portal_hosts'])
         self.upstream_connector = upstream_connector
         self.upstream_port = upstream_port
@@ -232,7 +233,7 @@ class Gateway(GatewayActivity):
     def client_address(self, request, secure,public=False):
         peer = request.transport.get_extra_info('peername')
         if not peer: raise web.HTTPForbidden(text='Unknown client.')
-        value = peer[0]
+        value = self.proxy_clients.get(peer[1], peer[0]) if secure and len(peer) > 1 and peer[0] == '127.0.0.1' else peer[0]
         if not secure:
             if value != '127.0.0.1': raise web.HTTPForbidden(text='Trusted HTTP proxy required.')
             value = request.headers.get('X-Real-IP', '')
@@ -443,15 +444,25 @@ async def serve(config):
     gateway = Gateway(config)
     runner = web.AppRunner(gateway.application(), access_log=None, shutdown_timeout=2)
     await runner.setup()
+    router = None
     try:
-        await web.TCPSite(runner, config['listen_host'], config['listen_port'], ssl_context=gateway.tls.context).start()
+        # Terminate managed domains in the normal gateway, but leave unrelated TLS
+        # untouched. The internal listener is loopback-only and uses an ephemeral port.
+        from .tls_passthrough import TLSRouter
+        internal = web.TCPSite(runner, '127.0.0.1', 0, ssl_context=gateway.tls.context)
+        await internal.start()
+        internal_port = internal._server.sockets[0].getsockname()[1]
+        router = TLSRouter(gateway, internal_port)
+        await router.start(config['listen_host'], config['listen_port'])
         await web.TCPSite(runner, config['http_host'], config['http_port']).start()
         done = asyncio.Event()
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGTERM, signal.SIGINT): loop.add_signal_handler(sig, done.set)
         loop.add_signal_handler(signal.SIGHUP,lambda:gateway.tls.context.load_cert_chain(config['portal_cert'],config['portal_key']))
         await done.wait()
-    finally: await runner.cleanup()
+    finally:
+        if router: await router.close()
+        await runner.cleanup()
 
 
 def main(argv=None, configuration_path=Path('/etc/access-gate/gateway/gateway.json')):
