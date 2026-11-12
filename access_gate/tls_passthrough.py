@@ -6,6 +6,8 @@ with the independent HTTPS resolver and only globally routable IPv4 results are 
 import asyncio
 import ipaddress
 import socket
+
+from .core import GateError
 import ssl
 import struct
 
@@ -86,27 +88,9 @@ def parse_hello_sni(hello):
             p += n
             if kind == 0:
                 try:
-                    name = raw.decode('ascii')
-                    if not name or ':' in name or '/' in name or '\\' in name:
-                        raise ValueError('Invalid SNI hostname.')
-                    validated = hostname(name)
-                    if ipaddress.ip_address(validated):
-                        raise ValueError('SNI cannot be an IP address.')
-                except ValueError as exc:
-                    # A hostname is expected not to parse as an address.
-                    if str(exc) == 'SNI cannot be an IP address.':
-                        raise
-                    try:
-                        validated = hostname(name)
-                    except (UnicodeError, ValueError) as err:
-                        raise ValueError('Invalid SNI hostname.') from err
-                except (UnicodeError, UnicodeDecodeError) as exc:
+                    return hostname(raw.decode('ascii'))
+                except (ValueError, UnicodeError, GateError) as exc:
                     raise ValueError('Invalid SNI hostname.') from exc
-                try:
-                    ipaddress.ip_address(validated)
-                except ValueError:
-                    return validated
-                raise ValueError('IP addresses cannot be SNI destinations.')
         raise ValueError('Missing DNS SNI.')
     raise ValueError('Missing TLS SNI.')
 
