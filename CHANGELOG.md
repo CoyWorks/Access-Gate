@@ -1,3 +1,7 @@
+# 0.26.0
+
+- Add guided real-device diagnostics and a downloadable redacted client-side DNS/network/TLS/portal checker (#27).
+
 # 0.25.0
 
 - Share intercepted TLS contexts by validated base/wildcard group, including apex SANs and correct deep-domain grouping (#34).

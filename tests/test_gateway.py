@@ -235,6 +235,13 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         self.client = aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=LoopbackResolver(), ssl=self.client_context),
             timeout=aiohttp.ClientTimeout(total=5))
 
+    async def test_client_diagnostic_real_tls_verification_and_redirect(self):
+        from access_gate.client_diagnostics import get_page
+        status,location,body=await asyncio.to_thread(get_page,'restricted.example','127.0.0.1',self.port,'/',self.client_context)
+        self.assertEqual(status,302);self.assertTrue(location.startswith('https://portal.example/?entry='))
+        with self.assertRaises(ssl.SSLCertVerificationError):
+            await asyncio.to_thread(get_page,'restricted.example','127.0.0.1',self.port,'/',ssl.create_default_context())
+
     async def test_policy_snapshot_refresh_stale_failure_and_live_authorization(self):
         from dataclasses import replace
         from unittest.mock import patch

@@ -257,3 +257,5 @@ See [Deployment and service combinations](docs/DEPLOYMENTS.md) for supported top
 [Public portal and private gateway deployment](docs/PUBLIC_PORTAL.md) is available as an explicit opt-in. Existing installations remain private/local unless configured through the documented root commands.
 
 Gateway latency diagnostics and benchmark procedure: [Performance](docs/PERFORMANCE.md).
+
+Actual client path checks: [Client diagnostics](docs/CLIENT_DIAGNOSTICS.md).

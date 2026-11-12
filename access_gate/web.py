@@ -538,6 +538,23 @@ def create_app(config=None):
         try:return jsonify(health.performance())
         except (OSError,ValueError,http.client.HTTPException):return jsonify(state='unavailable'),503
 
+    @app.get('/admin/client-diagnostics')
+    @admin_only
+    def client_diagnostics():
+        from .dns_export import hostname as normalize_hostname
+        name=request.args.get('hostname','').strip();error=None
+        if name:
+            try:
+                name=normalize_hostname(name)
+                if not store.restricted_host(name):raise GateError('Choose an enabled restricted hostname.')
+            except GateError as exc:error=str(exc)
+        return render_template('client_diagnostics.html',hostname=name,error=error,target_ip=target_ip,portal_url=portal_url),400 if error else 200
+
+    @app.get('/admin/client-diagnostics/download')
+    @admin_only
+    def download_client_diagnostics():
+        return send_file(Path(__file__).with_name('client_diagnostics.py'),mimetype='text/x-python',as_attachment=True,download_name='client_diagnostics.py')
+
     @app.get('/admin/api/health')
     @admin_only
     def health_data():
