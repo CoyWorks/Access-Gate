@@ -98,9 +98,10 @@ def parse_hello_sni(hello):
 class TLSRouter:
     """TCP-only passthrough for unlisted hostnames, preserving SNI and TLS bytes."""
 
-    def __init__(self, gateway, internal_port):
+    def __init__(self, gateway, internal_port, *, origin_port=443):
         self.gateway = gateway
         self.internal_port = internal_port
+        self.origin_port = origin_port
         self.slots = asyncio.Semaphore(MAX_CONNECTIONS)
         self.server = None
 
@@ -158,7 +159,7 @@ class TLSRouter:
                     for item in answer:
                         try:
                             upstream = await asyncio.wait_for(
-                                asyncio.open_connection(item['host'], 443, family=socket.AF_INET), 5)
+                                asyncio.open_connection(item['host'], self.origin_port, family=socket.AF_INET), 5)
                             break
                         except (OSError, asyncio.TimeoutError):
                             continue
