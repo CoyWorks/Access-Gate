@@ -79,3 +79,9 @@ Five-item navigation, inline request decisions, session/history cards and groupe
 | [#30](https://github.com/CoyWorks/Access-Gate/issues/30) | 0.29: bounded fixed-probe DNS health history, UDP/TCP/upstream latency and explicit reset/staleness handling. [DNS](docs/DNS.md). |
 
 Each was implemented, tested and pushed separately. Access profiles (#11) remain planned; current authorization and subscription policy remain global. Automated local fixtures do not replace phone/target-server acceptance.
+
+## Client/server usability follow-up
+
+Issues #35–#42 track the next usability phase. #37 delivers public device onboarding and local CA bootstrap; #38 adds removable Apple CA/portal profiles and reviewable current-user Windows setup; #40 adds supported deployment changes through reviewed root maintenance jobs. Each selected issue is tested and pushed separately. Server installation wizard (#35), first-start checklist (#36), visitor failure pages (#39), redacted support reports (#41) and frequent-action navigation (#42) remain planned. Access profiles (#11) remain outside this phase.
+
+See [Client setup](docs/CLIENT_SETUP.md) and [Server settings](docs/SERVER_SETTINGS.md). Real personal-device installation and host/service acceptance are distinct from automated fixtures.

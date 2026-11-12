@@ -4,6 +4,7 @@ import datetime as dt
 import fcntl
 import json
 import os
+import secrets
 from pathlib import Path
 import shutil
 import subprocess
@@ -28,7 +29,9 @@ def command(args):
 
 
 def updated(current,requested):
-    unknown=set(requested)-set(FIELDS)-{'deployment_version'}
+    allowed=set(FIELDS)|{'deployment_version'}
+    if current.get('dns_mode')=='builtin':allowed.add('dns_upstreams')
+    unknown=set(requested)-allowed
     if unknown: raise ValueError('Reconfigure accepts deployment fields only: '+', '.join(sorted(unknown)))
     return validate(dict(current,**requested))
 
@@ -53,13 +56,24 @@ def portal_certificate(base,c):
     atomic_write(base/'portal.crt',cert.public_bytes(serialization.Encoding.PEM).decode(),0o640)
 
 
-def apply(root,c,runner=command,gid=None):
+def apply(root,c,runner=command,gid=None,expected_policy_version=None,expected_configuration=None):
     """Caller owns maintenance lock. Staged crypto validation precedes service changes."""
     from .gateway_setup import prepare
     root=Path(root);current=normalize(json.loads((root/'etc/access-gate/config.json').read_text()))
+    from .core import Store
+    from .recovery import database_account
+    from .server_settings import digest
+    store=Store(root/current['database'].lstrip('/'),current['pepper'])
+    with database_account(root):old_policy=store.admin_security(current)
+    if expected_policy_version is not None and old_policy['version']!=expected_policy_version:raise ValueError('Administrator policy changed before staging.')
+    if expected_configuration is not None and digest(current)!=expected_configuration:raise ValueError('Configuration changed before staging.')
     services=SERVICES+(('access-gate-dns.service','access-gate-dns-rules.service') if c['dns_mode']=='builtin' else ())
     private=root/'var/lib/access-gate/reconfigure';private.mkdir(parents=True,exist_ok=True,mode=0o700);private.chmod(0o700)
     backup=Path(tempfile.mkdtemp(prefix='rollback-',dir=private));backup.chmod(0o700)
+    profile={key:current[key] for key in FIELDS}
+    profile['admin_networks']=old_policy['networks']
+    if current['dns_mode']=='builtin':profile['dns_upstreams']=current['dns_upstreams']
+    atomic_write(backup/'deployment-profile.json',json.dumps(profile,indent=2)+'\n',0o600)
     for relative in FILES:
         source=root/relative
         if source.is_symlink():raise ValueError('Managed configuration must not be a symlink.')
@@ -97,6 +111,20 @@ def apply(root,c,runner=command,gid=None):
             runner(['/usr/bin/systemctl','restart',*services[1:]])
             runner(['/usr/bin/python3','-m','access_gate.readiness'])
             if c['dns_mode']=='builtin':runner(['/usr/bin/python3','-m','access_gate.dns_service','--probe'])
+            # Commit management policy and origin invalidation together only after readiness.
+            with database_account(root):
+                with store.connect() as db:
+                    db.execute('BEGIN IMMEDIATE')
+                    if store._admin_security(db,current)['version']!=old_policy['version']:raise ValueError('Administrator policy changed during staging.')
+                    if c['admin_networks']!=old_policy['networks']:
+                        row=db.execute('SELECT * FROM administrator_policy WHERE id=1').fetchone()
+                        db.execute('INSERT OR REPLACE INTO administrator_policy(id,password_hash,version,networks,exclusions) VALUES(1,?,?,?,?)',(row['password_hash'] if row else None,secrets.token_hex(32),json.dumps(c['admin_networks']),row['exclusions'] if row else '[]'))
+                        store._event(db,'admin.policy_changed',details=dict(reason='networks'))
+                    if c['portal_url']!=current['portal_url']:
+                        for table in ('push_deliveries','push_subscriptions','admin_site_tokens','admin_handoffs','admin_logins'):db.execute('DELETE FROM '+table)
+                    store._event(db,'system.reconfigured',actor='System')
+                    db.commit()
+
         except Exception as original:
             try:
                 for relative in FILES:
@@ -109,19 +137,6 @@ def apply(root,c,runner=command,gid=None):
                 if current['dns_mode']=='builtin':runner(['/usr/bin/python3','-m','access_gate.dns_service','--probe'])
             except Exception:raise RuntimeError('Reconfiguration and rollback readiness failed. Retained private backup: '+str(backup)) from original
             raise RuntimeError('Reconfiguration failed; previous configuration restored. Backup: '+str(backup)) from original
-    # Database security policy is applied only after the new listeners pass readiness.
-    from .core import Store
-    database=root/c['database'].lstrip('/')
-    from .recovery import database_account
-    with database_account(root):
-        store=Store(database,c['pepper'])
-        if c['admin_networks']!=current['admin_networks']:
-            store.save_admin_security(c,networks=c['admin_networks'])
-        if c['portal_url']!=current['portal_url']:
-            with store.connect() as db:
-                for table in ('push_deliveries','push_subscriptions','admin_site_tokens','admin_handoffs','admin_logins'):db.execute('DELETE FROM '+table)
-                db.commit()
-        store.audit('system.reconfigured',actor='System')
     return backup
 
 
@@ -137,7 +152,7 @@ def main():
                        admin_networks=ask('Management CIDRs, comma-separated',','.join(current['admin_networks'])).replace(' ','').split(','))
     c=updated(current,requested)
     if c['listen_ipv4'] not in local_addresses():raise SystemExit('Assign the new IPv4 address on the host before reconfiguring.')
-    for key in FIELDS:
+    for key in FIELDS+(('dns_upstreams',) if c['dns_mode']=='builtin' else ()):
         if c[key]!=current[key]:print(key+': '+str(current[key])+' -> '+str(c[key]))
     print('CA and code database are retained. Update external DNS/Pi-hole sync after an address change. Portal-origin changes require admin sign-in, phone-app and push re-enrollment; visitors may need a new code when browser identity changes.')
     if args.check:return

@@ -456,6 +456,26 @@ def create_app(config=None):
         if not store.attempt('admin-maintenance:'+client_ip(),5):raise GateError('Too many attempts. Please wait 15 minutes.')
         if not check_password_hash(g.admin_security['password_hash'],request.form.get('current_password','')):raise GateError('Current password is incorrect.')
 
+    @app.route('/admin/server-settings',methods=['GET','POST'])
+    @admin_only
+    def server_settings_page():
+        from .server_settings import parse_form,public_settings
+        if request.method=='POST':
+            verify_maintenance_password()
+            action=request.form.get('action','')
+            if action=='review':
+                requested=parse_form(request.form,config)
+                job=jobs.submit('server-check',requested=requested,address=client_ip(),policy_version=g.admin_security['version'])
+            elif action=='apply':
+                if set(request.form)-{'csrf','action','current_password','confirm','preview'}:raise GateError('Unsupported server confirmation field.')
+                if request.form.get('confirm')!='APPLY':raise GateError('Type APPLY to confirm the service interruption.')
+                preview=jobs.status(request.form.get('preview',''))
+                if preview.get('action')!='server-check' or preview.get('state')!='complete' or not preview.get('server_confirm'):raise GateError('Review a valid server-settings preview first.')
+                job=jobs.submit('server-apply',preview=preview['id'])
+            else:raise GateError('Unknown server-settings action.')
+            return redirect(url_for('maintenance_job',job_id=job),code=303)
+        return render_template('server_settings.html',settings=public_settings(config,g.admin_security['networks']),jobs=[j for j in jobs.recent() if j['action'] in ('server-check','server-apply')],csrf=csrf())
+
     @app.route('/admin/updates',methods=['GET','POST'])
     @admin_only
     def updates():

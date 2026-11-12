@@ -1,3 +1,8 @@
+# 0.32.0
+
+- Add authenticated server-settings review and single-use root-worker application with stale-preview rejection, readiness and rollback (#40).
+- Apply management-network policy atomically after readiness and preserve unrelated service/component ownership.
+
 # 0.31.0
 
 - Add removable CA/Web Clip Apple profiles and explicit, reversible current-user Windows client setup with artifact hashes (#38).

@@ -13,7 +13,7 @@ from .deployment import normalize,FIELDS
 
 
 def local_addresses():
-    result=subprocess.run(['ip','-j','-4','addr','show'],check=True,capture_output=True,text=True)
+    result=subprocess.run(['ip','-j','-4','addr','show'],check=True,capture_output=True,text=True,timeout=5)
     return sorted({a['local'] for i in json.loads(result.stdout) for a in i.get('addr_info',[]) if a.get('scope')=='global'})
 
 

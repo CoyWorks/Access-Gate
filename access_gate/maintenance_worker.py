@@ -120,6 +120,14 @@ class Worker:
 
     def perform(self,job_id,record):
         action=record['action']
+        if action in ('server-check','server-apply'):
+            from .server_settings import ServerSettings
+            settings=ServerSettings(self.root,runner=self.runner,gid=self.gid)
+            if action=='server-check':
+                if set(record)-{'id','action','created','requested','address','policy_version'}:raise GateError('Unexpected server review fields.')
+                return settings.review(job_id,record.get('requested'),record.get('address'),record.get('policy_version'))
+            if set(record)-{'id','action','created','preview'}:raise GateError('Unexpected server application fields.')
+            return settings.apply(record.get('preview'),lambda message:self.result(job_id,action='server-apply',state='running',message=message))
         if action=='update-check':
             if set(record)-{'id','action','created'}:raise GateError('Unexpected update-check fields.')
             from .updates import Updates
@@ -166,12 +174,12 @@ class Worker:
                 if not JOB_ID.fullmatch(job_id):continue
                 marker=self.private/(job_id+'.running');action='maintenance'
                 try:
-                    data=read_regular(source,8192)
+                    data=read_regular(source,16384)
                     if (self.jobs/'results'/(job_id+'.json')).exists():continue
                     record=json.loads(data)
                     if record.get('id')!=job_id or not isinstance(record.get('created'),(int,float)) or not 0<=time.time()-record['created']<=3600:raise GateError('Invalid or stale maintenance request.')
                     action=record.get('action','maintenance')
-                    if action not in ('backup','preflight','restore','update-check','update'):action='maintenance'
+                    if action not in ('backup','preflight','restore','update-check','update','server-check','server-apply'):action='maintenance'
                     write_private(marker,json.dumps(dict(action=action)).encode())
                     source.unlink()
                     self.result(job_id,action=record.get('action','maintenance'),state='running',message='Maintenance in progress.')

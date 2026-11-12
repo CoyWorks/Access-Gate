@@ -40,7 +40,7 @@ class Jobs:
         self.root=Path(root)
 
     def submit(self,action,**values):
-        if action not in ('backup','preflight','restore','update-check','update'):raise GateError('Unknown maintenance action.')
+        if action not in ('backup','preflight','restore','update-check','update','server-check','server-apply'):raise GateError('Unknown maintenance action.')
         if not (self.root/'inbox').is_dir():raise GateError('Maintenance worker is not installed. Run the normal updater first.')
         job_id=secrets.token_hex(16)
         # No overwriting another job, no client-supplied file names or paths.
@@ -49,18 +49,20 @@ class Jobs:
             if not isinstance(archive,bytes) or not archive or len(archive)>MAX_ARCHIVE:raise GateError('Choose an encrypted backup of at most 64 MiB.')
             write_private(self.root/'inbox'/(job_id+'.archive'),archive)
         record=dict(id=job_id,action=action,created=time.time(),**values)
-        write_private(self.root/'inbox'/(job_id+'.json'),json.dumps(record).encode())
+        data=json.dumps(record).encode()
+        if len(data)>16384:raise GateError('Maintenance request exceeds its size limit.')
+        write_private(self.root/'inbox'/(job_id+'.json'),data)
         return job_id
 
     def status(self,job_id):
         if not JOB_ID.fullmatch(job_id):raise GateError('Invalid job identifier.')
-        try:return json.loads(read_regular(self.root/'results'/(job_id+'.json'),8192))
+        try:return json.loads(read_regular(self.root/'results'/(job_id+'.json'),32768))
         except FileNotFoundError:
             try:
-                pending=json.loads(read_regular(self.root/'inbox'/(job_id+'.json'),8192))
+                pending=json.loads(read_regular(self.root/'inbox'/(job_id+'.json'),16384))
                 action=pending.get('action') if isinstance(pending,dict) else None
             except (FileNotFoundError,ValueError):raise GateError('Maintenance job not found or expired.') from None
-            if not isinstance(action,str) or action not in ('backup','preflight','restore','update-check','update'):action='maintenance'
+            if not isinstance(action,str) or action not in ('backup','preflight','restore','update-check','update','server-check','server-apply'):action='maintenance'
             # Only this allowlisted action is exposed, never the queued passphrase/upload fields.
             return dict(id=job_id,state='queued',action=action,message='Waiting for the maintenance worker.')
 
