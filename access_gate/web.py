@@ -57,7 +57,7 @@ def create_app(config=None):
         if request.remote_addr not in ('127.0.0.1','::1'): abort(403)
         try: ip=ipaddress.ip_address(request.headers.get('X-Real-IP',''))
         except ValueError: abort(403)
-        if not any(ip in net for net in networks) and (not config['public_portal'] or request.path in DNS_FEED_PATHS): abort(403)
+        if not any(ip in net for net in networks) and (not config['public_portal'] or request.path in DNS_FEED_PATHS or request.path=='/setup/bootstrap'): abort(403)
         return str(ip)
 
     def browser():
@@ -129,7 +129,7 @@ def create_app(config=None):
             if config['public_portal'] and not config['public_admin'] and not private_address(address):abort(403)
             if not any(ipaddress.ip_address(address) in ipaddress.ip_network(n) for n in g.admin_security['networks']):
                 abort(403,'Administration is not available from this network. The code portal is still available.')
-        if request.path not in DNS_FEED_PATHS and urlsplit('https://'+request.host).hostname!=urlsplit(portal_url).hostname:
+        if request.path not in DNS_FEED_PATHS and request.path!='/setup/bootstrap' and urlsplit('https://'+request.host).hostname!=urlsplit(portal_url).hostname:
             if request.method in ('GET','HEAD'):
                 return redirect(portal_url+request.full_path.rstrip('?'),code=308)
             abort(400,'Open the canonical portal address and reload the form.')
@@ -175,6 +175,24 @@ def create_app(config=None):
             if not session.get('admin'): return redirect('/admin/login')
             return fn(*args,**kwargs)
         return wrapped
+
+    @app.get('/setup')
+    def device_setup():
+        from .onboarding import PLATFORMS,setup_context
+        from .dns_export import hostname as normalize_hostname
+        platform=request.args.get('platform','');name=request.args.get('hostname','').strip();error=None
+        if platform and platform not in PLATFORMS:abort(400)
+        if name:
+            try:
+                name=normalize_hostname(name)
+                if not store.restricted_host(name):raise GateError('Choose an enabled restricted hostname supplied by your administrator.')
+            except GateError as exc:error=str(exc)
+        return render_template('setup.html',setup=setup_context(config,PUBLIC_CA),platform=platform,hostname=name,error=error),400 if error else 200
+
+    @app.get('/setup/bootstrap')
+    def device_setup_bootstrap():
+        from .onboarding import setup_context
+        return render_template('setup_bootstrap.html',setup=setup_context(config,PUBLIC_CA))
 
     @app.get('/ca.crt')
     def ca_certificate():

@@ -235,6 +235,17 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         self.client = aiohttp.ClientSession(connector=aiohttp.TCPConnector(resolver=LoopbackResolver(), ssl=self.client_context),
             timeout=aiohttp.ClientTimeout(total=5))
 
+    async def test_onboarding_is_available_through_real_tls_and_bootstrap_remains_http_only_at_nginx(self):
+        response=await self.get(path='/setup?platform=android')
+        self.assertEqual(response.status,200);self.assertIn('Connect this device',await response.text())
+        self.gateway.remote=True
+        from unittest.mock import AsyncMock,patch
+        with patch.object(self.gateway,'portal',new=AsyncMock(return_value=web.Response(text='local setup'))) as portal:
+            response=await self.get(path='/setup');self.assertEqual(await response.text(),'local setup')
+            self.assertTrue(portal.call_args.kwargs['local_only'])
+            response=await self.get(path='/admin');self.assertEqual(response.status,303)
+            self.assertEqual(portal.await_count,1)
+
     async def test_client_diagnostic_real_tls_verification_and_redirect(self):
         from access_gate.client_diagnostics import get_page
         status,location,body=await asyncio.to_thread(get_page,'restricted.example','127.0.0.1',self.port,'/',self.client_context)

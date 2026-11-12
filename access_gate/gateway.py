@@ -315,6 +315,11 @@ class Gateway(GatewayActivity):
                         status,_,data=await self.rpc('/internal/health',host)
                         if status!=200 or json.loads(data).get('ready') is not True:raise OSError('Remote authority health failed.')
                     return web.json_response({'gateway': 'ready' if self.policy_status()['ready'] else 'stale', 'issuer_expires': expires(self.tls.issuer).isoformat(),'activity_queue':self.activity_queue.qsize(),'activity_dropped':self.activity_dropped,'activity_last_success':self.activity_last_success})
+                if self.remote:
+                    from .onboarding import LOCAL_SETUP_PATHS
+                    if request.path in LOCAL_SETUP_PATHS:
+                        if request.method not in ('GET','HEAD'):raise web.HTTPMethodNotAllowed(request.method,['GET','HEAD'])
+                        return await self.portal(request,address,local_only=True)
                 if self.remote:return web.Response(status=303,headers={'Location':self.config['portal_url'],'Cache-Control':'no-store'})
                 return await self.portal(request, address)
             if sni != host: raise web.HTTPMisdirectedRequest(text='TLS hostname mismatch.')
@@ -346,7 +351,7 @@ class Gateway(GatewayActivity):
         if status not in (200, 302, 303, 400): raise OSError('Gateway handoff unavailable.')
         return web.Response(status=status, body=data, headers=safe_headers(headers))
 
-    async def portal(self, request, address):
+    async def portal(self, request, address,local_only=False):
         headers = safe_headers(request.headers)
         headers['Host'] = request.headers['Host']; headers['X-Real-IP'] = address
         if request.path.startswith('/gateway/v1/'):
@@ -372,7 +377,7 @@ class Gateway(GatewayActivity):
                 if total>limit:raise OSError('Request body limit exceeded.')
                 yield chunk
         response_start=time.monotonic()
-        async with self.local.request(request.method, self.api_url + request.raw_path, headers=headers,
+        async with self.local.request(request.method, ('http://127.0.0.1:8088' if local_only else self.api_url) + request.raw_path, headers=headers,
                 data=bounded_body() if request.can_read_body else None,
                 timeout=aiohttp.ClientTimeout(total=180 if request.path=='/admin/recovery' else 45, connect=2, sock_read=45),
                 allow_redirects=False) as response:

@@ -2,6 +2,14 @@ server {
     listen @@LISTEN@@:80;
     server_name @@NAMES@@;
     include /etc/access-gate/client-networks.nginx;
+    location = /setup/bootstrap {
+        proxy_pass http://127.0.0.1:8088;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For "";
+        proxy_set_header X-Gate-Key "";
+        access_log off;
+    }
     location = /ca.crt {
         root /var/lib/access-gate/public;
         default_type application/x-x509-ca-cert;

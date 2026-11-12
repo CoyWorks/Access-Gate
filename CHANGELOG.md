@@ -1,3 +1,8 @@
+# 0.30.0
+
+- Add platform-specific client onboarding, independent CA fingerprint verification and local HTTP bootstrap (#37).
+- Keep public-authority and private-gateway CA setup separate, with a narrow local setup route on remote gateways.
+
 # 0.29.0
 
 - Add short privacy-preserving DNS probe history, UDP/TCP and upstream aggregates, publisher freshness and stale/reset-aware administrator diagnostics (#30).
