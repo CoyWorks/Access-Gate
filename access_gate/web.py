@@ -538,6 +538,18 @@ def create_app(config=None):
         try:return jsonify(health.performance())
         except (OSError,ValueError,http.client.HTTPException):return jsonify(state='unavailable'),503
 
+    @app.get('/admin/dns-health')
+    @admin_only
+    def dns_health_page():
+        from .dns_health_view import read_health
+        return render_template('dns_health.html',health=read_health(config))
+
+    @app.get('/admin/api/dns-health')
+    @admin_only
+    def dns_health_data():
+        from .dns_health_view import read_health
+        return jsonify(read_health(config))
+
     @app.get('/admin/domain-policy')
     @admin_only
     def domain_policy_preview():

@@ -1,3 +1,7 @@
+# 0.29.0
+
+- Add short privacy-preserving DNS probe history, UDP/TCP and upstream aggregates, publisher freshness and stale/reset-aware administrator diagnostics (#30).
+
 # 0.28.0
 
 - Add reviewed blocklist subscriptions, bounded scheduled refresh, independent manual/source ownership and rollback (#29).

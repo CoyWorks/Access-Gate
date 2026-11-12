@@ -97,10 +97,16 @@ class Health:
             checks.append(self.item('Remote DNS synchronization','healthy' if good else 'warning','Remote rules synchronized.' if good else 'Remote rule synchronization is missing or stale.','Check access-gate-remote-domains.service.' if not good else ''))
         if self.config['dns_mode']=='builtin':
             try:
-                status=json.loads(Path('/var/lib/access-gate/dns/status.json').read_text())
-                good=status['state']=='healthy' and now-status['updated']<15
+                from .dns_health_view import read_small
+                status=read_small('/var/lib/access-gate/dns/status.json',4096)
+                good=status['state']=='healthy' and 0<=now-status['updated']<15
                 checks.append(self.item('DNS synchronization','healthy' if good else 'failed','Rules synchronized.' if good else 'DNS rules are stale or synchronization failed.','Check access-gate-dns-rules.service.' if not good else ''))
             except (OSError,ValueError,KeyError,TypeError):checks.append(self.item('DNS synchronization','unknown','DNS synchronization status unavailable.','Check the DNS publisher service.'))
+        if self.config['dns_mode']=='builtin':
+            from .dns_health_view import read_health
+            dns_health=read_health(self.config)
+            state={'healthy':'healthy','degraded':'warning','failed':'failed'}.get(dns_health['state'],'unknown')
+            checks.append(self.item('DNS probes',state,dns_health['message'],'Open DNS health for UDP/TCP, upstream and snapshot details.'))
         try:
             synced=self.command(['timedatectl','show','--property=NTPSynchronized','--value'])
             if synced not in ('yes','no'): raise ValueError()

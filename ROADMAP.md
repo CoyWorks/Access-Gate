@@ -68,3 +68,14 @@ Installable admin PWA with opt-in, generic access-request Web Push, background d
 
 ### 0.15.0 — request-first interface
 Five-item navigation, inline request decisions, session/history cards and grouped settings are implemented. Approval scope remains global; #11 remains open. Browser screenshot acceptance remains an operator check due to preview environment restrictions.
+
+## 0.26–0.29 — diagnostics and managed DNS lists
+
+| Issue | Delivery |
+| --- | --- |
+| [#27](https://github.com/CoyWorks/Access-Gate/issues/27) | 0.26: guided client checks, standalone redacted DNS/TCP/TLS/portal diagnostics and real-device acceptance steps. [Client diagnostics](docs/CLIENT_DIAGNOSTICS.md). |
+| [#28](https://github.com/CoyWorks/Access-Gate/issues/28) | 0.27: read-only policy explanation using the same exact/suffix matcher as DNS and the gateway. [DNS](docs/DNS.md). |
+| [#29](https://github.com/CoyWorks/Access-Gate/issues/29) | 0.28: reviewed list subscriptions, independent ownership, scheduled safe refresh, rollback and schema 12 migration. [Subscriptions](docs/SUBSCRIPTIONS.md). |
+| [#30](https://github.com/CoyWorks/Access-Gate/issues/30) | 0.29: bounded fixed-probe DNS health history, UDP/TCP/upstream latency and explicit reset/staleness handling. [DNS](docs/DNS.md). |
+
+Each was implemented, tested and pushed separately. Access profiles (#11) remain planned; current authorization and subscription policy remain global. Automated local fixtures do not replace phone/target-server acceptance.

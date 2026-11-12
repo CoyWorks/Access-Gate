@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import time
+import threading
 from .core import Store
 from .deployment import normalize
 from .dns_export import hostname
@@ -27,13 +28,22 @@ def publish(config,directory):
 
 
 def main():
-    while True:
-        try:
-            c=json.loads(Path('/etc/access-gate/config.json').read_text())
-            publish(c,Path('/var/lib/access-gate/dns'))
-        except Exception:
-            atomic_write('/var/lib/access-gate/dns/status.json',json.dumps(dict(state='failed',updated=time.time(),message='DNS rules synchronization failed; last known-good mappings remain active.'))+'\n',0o640)
-        time.sleep(2)
+    from .dns_health import DNSMonitor
+    from .dns_setup import public_config
+    directory=Path('/var/lib/access-gate/dns')
+    c=normalize(json.loads(Path('/etc/access-gate/config.json').read_text()))
+    monitor=DNSMonitor(public_config(c),directory);stop=threading.Event()
+    thread=threading.Thread(target=monitor.run,args=(stop,),name='dns-health-probes',daemon=True);thread.start()
+    try:
+        while True:
+            try:
+                c=json.loads(Path('/etc/access-gate/config.json').read_text())
+                publish(c,directory)
+            except Exception:
+                atomic_write(directory/'status.json',json.dumps(dict(state='failed',updated=time.time(),message='DNS rules synchronization failed; last known-good mappings remain active.'))+'\n',0o640)
+            time.sleep(2)
+    finally:
+        stop.set();thread.join(timeout=10)
 
 
 if __name__=='__main__':main()

@@ -36,7 +36,7 @@ class PageHeaderTests(BrowserWebFixture,unittest.TestCase):
         if section:self.assertEqual(parsed.sections,[section],path)
         if tabs:
             group,active=tabs;links=parsed.navs[group]
-            expected=['/admin/batches','/admin/schedules','/admin/codes'] if group=='codes' else ['/admin/system','/admin/client-diagnostics','/admin/updates','/admin/recovery'] if group=='system' else ['/admin/settings','/admin/app']
+            expected=['/admin/batches','/admin/schedules','/admin/codes'] if group=='codes' else ['/admin/system','/admin/client-diagnostics','/admin/dns-health','/admin/updates','/admin/recovery'] if group=='system' else ['/admin/settings','/admin/app']
             self.assertEqual([x['href'] for x in links],expected,path)
             self.assertEqual([x['href'] for x in links if x.get('aria-current')=='page'],[active],path)
             self.assertLess(parsed.header_position,parsed.nav_positions[group],path)
@@ -62,7 +62,7 @@ class PageHeaderTests(BrowserWebFixture,unittest.TestCase):
     def test_other_management_groups_use_the_same_header_and_relevant_tabs(self):
         for path in ('/admin','/admin/more','/admin/requests','/admin/sessions','/admin/activity','/admin/dns-domains'):
             with self.subTest(path=path):self.structure(path)
-        for path in ('/admin/system','/admin/client-diagnostics','/admin/updates','/admin/recovery'):self.structure(path,section='System',tabs=('system',path))
+        for path in ('/admin/system','/admin/client-diagnostics','/admin/dns-health','/admin/updates','/admin/recovery'):self.structure(path,section='System',tabs=('system',path))
         for path in ('/admin/settings','/admin/app'):self.structure(path,section='Settings',tabs=('settings',path))
     def test_request_session_and_confirmation_headers_remain_consistent(self):
         rid,_=self.store.submit_request('a'*64,'10.40.40.21','example.org','Alex')
