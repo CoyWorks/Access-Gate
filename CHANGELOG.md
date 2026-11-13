@@ -1,3 +1,9 @@
+# 0.36.0
+
+- Add administrator-only support report preview and exact signed JSON download under More / System status.
+- Allowlist installed version/commit, component states, public certificate metadata, fixed DNS summary and aggregate gateway failure counts. Exclude secrets, addresses, hostnames, URLs, visitor data and raw logs.
+- Bound collection wait to three seconds with one background collector per portal worker, fixed labels, unknown/uncollected states and a 12 KB report limit. No automatic upload or report file retention.
+
 # 0.35.0
 
 - Add consistent visitor recovery pages for gateway overload, policy/authorization/portal failures, verified-origin failure and invalid/expired handoffs. Preserve meaningful HTTP status codes, fail-closed authorization and safe recovery links.

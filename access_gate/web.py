@@ -49,6 +49,8 @@ def create_app(config=None):
                       PERMANENT_SESSION_LIFETIME=dt.timedelta(days=7),MAX_CONTENT_LENGTH=MAX_ARCHIVE+16384)
     store=Store(config['database'],config['pepper']); app.extensions['store']=store
     health=Health(config,store); app.extensions['health']=health
+    from .support_report import SupportReport
+    support=SupportReport(config,health,PUBLIC_CA);app.extensions['support_report']=support
     jobs=Jobs(config.get('maintenance_jobs','/var/lib/access-gate/jobs'));app.extensions['jobs']=jobs
     networks=[ipaddress.ip_network(n) for n in config['client_networks']]
     portal_url=config['portal_url'].rstrip('/')
@@ -573,6 +575,25 @@ def create_app(config=None):
     @admin_only
     def system_status():
         return render_template('system.html',health=health.snapshot())
+
+    @app.route('/admin/support',methods=['GET','POST'])
+    @admin_only
+    def support_report():
+        from .support_report import blank,encode
+        from itsdangerous import URLSafeTimedSerializer,BadSignature,SignatureExpired
+        signer=URLSafeTimedSerializer(config['secret'],salt='support-preview-v1')
+        if request.method=='POST' and request.form.get('action')=='download':
+            token=request.form.get('preview','')
+            if len(token)>16000:raise GateError('Support preview expired. Collect a new report.')
+            try:payload=signer.loads(token,max_age=600)
+            except (BadSignature,SignatureExpired):raise GateError('Support preview expired. Collect a new report.')
+            if not isinstance(payload,dict) or payload.get('owner')!=store.browser_digest(browser()):raise GateError('Support preview belongs to another browser.')
+            content=encode(payload['report'])
+            return Response(content,mimetype='application/json',headers={'Content-Disposition':'attachment; filename="access-gate-support.json"'})
+        if request.method=='POST' and request.form.get('action')!='collect':raise GateError('Choose Collect report or Download preview.')
+        report=support.capture() if request.method=='POST' else blank(config)
+        token=signer.dumps(dict(owner=store.browser_digest(browser()),report=report))
+        return render_template('support_report.html',report=report,report_json=encode(report),preview=token,csrf=csrf())
 
     @app.get('/admin/performance')
     @admin_only

@@ -11,3 +11,5 @@
 
 .page-actions .action-menu[open]{padding-bottom:0}.page-actions .action-menu-items{position:absolute;right:0;top:calc(100% + 8px);min-width:240px;max-width:calc(100vw - 36px);padding:10px 14px;background:#202d44;border:1px solid #475b7b;border-radius:10px;box-shadow:0 12px 35px #0006;z-index:30}.page-actions .action-menu-items a{display:block;padding:8px 0;margin:0;text-decoration:none}
 @media(max-width:760px){.page-actions>.action-menu{width:100%}.page-actions .action-menu-items{left:0;right:auto;width:100%}}
+
+.support-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;padding:16px;border:1px solid #475b7b;border-radius:10px}

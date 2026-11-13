@@ -1,0 +1,9 @@
+{% extends 'base.html' %}{% from '_page.html' import page_header,system_tabs %}{% block content %}
+{{ page_header('Support report','System','Preview a redacted server snapshot before downloading.',[('More',url_for('more')),('Support report',none)]) }}{{ system_tabs('') }}
+<p>This report includes version/commit, component modes and fixed status labels, public certificate fingerprints/dates and aggregate gateway failures. It excludes configuration secrets, keys, cookies, codes, client addresses, hostnames, request URLs, browsing history and raw logs. Nothing is uploaded automatically.</p>
+<p>Collection: <strong>{{ report.collection }}</strong> · Report generated {{ report.generated_at|localtime }}. Individual observations retain their own timestamps. Unknown means uncollected or unavailable; local checks cannot prove client setup.</p>
+{% if report.collection=='deadline-exceeded' %}<p class="notice">The collection deadline was reached. Unknown checks are not failures. Wait a moment and collect again; only one collector per worker can run at a time.</p>{% endif %}
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button name="action" value="collect">Collect report</button></form>
+<section><h2>Included data</h2><pre class="support-preview" tabindex="0" aria-label="Support report JSON">{{ report_json }}</pre></section>
+{% if report.collection!='not-collected' %}<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="preview" value="{{ preview }}"><button name="action" value="download">Download this preview</button><p class="muted">The download contains exactly the preview above. It is available in this browser for 10 minutes; reports are not stored on disk.</p></form>{% endif %}
+<p><a href="{{ url_for('system_status') }}">System status</a> · <a href="{{ url_for('client_diagnostics') }}">Client diagnostics</a></p>{% endblock %}

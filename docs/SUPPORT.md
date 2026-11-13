@@ -1,0 +1,11 @@
+# Redacted support reports
+
+Open **More → Support report**, or follow the link in **System status**. The initial page explains the fields and does not probe services. **Collect report** gathers a server-local snapshot; review the JSON before selecting **Download this preview**. Nothing is uploaded automatically. Client DNS, routing, trust and browser acceptance remain uncollected: use Client diagnostics on the affected device separately.
+
+Included fields are explicitly allowlisted: installed semantic version/commit/deployment timestamp, deployment role and component modes, fixed service/health state labels and observation times, published CA fingerprint/validity and available gateway certificate metadata, a fixed DNS state summary and process-local aggregate failure counters. Missing fingerprints and unavailable or stale checks remain null/unknown. CA publication does not prove validity or client trust. Public authorities do not claim to publish a private gateway's device CA. Counters reset when the gateway restarts.
+
+Excluded: passwords, configuration dumps, private keys, certificates as PEM, cookies, codes, request URLs, client addresses, DNS queries, restriction names, browsing history, exception strings and arbitrary journal/log output. The installed identity is version/commit rather than hostname/address. Unsupported or malformed fields are dropped rather than stringified. No external report destination or upload integration exists.
+
+The request waits at most three seconds for collection. Each portal worker allows one collector and no unbounded queue; a recent completed result can be reused for ten seconds. If collection exceeds the deadline, the preview explicitly reports that and leaves observations unknown. Wait briefly and collect again. The report is bounded to 12 KB. Fixed existing health probes retain their own per-operation timeouts.
+
+The download uses a signed, browser-bound preview valid for ten minutes. It returns exactly the displayed report across portal workers and never collects again silently. Both collect/download require an administrator session, management-network access and CSRF. Reports are not stored on disk or in the database; ordinary process-local collection state expires with the worker. The downloaded JSON remains yours to review and share deliberately.

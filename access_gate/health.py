@@ -10,6 +10,7 @@ import threading
 import time
 from urllib.parse import urlsplit
 from cryptography import x509
+from cryptography.hazmat.primitives import hashes
 
 
 class Health:
@@ -29,10 +30,12 @@ class Health:
     def item(name,state,detail,action=''):
         return dict(name=name,state=state,detail=detail,action=action)
 
-    def certificate(self,name,stamp,now):
+    def certificate(self,name,stamp,now,fingerprint=None):
         days=int((stamp-now)//86400)
         state='failed' if stamp<=now else ('warning' if days<30 else 'healthy')
-        return self.item(name,state,'Expires '+dt.datetime.fromtimestamp(stamp,dt.timezone.utc).isoformat()+f' ({days} days).','Renew through the documented certificate/update procedure.' if state!='healthy' else '')
+        result=self.item(name,state,'Expires '+dt.datetime.fromtimestamp(stamp,dt.timezone.utc).isoformat()+f' ({days} days).','Renew through the documented certificate/update procedure.' if state!='healthy' else '')
+
+        return dict(result,expires_at=stamp,sha256=fingerprint)
 
     def gateway(self,now):
         # Use the public CA copy, never the protected root-key directory.
@@ -54,9 +57,9 @@ class Health:
             if issuer.tzinfo is None: raise ValueError('Invalid issuer time.')
             activity=self.item('Activity delivery','warning' if data.get('activity_dropped',0) else 'healthy',f"Queued: {data.get('activity_queue',0)}; dropped since gateway start: {data.get('activity_dropped',0)}.",'Inspect portal/gateway availability; lost visit metadata cannot be recovered.' if data.get('activity_dropped',0) else '')
             return [activity,self.item('Gateway HTTPS','healthy','Verified HTTPS listener and issuing-key setup respond. This does not test a restricted website or Pi-hole.'),
-                    self.certificate('Portal certificate',cert.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now),
+                    self.certificate('Portal certificate',cert.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now,cert.fingerprint(hashes.SHA256()).hex().upper()),
                     self.certificate('Gateway issuing certificate',issuer.timestamp(),now),
-                    self.certificate('Device root CA',root.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now)]
+                    self.certificate('Device root CA',root.not_valid_after.replace(tzinfo=dt.timezone.utc).timestamp(),now,root.fingerprint(hashes.SHA256()).hex().upper())]
         finally: connection.close()
 
     def performance(self):
