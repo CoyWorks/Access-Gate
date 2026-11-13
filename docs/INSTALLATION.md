@@ -1,6 +1,6 @@
 # Installation
 
-Use a dedicated Ubuntu 24.04 server with a stable IPv4 address (static or DHCP reservation). This release supports a single-host portal and gateway, not arbitrary public reverse proxies or remote authorization servers. Devices must reach this address and trust the installation's CA.
+Use a dedicated Ubuntu 24.04 server with a stable IPv4 address (static or DHCP reservation). The initial installer configures a single private host. Explicit public-authority/remote-gateway deployment is configured afterward through the documented root workflow. Devices must reach this address and trust the installation's CA.
 
 ## Interactive installation
 
@@ -66,3 +66,29 @@ For the optional DNS component, see [Built-in DNS](DNS.md). In unattended profil
 For an existing nginx/CloudPanel host, select `web_mode: "shared-nginx"` and follow [address-separated service combinations](DEPLOYMENTS.md). Default dedicated behavior is unchanged.
 
 For a public authority or private remote gateway, first complete the normal private installation, then use the explicit root configuration/enrollment flow in [Public portal deployment](PUBLIC_PORTAL.md). Initial profiles do not silently expose public administration or replace trusted certificates.
+
+## Planner navigation and reusable profiles (0.33)
+
+The existing terminal wizard now validates each field and retains previous answers after mistakes. At a field enter `BACK` to return to the preceding choice, or `CANCEL` to stop before installation. The final review accepts `EDIT 1` through `EDIT 7` for the displayed fields, `EDIT aliases`, `BACK`, `RETRY`, `SAVE /root/reviewed-install.json`, and `INSTALL` or `CANCEL`. Editing a single field returns to review; a newly selected built-in resolver asks for missing upstreams. Password length/confirmation mistakes do not discard the plan. No password is collected until explicit installation confirmation and successful preflight.
+
+`SAVE` exports only deployment settings to a new mode-0600 file, never passwords, password-file references, runtime secrets or a live configuration. It refuses existing files and symbolic links. A saved plan may need host conflicts corrected before reuse; preflight is always repeated. Choose a fresh output filename outside the Git checkout.
+
+For planning only, without starting installation or collecting a password:
+
+```bash
+sudo python3 -m access_gate.installer /root/reviewed-install.json --plan-only
+```
+
+At review use `FINISH` instead of `INSTALL`. To review/edit a previously saved profile, or validate one unattended:
+
+```bash
+sudo python3 -m access_gate.installer /root/revised-install.json --edit-profile /root/reviewed-install.json --plan-only
+sudo python3 -m access_gate.installer /root/validated-install.json --profile /root/reviewed-install.json --plan-only
+sudo env ACCESS_GATE_INSTALL_CONFIG=/root/revised-install.json bash install.sh
+```
+
+The planner uses only the Python standard library, so it works before application dependencies are installed. A real install may use the existing private `admin_password_file` mechanism; plan-only mode does not read that password file. Existing installed hosts use update/resume or Server settings, not a new initial profile.
+
+The launcher reports four phases: planning, packages/checkpoint, managed deployment and readiness. A saved interrupted initial installation directs a fresh `install` attempt to `resume.sh`. Resume retains its original checkpoint; completed installs retain their live configuration and identity and ignore initial-profile overrides. Missing configuration with an existing database/completion marker or orphaned certificates stops for recovery rather than regenerating credentials. None of this changes host addresses, VPN, firewall or external DNS.
+
+Automated tests cover retry/back/edit, local conflict retry, reusable profile export, plan-only password handling, file/link protection and install/resume state selection. Package/systemd/nginx changes still require a real fresh-host acceptance test.

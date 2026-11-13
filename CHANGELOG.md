@@ -1,3 +1,8 @@
+# 0.33.0
+
+- Improve the existing installation planner with field retries, back/edit navigation, private reusable profiles and plan-only mode (#35).
+- Show distinct planning/deploy/readiness phases and preserve interrupted/completed install state during resume.
+
 # 0.32.0
 
 - Add authenticated server-settings review and single-use root-worker application with stale-preview rejection, readiness and rollback (#40).

@@ -31,6 +31,14 @@ done
 plan_file=$(mktemp /run/access-gate-plan.XXXXXX)
 trap 'rm -f -- "$plan_file" "$plan_file.password"' EXIT
 saved_profile=/var/lib/access-gate/installation/profile.json
+printf '[1/4] Planning %s; existing installations reuse their settings.\n' "$install_mode"
+installation_state=$(cd "$bundle_dir" && /usr/bin/python3 -m access_gate.installer --state)
+if [[ $installation_state == missing-config ]]; then
+    echo 'Configuration is missing while installed data/certificates remain. Restore the matching configuration backup; no credentials were regenerated.' >&2; exit 1
+fi
+if [[ $resume_install -eq 0 && $installation_state == interrupted ]]; then
+    echo 'An initial installation checkpoint exists. Use bash resume.sh to keep its reviewed deployment choices.' >&2; exit 1
+fi
 if [[ $resume_install -eq 1 && ! -e /etc/access-gate/config.json && -f $saved_profile ]]; then
     echo 'Resuming an interrupted initial installation with its saved deployment profile.'
     cp -- "$saved_profile" "$plan_file"
@@ -85,12 +93,14 @@ if [[ $resume_install -eq 0 ]]; then
     if [[ -f $plan_file.password ]]; then install -m 0600 "$plan_file.password" "$saved_profile.password"; fi
 fi
 /usr/bin/python3 "$bundle_dir/scripts/legacy_upgrade.py" check
+echo '[2/4] Installing required packages; the reviewed initial profile is checkpointed.'
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 extra_packages=()
 if [[ $GATE_WEB_MODE == dedicated ]]; then extra_packages+=(nginx); fi
 if [[ $GATE_DNS_MODE == builtin ]]; then extra_packages+=(python3-dnspython); fi
 apt-get install -y "${extra_packages[@]}" libpsl5 python3-flask python3-aiohttp python3-cryptography python3-reportlab fonts-dejavu-core git gunicorn openssl ca-certificates curl iproute2 util-linux
+echo '[3/4] Deploying managed application/services; retaining existing identity and data.'
 if [[ $resume_install -eq 1 ]]; then
     for unit in access-gate-remote-domains.service access-gate-dns.service access-gate-dns-rules.service access-gate-push.service access-gate-scheduler.service access-gate-gateway.service access-gate.service access-gate-keeper.service; do
         if systemctl cat "$unit" >/dev/null 2>&1; then systemctl stop "$unit"; fi
@@ -348,6 +358,7 @@ RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 WantedBy=multi-user.target
 UNIT
 fi
+echo '[4/4] Validating configuration, starting services and verifying readiness.'
 nginx -t
 systemctl daemon-reload
 systemctl enable --now access-gate-maintenance.service
