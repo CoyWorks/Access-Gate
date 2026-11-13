@@ -51,7 +51,7 @@ class DNSExports:
         result=self.domain_decision(value);portal=result['hostname'] in names(config)
         mapped=portal or result['restricted']
         result.update(target=config['dns_target_ipv4'],dns_mode=config['dns_mode'],portal_hostname=portal,
-                      gateway_behavior='Portal endpoint' if portal else ('Restricted website; live browser authorization required' if mapped else 'Unmanaged hostname; intercepted SNI rejected'),
+                      gateway_behavior='Portal endpoint' if portal else ('Restricted website; live browser authorization required' if mapped else 'Unmanaged hostname; intercepted TLS passes through to public origin'),
                       builtin_records={kind:(config['dns_target_ipv4'] if kind=='A' else 'NOERROR / NODATA') if mapped else 'Forward to configured upstreams' for kind in ('A','AAAA','HTTPS','SVCB')},
                       scope='Configured global policy only. This does not prove client DNS, CA trust, routing or live gateway snapshot freshness. Pi-hole must fetch/apply its dedicated config. Profiles are not enabled.')
         return result
