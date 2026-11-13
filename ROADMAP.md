@@ -82,6 +82,6 @@ Each was implemented, tested and pushed separately. Access profiles (#11) remain
 
 ## Client/server usability follow-up
 
-Issues #35–#42 track the next usability phase. #37 delivers public device onboarding and local CA bootstrap; #38 adds removable Apple CA/portal profiles and reviewable current-user Windows setup; #40 adds supported deployment changes through reviewed root maintenance jobs. Each selected issue is tested and pushed separately. Server installation wizard (#35), first-start checklist (#36), visitor failure pages (#39), redacted support reports (#41) and frequent-action navigation (#42) remain planned. Access profiles (#11) remain outside this phase.
+Issues #35–#42 track the next usability phase. #37 delivers public device onboarding and local CA bootstrap; #38 adds removable Apple CA/portal profiles and reviewable current-user Windows setup; #40 adds supported deployment changes through reviewed root maintenance jobs. Each selected issue is tested and pushed separately. The reviewed installation wizard (#35, 0.33) and optional first-use checklist (#36, 0.34) are delivered. Visitor failure pages (#39), redacted support reports (#41) and frequent-action navigation (#42) remain planned. Access profiles (#11) remain outside this phase.
 
 See [Client setup](docs/CLIENT_SETUP.md) and [Server settings](docs/SERVER_SETTINGS.md). Real personal-device installation and host/service acceptance are distinct from automated fixtures.

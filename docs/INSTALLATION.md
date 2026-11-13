@@ -92,3 +92,15 @@ The planner uses only the Python standard library, so it works before applicatio
 The launcher reports four phases: planning, packages/checkpoint, managed deployment and readiness. A saved interrupted initial installation directs a fresh `install` attempt to `resume.sh`. Resume retains its original checkpoint; completed installs retain their live configuration and identity and ignore initial-profile overrides. Missing configuration with an existing database/completion marker or orphaned certificates stops for recovery rather than regenerating credentials. None of this changes host addresses, VPN, firewall or external DNS.
 
 Automated tests cover retry/back/edit, local conflict retry, reusable profile export, plan-only password handling, file/link protection and install/resume state selection. Package/systemd/nginx changes still require a real fresh-host acceptance test.
+
+## First-use checklist (0.34)
+
+After sign-in, open **Home → Open checklist** or **More → Getting started** (`/admin/setup`). Work through server health, client DNS, an enabled restricted test hostname, client certificate installation and a real client test. Use the existing management links to make configuration changes; the checklist itself never changes restrictions, credentials, DNS or certificates and never redeems a code.
+
+Confirm a step only after performing the stated checks. Server-local health and published CA availability do not prove device DNS, certificate trust or actual access. Test on an affected device/browser without an administrator exclusion or active grant. On a public authority, configure and trust the private gateway instead of the authority certificate. An administrator can skip a step, mark it incomplete or hide/show the Home reminder. Skipped steps are not verified; the checklist remains available from More.
+
+Progress and the selected hostname live in the application database and survive normal restart/update. Changes to deployment identity, resolver settings, selected restriction, CA fingerprint or relevant exclusions flag affected confirmed steps as **Needs review**. Software version changes alone do not invalidate progress. Explicit confirmations are administrator observations, not automated proof; unobserved changes on a client still require manual retesting. A restore resets acknowledgements because old client observations should not be treated as current acceptance.
+
+Existing installations receive an optional reminder, with no forced setup redirect and no configuration overwrite. Local automated tests cover persistence, validation, review flags, skip/defer, CSRF/admin access and recovery reset. A physical Wi-Fi/VPN/client acceptance test remains an operator step.
+
+The checklist migration adds schema 13 tables without changing existing codes or configuration. Encrypted recovery archives retain the existing strict matching-schema requirement: keep the matching application version for old archives and create a new backup after updating.

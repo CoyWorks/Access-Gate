@@ -2,7 +2,7 @@
 
 
 Deployment addresses below are examples. Start with [Installation](docs/INSTALLATION.md); configure your own address, portal identity and permitted networks. Existing installations retain their original settings.
-**Version 0.33.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+**Version 0.34.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
 
 Keep selected DNS names pointed at `192.168.10.20` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
 
@@ -20,7 +20,7 @@ cd /root/Access-Gate
 bash install.sh
 ```
 
-Use a dedicated server. The installer creates the portal certificate/CA, admin password and database, configures Nginx for HTTP, and installs separate unprivileged portal, HTTPS gateway and scheduler services. A fixed-action root maintenance worker handles encrypted recovery and reviewed updates. A dedicated intermediate CA signs on-demand site certificates; neither service receives the root CA private key. Current deployment addresses remain explicit in the installer; it is not a general-purpose installer for arbitrary networks.
+Use a dedicated server by default; an explicit address-separated shared-nginx profile is also supported (see [Deployment modes](docs/DEPLOYMENTS.md)). The installer creates the portal certificate/CA, admin password and database, configures Nginx for HTTP, and installs separate unprivileged portal, HTTPS gateway and scheduler services. A fixed-action root maintenance worker handles encrypted recovery and reviewed updates. A dedicated intermediate CA signs on-demand site certificates; neither service receives the root CA private key. The terminal planner reviews your server address, portal identity, networks and component choices before installation. Existing installations retain their configuration. After sign-in, open **More → Getting started** for the optional server/DNS/client checklist.
 
 The initial admin URL/password is saved locally:
 

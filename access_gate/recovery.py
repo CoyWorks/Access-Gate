@@ -152,5 +152,7 @@ def invalidate(database,config):
         for table in ('admin_site_tokens','admin_handoffs','admin_logins','gateway_tokens','gateway_entries'):db.execute('DELETE FROM '+table)
         db.execute("UPDATE access_requests SET status='expired',read_at=?,resolved_at=? WHERE status='pending'",(time.time(),time.time()))
         db.execute('UPDATE administrator_policy SET version=?',(secrets.token_hex(32),))
+        db.execute("UPDATE setup_steps SET state='pending',confirmed_at=NULL,context=''")
+        db.execute('UPDATE setup_progress SET hidden=0,revision=? WHERE id=1',(secrets.token_hex(16),))
         store._event(db,'recovery.restored',actor='System')
         db.commit();db.execute('PRAGMA wal_checkpoint(TRUNCATE)')

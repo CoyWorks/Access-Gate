@@ -669,7 +669,22 @@ def create_app(config=None):
     @app.get('/admin')
     @admin_only
     def admin():
-        return render_template('admin.html',home=store.ui_home(),now=time.time(),csrf=csrf(),phone_enabled=bool(store.push_state(browser(),config)['devices']))
+        return render_template('admin.html',home=store.ui_home(),now=time.time(),csrf=csrf(),phone_enabled=bool(store.push_state(browser(),config)['devices']),setup_summary=store.setup_summary())
+
+    @app.route('/admin/setup',methods=['GET','POST'])
+    @admin_only
+    def setup_checklist():
+        from .onboarding import public_root
+        ca=None
+        if not config['public_portal']:
+            try:ca=public_root(PUBLIC_CA)['sha256']
+            except Exception:pass  # Unavailable public CA is an explicit unknown, never success.
+        if request.method=='POST':
+            store.change_setup(config,ca,request.form.get('revision',''),request.form.get('action',''),
+                               request.form.get('step',''),request.form.get('hostname',''),request.form.get('ack',''))
+            return redirect(url_for('setup_checklist'),code=303)
+        return render_template('setup_checklist.html',checklist=store.setup_checklist(config,ca),
+                               deployment=config,ca_available=bool(ca),csrf=csrf())
 
     @app.get('/admin/more')
     @admin_only

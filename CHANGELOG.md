@@ -1,3 +1,9 @@
+# 0.34.0
+
+- Add an optional administrator first-use checklist for server health, client DNS, a restricted test hostname, CA onboarding and an end-to-end device test.
+- Persist explicit confirmations, skip/reset and the Home reminder preference without changing existing settings. Deployment/CA/restriction changes flag affected confirmations for review; backup restore resets acknowledgements.
+- Link existing domain management, client profiles, diagnostics and health tools. Local checks never claim client trust or automatically grant access.
+
 # 0.33.0
 
 - Improve the existing installation planner with field retries, back/edit navigation, private reusable profiles and plan-only mode (#35).

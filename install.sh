@@ -409,6 +409,7 @@ elif [[ -f /root/access-gate-initial-login.txt ]]; then
 else
     echo "Admin portal: $GATE_PORTAL_URL/admin (existing password unchanged)."
 fi
+printf 'First-use checklist: %s/admin/setup\n' "$GATE_PORTAL_URL"
 printf '\nHTTPS gateway ready. Point restricted DNS names to %s and trust the retained root CA on your devices. See docs/GATEWAY.md.\n' "$GATE_SERVER_IP"
 
 openssl x509 -in /etc/access-gate/ca/root.crt -noout -sha256 -fingerprint

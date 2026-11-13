@@ -1,0 +1,37 @@
+{% extends 'base.html' %}{% from '_page.html' import page_header,system_tabs %}{% block content %}
+{{ page_header('Getting started','System','A guided checklist for this deployment.',[('More',url_for('more')),('Getting started',none)]) }}{{ system_tabs('') }}
+<p class="notice">{{ checklist.confirmed }} of 5 steps confirmed by an administrator · {{ checklist.skipped }} skipped.
+{% if checklist.complete %}<strong>Checklist complete.</strong>{% endif %}
+These are manual acknowledgements, not proof of client trust. A server health check cannot verify DNS or certificates on another device. Existing settings are unchanged.</p>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ checklist.revision }}">
+{% if checklist.hidden %}<p>The Home reminder is deferred. You can always return through More → Getting started.</p><button class="secondary" name="action" value="show">Show Home reminder</button>
+{% else %}<button class="secondary" name="action" value="hide">Hide Home reminder</button>{% endif %}</form>
+{% for item in checklist.steps %}<section id="setup-{{ item.step }}">
+<h2>{{ loop.index }}. {{ item.title }}</h2>
+<p><strong>{{ {'pending':'Not confirmed','done':'Administrator confirmed','skipped':'Skipped — not verified','needs-review':'Needs review — deployment changed'}[item.state] }}</strong>{% if item.confirmed_at %} · Last acknowledged {{ item.confirmed_at|localtime }}{% endif %}</p>
+{% if item.state=='needs-review' %}<p class="notice">Settings, the selected restriction or the public CA changed. Repeat this check before confirming it again.</p>{% endif %}
+{% if item.step=='server' %}
+<p>Review the installed version, services, clock and HTTPS gateway in <a href="{{ url_for('system_status') }}">System status</a>. Checks there are server-local evidence only. This checklist does not run probes automatically.</p>
+{% elif item.step=='dns' %}
+<p>DNS target: <strong>{{ deployment.dns_target_ipv4 }}</strong>. Mode: <strong>{{ deployment.dns_mode }}</strong>.</p>
+{% if deployment.public_portal %}<p>This is a public authority. Configure DNS at the private gateway that will serve the restricted devices; do not point client traffic at the authority as a private gateway.</p>
+{% elif deployment.dns_mode=='builtin' %}<p>Set the selected clients' DHCP/VPN DNS to this server and permit UDP/TCP 53. Review <a href="{{ url_for('dns_health_page') }}">DNS health</a>.</p>
+{% elif deployment.dns_mode=='external-pihole' %}<p>Use <a href="{{ url_for('dns_domains') }}">Restricted domains / Pi-hole integration</a> to copy the local DNS configuration feed and sync instructions. Import it as dnsmasq configuration, not a gravity blocklist: gravity can return 0.0.0.0 instead of the gateway.</p>
+{% else %}<p>Configure your resolver to map selected restricted names to the target IPv4. Suppress their upstream IPv6/HTTPS/SVCB answers to avoid bypasses. Follow the resolver's own configuration instructions.</p>{% endif %}
+<p>From an affected client, verify a selected name resolves to the private gateway, not 0.0.0.0 or its public address. Check Wi-Fi and VPN separately where applicable. Changing a server setting does not configure clients automatically.</p>
+{% elif item.step=='domain' %}
+<p><a href="{{ url_for('dns_domains') }}">Add or choose an enabled restricted domain</a>, then enter the exact hostname you will test. Selecting it here does not create or modify a restriction.</p>
+{% elif item.step=='device' %}
+{% if deployment.public_portal %}<p>Install and trust the CA published by your private gateway. This authority's HTTPS certificate is not the device interception CA; no private-gateway trust is detected here.</p>
+{% else %}<p>Public device CA: <strong>{{ 'Available on server' if ca_available else 'Unknown / unavailable' }}</strong>. Availability does not mean a device trusts it.</p>{% endif %}
+<p>Open <a href="{{ url_for('device_setup',hostname=checklist.hostname) }}">Connect a client device</a> on the actual device. Verify the CA fingerprint through a trusted channel and follow the iOS/iPadOS, Android or Windows instructions. Some apps reject user-installed CAs.</p>
+{% elif item.step=='client' %}
+<p>Use an affected device and a browser without an administrator login or active access session. Check <a href="{{ url_for('admin_settings') }}#exclusions">IP exclusions</a>: an excluded device will bypass the code page.</p>
+<ol><li>Visit the selected HTTPS hostname and verify the code page appears without a certificate warning.</li><li>Use a fresh <a href="{{ url_for('new_batch') }}">test code</a>. Confirm the original website opens.</li><li>Revoke the session or let it expire, then verify the restriction returns on a new request.</li></ol>
+<p>{% if checklist.hostname %}Selected test hostname: <strong>{{ checklist.hostname }}</strong>. {% endif %}<a href="{{ url_for('client_diagnostics',hostname=checklist.hostname) }}">Client diagnostics</a> helps investigate failures. This checkbox records your observation; it does not run or redeem a code.</p>
+{% endif %}
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="revision" value="{{ checklist.revision }}"><input type="hidden" name="step" value="{{ item.step }}">
+{% if item.step=='domain' %}<label>Test hostname<input name="hostname" maxlength="253" value="{{ checklist.hostname }}" placeholder="www.example.org" autocomplete="off"></label>{% endif %}
+<label><input type="checkbox" name="ack" value="1"> I performed the checks described above{% if item.step=='client' %} on an affected client device{% endif %}.</label>
+<div class="actions"><button name="action" value="done">Confirm step</button><button class="secondary" name="action" value="skip">Skip for now</button><button class="secondary" name="action" value="reset">Mark incomplete</button></div></form>
+</section>{% endfor %}{% endblock %}

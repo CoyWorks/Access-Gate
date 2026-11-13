@@ -82,6 +82,18 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
 
         self.gateway = Gateway()
         self.router = TLSRouter(self.gateway, managed_port, origin_port=origin_port)
+        self.router_tasks = set()
+        accept = self.router.accept
+
+        async def tracked_accept(reader, writer):
+            task = asyncio.current_task()
+            self.router_tasks.add(task)
+            try:
+                await accept(reader, writer)
+            finally:
+                self.router_tasks.discard(task)
+
+        self.router.accept = tracked_accept
         await self.router.start('127.0.0.1', 0)
         self.port = self.router.server.sockets[0].getsockname()[1]
 
@@ -113,7 +125,9 @@ class RouterTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response, b'MANAGED')
             self.assertEqual(self.managed_received[-1][1], wire)
         self.assertEqual(self.origin_received, [])
-        await asyncio.sleep(0)
+        # Client wait_closed only closes its local transport. Wait for the
+        # router's actual finally block, with a deadline that still detects leaks.
+        await asyncio.wait_for(asyncio.gather(*tuple(self.router_tasks)), 1)
         self.assertFalse(self.gateway.proxy_clients)
 
     async def test_stale_policy_does_not_open_a_public_proxy(self):
