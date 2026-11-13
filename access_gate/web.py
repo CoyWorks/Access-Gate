@@ -704,7 +704,7 @@ def create_app(config=None):
     @app.get('/admin')
     @admin_only
     def admin():
-        return render_template('admin.html',home=store.ui_home(),now=time.time(),csrf=csrf(),phone_enabled=bool(store.push_state(browser(),config)['devices']),setup_summary=store.setup_summary())
+        return render_template('admin.html',home=store.ui_home(),now=time.time(),csrf=csrf(),phone_enabled=bool(store.push_state(browser(),config)['devices']),setup_summary=store.setup_summary(),attention=store.ui_attention())
 
     @app.route('/admin/setup',methods=['GET','POST'])
     @admin_only
@@ -723,7 +723,7 @@ def create_app(config=None):
 
     @app.get('/admin/more')
     @admin_only
-    def more():return render_template('more.html',csrf=csrf())
+    def more():return render_template('more.html',csrf=csrf(),attention=store.ui_attention())
 
     @app.get('/admin/sessions/<session_id>')
     @admin_only

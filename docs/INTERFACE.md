@@ -45,3 +45,13 @@ Codes always shows **Batches / Schedules / All records**, including creation, de
 System status, Updates, Backup & restore and their maintenance jobs share System tabs. Account & security and Phone app & notifications share Settings tabs. Requests, Sessions and their decision/detail/confirmation screens use the same heading component, as do Home, More, restrictions and Activity. Visitor pages and sign-in retain their separate compact public layout.
 
 Rendered HTML tests exercise list/detail/form/output/error/confirmation and maintenance pages, checking one primary title, common heading order, persistent tabs, active selection, breadcrumbs, escaping and unique export controls. Browser-based visual verification remains unavailable under the previously documented environment restrictions; no screenshot validation is claimed.
+
+## 0.37 — Daily task shortcuts
+
+Home and More share the same **Find a restricted domain** GET search, **Review requests**, **Extend a session** and **Connect a device** links. These reuse the existing screens and action handlers; there is no second approval/extension path. Search has an explicit label and stays usable without JavaScript. Home keeps pending-request cards and active-session Extend actions ahead of optional checklist/phone reminders.
+
+System status is near the top of both pages, starting as not checked rather than assuming health. Existing authenticated polling retains stale/unavailable/error feedback. Pending blocklist reviews and failed refresh counts appear outside expandable sections, linking to the existing review workflow; merely viewing them does not apply or dismiss anything.
+
+More groups restrictions, devices/account, history and server/troubleshooting tools. Infrequent server settings, DNS/performance, updates and encrypted recovery sit inside **Deployment & maintenance**, a native details/summary control usable by keyboard without JavaScript. System status, client diagnostics, support reports and unfinished setup remain directly discoverable. Existing destructive confirmations and primary current-section indicators remain unchanged.
+
+Task regression tests verify search wiring, retained destinations, daily-work ordering, attention counts and unchanged approval/extension behavior. Responsive rules stack search/actions on narrow screens, retain visible focus and use at least 44px shortcut targets. Rendered synthetic templates are available for visual review; browser security/network restrictions in the development environment prevented the local visual preview from opening, so physical phone/desktop visual acceptance remains an operator check.

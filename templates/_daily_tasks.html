@@ -1,0 +1,10 @@
+{% macro daily_tasks(prefix) %}
+<section class="daily-tools" aria-label="Everyday tasks">
+<form method="get" action="{{ url_for('dns_domains') }}" class="daily-search"><label for="{{ prefix }}-domain-search">Find a restricted domain</label><div class="daily-search-row"><input id="{{ prefix }}-domain-search" name="q" maxlength="253" placeholder="example.org" autocomplete="off" autocapitalize="none" spellcheck="false"><button class="secondary">Search domains</button></div></form>
+<nav class="daily-actions" aria-label="Quick actions"><a href="{{ url_for('access_requests') }}">Review requests</a><a href="{{ url_for('active_sessions') }}">Extend a session</a><a href="{{ url_for('device_setup') }}">Connect a device</a></nav>
+</section>
+{% endmacro %}
+{% macro attention_status(attention) %}
+<div id="dashboard-health" class="health-summary" role="status"><span id="dashboard-health-text">System status has not been checked yet.</span><a href="{{ url_for('system_status') }}">System status</a></div>
+{% if attention.reviews or attention.source_failures %}<aside class="notice" role="status"><strong>Domain lists need attention</strong><p>{{ attention.reviews }} pending list reviews · {{ attention.source_failures }} failed refreshes. Current applied rules are retained.</p><a href="{{ url_for('subscriptions_page') }}">Review blocklist subscriptions</a></aside>{% endif %}
+{% endmacro %}

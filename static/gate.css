@@ -13,3 +13,7 @@
 @media(max-width:760px){.page-actions>.action-menu{width:100%}.page-actions .action-menu-items{left:0;right:auto;width:100%}}
 
 .support-preview{white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow:auto;padding:16px;border:1px solid #475b7b;border-radius:10px}
+
+.daily-tools{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:20px;align-items:center;margin:20px 0}.daily-search{margin:0;min-width:0}.daily-search-row{display:flex;gap:10px;align-items:center}.daily-search-row input{flex:1;min-width:0;margin:0}.daily-search-row button{width:auto;white-space:nowrap;margin:0;min-height:44px}.daily-actions{display:flex;flex-wrap:wrap;gap:4px 18px}.daily-actions a{display:inline-flex;align-items:center;min-height:44px}.daily-tools a:focus-visible,.management-link:focus-visible,details.help>summary:focus-visible{outline:3px solid #9cc9ff;outline-offset:4px}.health-summary{flex-wrap:wrap}.daily-tools label{margin-top:0}
+@media(max-width:1000px){.daily-tools{grid-template-columns:1fr;gap:10px}}
+@media(max-width:420px){.daily-search-row{align-items:stretch;flex-direction:column}.daily-search-row button{width:100%}.daily-actions{gap:2px 16px}}

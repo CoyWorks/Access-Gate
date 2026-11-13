@@ -1,3 +1,9 @@
+# 0.37.0
+
+- Put domain search and existing request/session/client actions directly on Home and More; prioritize daily request/session work above setup reminders.
+- Keep system status visible near the top and surface pending subscription reviews/failed refreshes outside maintenance panels.
+- Group occasional deployment/recovery tools under a native keyboard-accessible disclosure; retain existing five-section navigation, business logic, confirmations and public code flow.
+
 # 0.36.0
 
 - Add administrator-only support report preview and exact signed JSON download under More / System status.

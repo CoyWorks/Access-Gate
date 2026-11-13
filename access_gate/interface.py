@@ -41,6 +41,11 @@ class Interface:
             if item['state']=='pending':item.update(self.request_detail(item['id']))
         return result
 
+    def ui_attention(self):
+        with self.connect() as db:
+            return dict(reviews=db.execute('SELECT count(*) FROM blocklist_sources WHERE pending IS NOT NULL').fetchone()[0],
+                        source_failures=db.execute("SELECT count(*) FROM blocklist_sources WHERE status='refresh failed'").fetchone()[0])
+
     def ui_home(self,now=None):
         now=time.time() if now is None else now
         with self.connect() as db:
