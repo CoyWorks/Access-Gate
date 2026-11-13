@@ -26,6 +26,7 @@ from .gateway_activity import GatewayActivity
 from .gateway_tls import CertificateCache, expires
 from .performance import Metrics
 from .domain_policy import DomainPolicy
+from .failures import page as failure_page,HEADERS as FAILURE_HEADERS
 
 HOP = {'connection', 'keep-alive', 'proxy-authenticate', 'proxy-authorization', 'te', 'trailer',
        'transfer-encoding', 'upgrade', 'alt-svc', 'alternate-protocol', 'proxy-connection'}
@@ -284,10 +285,22 @@ class Gateway(GatewayActivity):
         if request.transport is not None: request.transport.abort()
         task.cancel()
 
+    def failure(self,kind,status=503):
+        counter='failure_'+kind
+        if counter in self.performance.counters:self.performance.increment(counter)
+        headers=dict(FAILURE_HEADERS)
+        if status==503:headers['Retry-After']='5'
+        return web.Response(status=status,text=failure_page(kind,self.config['portal_url']),content_type='text/html',headers=headers)
+
     async def handle(self,request):
-        if self.active_requests>=128:return web.Response(status=503,text='Gateway busy. Try again shortly.',headers={'Retry-After':'5'})
+        if self.active_requests>=128:return self.failure('busy')
         self.active_requests+=1
         try:return await self._handle(request)
+        except web.HTTPException as exc:
+            if request.get(STARTED) or request.path.startswith(('/gateway/v1/','/__access_gate/')):raise
+            response=self.failure('missing' if exc.status==404 else 'setup',exc.status)
+            if 'Allow' in exc.headers:response.headers['Allow']=exc.headers['Allow']
+            return response
         finally:self.active_requests-=1
 
     async def _handle(self, request):
@@ -297,6 +310,7 @@ class Gateway(GatewayActivity):
         host = self.host(request)
         address = self.client_address(request,secure,public=bool(self.config.get('public_portal') and host in self.portal_hosts))
         if request.method in ('CONNECT', 'TRACE'): raise web.HTTPMethodNotAllowed(request.method, ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+        stage='authorization'
         try:
             if not secure:
                 if host in self.portal_hosts:
@@ -322,7 +336,9 @@ class Gateway(GatewayActivity):
                         if request.method not in ('GET','HEAD'):raise web.HTTPMethodNotAllowed(request.method,['GET','HEAD'])
                         return await self.portal(request,address,local_only=True)
                 if self.remote:return web.Response(status=303,headers={'Location':self.config['portal_url'],'Cache-Control':'no-store'})
+                stage='portal'
                 return await self.portal(request, address)
+            if not self.policy or not self.policy.fresh():return self.failure('policy')
             if sni != host: raise web.HTTPMisdirectedRequest(text='TLS hostname mismatch.')
             if not self.is_restricted_sync(host): raise web.HTTPMisdirectedRequest(text='This hostname is not managed.')
             cookie = request.headers.get('Cookie', '')
@@ -331,7 +347,17 @@ class Gateway(GatewayActivity):
                 path = '/internal/finish?' + urlencode({'ticket': request.query.get('ticket', '')})
                 return await self.local_response(path, host, cookie)
             active, _, headers = await self.allowed(host, cookie, address, activity=True)
-            if not active: return await self.local_response('/internal/start', host, cookie)
+            if not active:
+                response=await self.local_response('/internal/start', host, cookie)
+                # Preserve only the authority-generated entry, never a return URL.
+                if '__Host-accessgate-site=' in cookie and response.status in (302,303):
+                    from .failures import portal_origin
+                    location=response.headers.get('Location','')
+                    parsed=urlsplit(location)
+                    if portal_origin(parsed.scheme+'://'+parsed.netloc)==portal_origin(self.config['portal_url']) and parsed.path=='/':
+                        response.headers['Location']=location+('&' if '?' in location else '?')+'reason=ended'
+                return response
+            stage='origin'
             watcher = asyncio.create_task(self.watch(request, host, cookie, address, asyncio.current_task()))
             try:
                 if request.headers.get('Upgrade', '').lower() == 'websocket':
@@ -345,11 +371,12 @@ class Gateway(GatewayActivity):
             if request.get(STARTED):
                 if request.transport is not None: request.transport.abort()
                 raise asyncio.CancelledError()
-            return web.Response(status=502, text='The gateway could not reach the authorization service or verified HTTPS origin.', headers={'Cache-Control': 'no-store'})
+            return self.failure(stage,502 if stage=='origin' else 503)
 
     async def local_response(self, path, host, cookie):
         status, headers, data = await self.rpc(path, host, cookie)
-        if status not in (200, 302, 303, 400): raise OSError('Gateway handoff unavailable.')
+        if status==400:return self.failure('request',400)
+        if status not in (200, 302, 303): raise OSError('Gateway handoff unavailable.')
         return web.Response(status=status, body=data, headers=safe_headers(headers))
 
     async def portal(self, request, address,local_only=False):

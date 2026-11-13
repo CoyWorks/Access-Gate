@@ -11,7 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch,AsyncMock
 
 import aiohttp
 from aiohttp import web, WSMsgType
@@ -590,6 +590,36 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         self.gateway.key = 'unavailable-key'
         with self.assertRaises(aiohttp.ClientPayloadError): await asyncio.wait_for(response.read(), 1.5)
         self.assertGreater(self.store.list_grants()[0]['expires'], time.time())
+
+    async def test_visitor_authorization_and_origin_failures_are_classified(self):
+        with patch.object(self.gateway,'allowed',new=AsyncMock(side_effect=OSError('SECRET authorization traceback'))):
+            response=await self.get('restricted.example');body=await response.text()
+            self.assertEqual(response.status,503);self.assertIn('Access check unavailable',body)
+            self.assertNotIn('SECRET',body);self.assertNotIn('X-Gate-Key',response.headers)
+            self.assertEqual(response.headers['Cache-Control'],'no-store')
+        await self.activate()
+        with patch.object(self.gateway,'website',new=AsyncMock(side_effect=OSError('SECRET upstream'))):
+            response=await self.get('restricted.example');body=await response.text()
+            self.assertEqual(response.status,502);self.assertIn('Website unavailable',body);self.assertNotIn('SECRET',body)
+        self.assertEqual(self.gateway.performance.snapshot()['counters']['failure_origin'],1)
+
+    async def test_visitor_portal_busy_and_handoff_failure_pages(self):
+        with patch.object(self.gateway,'portal',new=AsyncMock(side_effect=OSError('SECRET portal'))):
+            response=await self.get();self.assertEqual(response.status,503)
+            self.assertIn('Access portal unavailable',await response.text())
+        self.gateway.active_requests=128
+        response=await self.get();self.assertEqual(response.status,503)
+        self.assertEqual(response.headers['Retry-After'],'5');self.assertIn('Please try again',await response.text())
+        self.gateway.active_requests=0
+        response=await self.get('restricted.example','/__access_gate/complete?ticket=invalid')
+        self.assertEqual(response.status,400);self.assertIn('Website request expired',await response.text())
+
+    async def test_ended_access_retains_validated_entry_without_open_redirect(self):
+        await self.activate();self.store.terminate_session(self.grant['session_id'])
+        response=await self.get('restricted.example');await response.read()
+        self.assertEqual(response.status,302);self.assertIn('reason=ended',response.headers['Location'])
+        self.assertTrue(response.headers['Location'].startswith('https://portal.example/?entry='))
+        self.assertEqual(self.seen,[])
 
     async def test_untrusted_upstream_certificate_is_rejected(self):
         await self.activate()

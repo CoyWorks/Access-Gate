@@ -1,0 +1,1 @@
+{% extends 'base.html' %}{% block content %}<h1>{{ failure[0] }}</h1><p class="error" role="alert">{{ failure[1] }}</p><nav class="actions" aria-label="Recovery options"><a class="button" href="{{ url_for('index') }}">Open access portal</a><a href="{{ url_for('request_access') }}">Request access</a><a href="{{ url_for('device_setup') }}">Device setup</a></nav>{% endblock %}

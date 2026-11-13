@@ -6,7 +6,7 @@ import threading
 import time
 
 STAGES=('policy_lookup','certificate_hit','certificate_miss','certificate_generate','certificate_renew','authorization','origin_dns','origin_connect_tls','origin_response_headers','portal_response_headers')
-COUNTERS=('cache_eviction','policy_error','renew_error','policy_refresh_error')
+COUNTERS=('failure_busy','failure_policy','failure_authorization','failure_origin','failure_portal','failure_request','failure_setup','failure_missing','cache_eviction','policy_error','renew_error','policy_refresh_error')
 BUCKETS=(.001,.005,.01,.025,.05,.1,.25,.5,1,2,5,10,30,math.inf)
 
 

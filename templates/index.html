@@ -1,5 +1,6 @@
 {% extends 'base.html' %}{% block content %}
 <h1>{% if exclusion %}Access unrestricted{% elif grant %}Access active{% else %}Enter your access code{% endif %}</h1>
+{% if access_ended and not grant and not exclusion %}<p class="notice" role="status">Your access expired or was revoked. Enter a new unused code or request access again.</p>{% endif %}
 {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
 {% if exclusion %}
 {% if exclusion.kind=='admin' %}<p>You are signed in. Restricted websites open without an access code.</p><p>Your portal login expires after seven days without use and renews automatically when used.</p>{% else %}<p>Your current address is covered by an IP exclusion. Restricted websites open without an access code.</p>{% endif %}

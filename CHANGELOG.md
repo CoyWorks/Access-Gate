@@ -1,3 +1,9 @@
+# 0.35.0
+
+- Add consistent visitor recovery pages for gateway overload, policy/authorization/portal failures, verified-origin failure and invalid/expired handoffs. Preserve meaningful HTTP status codes, fail-closed authorization and safe recovery links.
+- Explain expired/revoked access on the code portal while retaining only the existing authority-generated website entry. Keep TLS, stream and WebSocket enforcement unchanged.
+- Record only fixed process-local aggregate failure counters; no exception text, URLs or visitor identity.
+
 # 0.34.0
 
 - Add an optional administrator first-use checklist for server health, client DNS, a restricted test hostname, CA onboarding and an end-to-end device test.

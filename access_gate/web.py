@@ -238,7 +238,7 @@ def create_app(config=None):
                     return redirect('/')
         grant=current_grant();exclusion=current_exclusion()
         if entry and (grant or exclusion):return website_handoff(entry_id,token,entry)
-        return render_template('index.html',error=error,grant=grant,exclusion=exclusion,csrf=csrf(),entry_id=entry_id,history_policy=store.activity_settings())
+        return render_template('index.html',error=error,grant=grant,exclusion=exclusion,csrf=csrf(),entry_id=entry_id,history_policy=store.activity_settings(),access_ended=request.args.get('reason')=='ended')
 
     @app.get('/continue')
     def continue_access():
@@ -645,7 +645,21 @@ def create_app(config=None):
     def gate_error(error):
         if request.method=='POST' and request.endpoint=='access_request_detail' and session.get('admin') and request.form.get('return_to') in ('/admin','/admin/requests'):
             flash(str(error),'error');return redirect(request.form['return_to'],code=303)
+        if not request.path.startswith(('/admin','/internal/','/gateway/v1/')):
+            from .failures import MESSAGES
+            kind='request' if request.values.get('entry') or request.endpoint=='continue_access' else 'invalid'
+            return render_template('visitor_failure.html',failure=MESSAGES[kind]),400
         return render_template('error.html', error=str(error)), 400
+
+    from werkzeug.exceptions import HTTPException
+    @app.errorhandler(HTTPException)
+    def visitor_http_error(error):
+        if request.path.startswith(('/admin','/internal/','/gateway/v1/')):return error
+        from .failures import MESSAGES
+        kind='missing' if error.code==404 else ('setup' if error.code==403 else 'invalid')
+        response=app.make_response((render_template('visitor_failure.html',failure=MESSAGES[kind]),error.code))
+        if error.code==405:response.headers['Allow']=error.get_response().headers.get('Allow','')
+        return response
 
     def page_number():
         return request.args.get('page', '1')
