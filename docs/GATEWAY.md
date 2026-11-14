@@ -1,6 +1,6 @@
 # Restricted-domain HTTPS gateway
 
-Version 0.5 installs the HTTPS gateway on the existing portal VM. It provides the missing client-facing TLS/certificate generation, portal return flow, verified origin forwarding and live access enforcement. The same setup works for permitted Wi-Fi and VPN client networks; it does not need VPN user enrollment or FortiGate credentials.
+The gateway keeps the timer in charge. It handles site certificates, the code-portal return flow, verified HTTPS forwarding and live session enforcement. The same setup works for permitted Wi-Fi and VPN client networks; it does not need VPN user enrollment or FortiGate credentials.
 
 ## Install or update
 
@@ -124,3 +124,5 @@ These tests prove the implemented source behavior on local sockets. The updater 
 ### Returning after code activation
 
 Code submission redirects to a portal continuation page that returns HTTP 200. Its external script starts a new GET navigation to the existing entry handoff; a Continue to website link works without JavaScript. This ends the form redirect chain before leaving the portal, so Chrome can retain the strict `form-action 'self'` policy. The entry and live browser grant are rechecked before the usual one-time ticket is issued. Actual Android browser behavior still needs verification after updating.
+
+[Documentation overview](README.md) · [Project README](../README.md)

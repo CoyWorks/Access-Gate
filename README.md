@@ -1,16 +1,56 @@
 # Access Gate
 
+**Set the rules. Hold the keys.**
 
-Deployment addresses below are examples. Start with [Installation](docs/INSTALLATION.md); configure your own address, portal identity and permitted networks. Existing installations retain their original settings.
-**Version 0.37.0.** A code portal and HTTPS gateway for temporary browser access. Users enter a single-use code or request administrator approval; administrators manage codes, batches and access extensions. No VPN users or devices need to be registered. **DNS domains** manages your restricted list, imports public blocklist URLs and serves stable hosts/config feeds.
+*A CoyWorks project.*
 
-Keep selected DNS names pointed at `192.168.10.20` through Pi-hole. The installed gateway generates matching site certificates under the retained device-trusted CA, sends unauthorized browsers to the code portal and forwards authorized requests to the verified real HTTPS origin. It checks current deadlines and stops affected streams/WebSockets on expiry or revocation. See [Gateway setup and verification](docs/GATEWAY.md).
+“Just five more minutes” now has an approval process.
 
-## Current deployment
+Access Gate puts selected websites behind a simple access portal. Enter a single-use code or ask for permission, and the clock starts ticking. When time runs out, access closes. More time is an administrator’s decision.
 
-Ubuntu Server 24.04 on `192.168.10.20/24`, gateway `192.168.10.1`. The portal is available at `https://192.168.10.20/`; administration is at `/admin`. The default client range `192.168.0.0/16` covers the existing local and VPN networks without registering individual addresses. The same browser keeps its access deadline when switching between Wi-Fi and VPN.
+Built for agreed boundaries, intentional browsing and a little anticipation.
 
-Different browsers have independent sessions, even on the same IP address. Deleting cookies or changing browsers requires a new unused code. An IP address alone never proves browser access.
+## Permission, with a timer
+
+Choose which websites need permission. Create a handful of codes, decide how long they remain available, and set how much browsing time each one grants.
+
+Ten codes for the week. Fifteen minutes each. Or something entirely your own.
+
+Every code is single-use. Once activated, its timer keeps running, even when the browser closes. Administrators can extend an active session or end it early.
+
+## Keep control close
+
+The administration portal brings the everyday decisions together:
+
+- **Create codes:** generate batches with configurable validity and access duration.
+- **Approve or deny:** handle access requests directly from the portal.
+- **Give a little longer:** extend an active session by minutes or hours.
+- **Call time:** revoke access before its timer expires.
+- **Choose the boundaries:** manage individual domains, subdomains and imported lists.
+- **Make exceptions:** let selected addresses, networks or signed-in administrators bypass the code requirement.
+- **Stay in the loop:** install the admin portal on your phone and enable access-request notifications.
+
+Optional visit history shows which restricted domains were accessed. Page-path logging is available separately, with configurable retention and a visitor notice.
+
+## How the gate works
+
+Your DNS configuration directs selected websites to Access Gate. The HTTPS gateway checks the browser’s access and either presents the code portal or forwards the request to the real website.
+
+Access belongs to the browser session. Separate browsers have separate sessions, including when they share an IP address. An approved session opens all currently restricted websites for that browser; per-domain access profiles are not implemented.
+
+Use the built-in DNS service or integrate with an existing resolver such as Pi-hole. A VPN can bring remote devices through the same setup.
+
+## Your server. Your boundaries.
+
+Access Gate is self-hosted, with a guided installer, client setup instructions, server health checks and backup tools.
+
+You’ll need control over the network or device DNS settings, and participating devices must trust the Access Gate certificate authority. Some apps use their own certificate trust rules and may need a different approach.
+
+Agree the rules with the people using the devices, make any logging clear, and test the setup on those devices before relying on it.
+
+Ready to put a timer on temptation? Start with the [installation guide](docs/INSTALLATION.md).
+
+**Version 0.37.0.** Browse the [documentation](docs/README.md), [connect a device](docs/CLIENT_SETUP.md), or check [deployment options](docs/DEPLOYMENTS.md).
 
 ## Clone and install
 
@@ -38,6 +78,12 @@ systemctl restart access-gate.service
 ```
 
 Enter and confirm the new password (at least 8 characters); input is hidden and the password is not saved in plaintext. Existing admin sessions are signed out after restart. Access codes, browser grants and certificates are preserved. The initial-login file is marked obsolete if present. Cancelling or mismatched input leaves the configuration unchanged.
+
+## Example deployment
+
+The addresses in this README are examples, not installer defaults: Ubuntu Server 24.04 on `192.168.10.20/24`, gateway `192.168.10.1`, portal `https://192.168.10.20/` and administration at `/admin`. Choose your own server address, portal identity, client networks and management networks in the installer. Keep management access limited to the networks that need it.
+
+The same browser keeps its access deadline when switching between Wi-Fi and VPN, provided both paths reach the configured gateway. Different browsers have independent sessions, even on the same IP address. Deleting cookies or changing browsers requires a new unused code; an IP address alone does not prove browser access.
 
 ## Requests and history
 

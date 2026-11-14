@@ -1,5 +1,7 @@
 # Built-in DNS
 
+Point selected websites at the gate. Choose the built-in resolver if you want Access Gate to handle the restricted-domain DNS routing on the same server.
+
 The optional built-in DNS component replaces the need for a separate Pi-hole for restricted-domain routing. It is a small forwarding DNS service using Ubuntu's python3-dnspython package, not a full Pi-hole or recursive DNSSEC validator. Existing external Pi-hole installations remain supported.
 
 ## Install and use
@@ -60,3 +62,5 @@ Per-upstream and local aggregates show successes/failures, mean/max latency incl
 At most 72 recent component-state samples and fixed per-probe aggregates are kept in `/var/lib/access-gate/dns/health.json`, atomically written with mode 0640. This is a bounded short history, not a query log. It contains configured upstream addresses, counters, timestamps and component states; it never stores client IPs, queried names, response answers, codes or cookies. It is excluded from recovery bundles. The monitor starts with Unknown/zero samples and a new process instance ID. Restart/update resets counters and history; timestamps make the reset explicit. Restarting just the resolver does not reset the separate monitor's counters.
 
 Missing or stale samples: inspect `access-gate-dns-rules.service` and its write permissions. UDP/TCP failures: inspect `access-gate-dns.service`, listener address, client ACL and routing. Upstream failure: check the selected server and its DNS policy/reachability. Use **Client diagnostics** afterward to verify the actual device path.
+
+[Documentation overview](README.md) · [Project README](../README.md)

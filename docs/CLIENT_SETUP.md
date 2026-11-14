@@ -1,5 +1,7 @@
 # Connect a client device
 
+Get the device ready before starting the clock. Configure its DNS path and verify the gateway CA, then test a restricted website in the browser you will actually use.
+
 Open the visitor portal and choose **Connect this device**, or open the configured portal's `/setup` page. Administration → More links to the same page. Select iPhone/iPad, Android or Windows; device platform is a choice, not a collected identifier. The page never activates a code or records completion as proof of trust.
 
 ## First connection without CA trust
@@ -41,3 +43,5 @@ An ownership record under `%LOCALAPPDATA%/AccessGate` preserves whether this ins
 ### Acceptance on personal devices
 
 Automated tests decode profile certificates, check payload boundaries/identity, validate download hashes and Windows public-data/ownership guardrails. A Windows PowerShell runtime is not available in the development environment; source/format checks are not a claim of successful Windows installation. On a disposable Windows test user, inspect and install twice, verify there is one matching root and shortcut, remove twice and verify pre-existing trust/modified shortcuts survive. On iPhone/iPad, inspect the two payloads, install, enable full trust and perform the browser test. Android retains manual user-CA installation and browser/application limitations.
+
+[Documentation overview](README.md) · [Project README](../README.md)

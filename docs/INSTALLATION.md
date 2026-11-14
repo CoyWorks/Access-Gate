@@ -1,5 +1,7 @@
 # Installation
 
+Give the gate a home. Install Access Gate on your own server, then review its address, DNS integration and permitted networks before anything is deployed.
+
 Use a dedicated Ubuntu 24.04 server with a stable IPv4 address (static or DHCP reservation). The initial installer configures a single private host. Explicit public-authority/remote-gateway deployment is configured afterward through the documented root workflow. Devices must reach this address and trust the installation's CA.
 
 ## Interactive installation
@@ -104,3 +106,5 @@ Progress and the selected hostname live in the application database and survive 
 Existing installations receive an optional reminder, with no forced setup redirect and no configuration overwrite. Local automated tests cover persistence, validation, review flags, skip/defer, CSRF/admin access and recovery reset. A physical Wi-Fi/VPN/client acceptance test remains an operator step.
 
 The checklist migration adds schema 13 tables without changing existing codes or configuration. Encrypted recovery archives retain the existing strict matching-schema requirement: keep the matching application version for old archives and create a new backup after updating.
+
+[Documentation overview](README.md) · [Project README](../README.md)

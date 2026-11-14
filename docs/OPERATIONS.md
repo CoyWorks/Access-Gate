@@ -1,6 +1,6 @@
 # Requests, activity history, batch cleanup and device setup
 
-Version 0.9 provides the Requests inbox, Activity log, per-code website history, safe batch removal and a public CA-download link. Update normally; the transactional schema-8 migration keeps codes, active grants, administrator logins/exclusions, domain rules and the existing CA. No extra packages, DNS changes or device enrollment are required.
+A request, a decision, a running clock. Use this guide to approve or deny access, inspect the configured history and clean up batches while keeping single-use codes and browser sessions consistent.
 
 ## Request access: Approve / Deny
 
@@ -85,3 +85,9 @@ The 0.8 release passes 267 Python tests, including real local TLS code-to-page-h
 ### Approval validation (0.9)
 
 The 0.9 source passes 282 Python tests plus the Node UI checks. The approval update covers direct browser grants, one-time duration application, same-IP isolation, network changes, denied/expired/replayed requests, concurrent admin decisions, existing-session extensions, normal revocation/history integration and no administrator privilege granted to visitors. A real local TLS test returns an approved request through a fresh gateway challenge without code entry, including expiry of the original entry. Node checks cover automatic continuation, denial and rejection of an external continuation URL.
+
+## Earlier releases
+
+Version 0.9 provides the Requests inbox, Activity log, per-code website history, safe batch removal and a public CA-download link. Update normally; the transactional schema-8 migration keeps codes, active grants, administrator logins/exclusions, domain rules and the existing CA. No extra packages, DNS changes or device enrollment are required.
+
+[Documentation overview](README.md) · [Project README](../README.md)

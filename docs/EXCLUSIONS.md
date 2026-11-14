@@ -1,6 +1,6 @@
 # Access exclusions and portal login
 
-Version 0.7 adds two independent ways to bypass the code requirement for managed restricted websites:
+Every rule can have an exception. Access Gate supports two independent ways to bypass the code requirement for managed restricted websites:
 
 1. A valid administrator login in that browser.
 2. The actual client address matching a configured exclusion CIDR.
@@ -53,3 +53,5 @@ The existing local password and management-network recovery commands still work 
 ## Validation
 
 The 0.7 source passes 236 Python tests, including real local HTTPS admin login/return, logout and idle-expiry stream closure, trusted-peer IP exclusion/removal and spoofed-header rejection. Store/web tests cover seven-day renewal, passive-check non-renewal, cookie replay, missing Flask-cookie restoration, origin/nonce/one-use proof binding, policy changes, CIDR boundaries, code preservation and migration. Dependency-free Node UI checks cover polling/stale states and exclusion countdown messages; source syntax checks pass. Installation on srvaccess01 and actual VPN/NAT/device addresses still need verification after updating.
+
+[Documentation overview](README.md) · [Project README](../README.md)

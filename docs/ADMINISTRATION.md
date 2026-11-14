@@ -1,6 +1,6 @@
 # Administration
 
-Version 0.6 introduced **Settings**, **Sessions** and **System status** to the signed-in navigation. Use the normal updater; no reset or replacement CA is needed. The transactional schema-8 migration preserves existing codes, grants, domain rules and administrator credentials. Version 0.7 adds revocable server-side logins; older Flask-only administrator cookies require a fresh login. See [EXCLUSIONS.md](EXCLUSIONS.md) for seven-day rolling sessions and IP exceptions.
+Keep control close. Use Home for pending requests and active sessions, Codes for batches and schedules, and More for domain rules, client setup and server tools. This guide covers management access, session controls and local recovery.
 
 ## Password and management access
 
@@ -56,3 +56,9 @@ Version 0.8 adds Requests, Activity, code-detail history, batch removal and the 
 Version 0.9 adds timed Approve / Deny to Requests, with direct browser sessions and automatic visitor continuation. See OPERATIONS.md for decision/extension semantics.
 
 Version 0.10 adds [encrypted backup/restore](RECOVERY.md); 0.11 adds [print/PDF/QR exports](EXPORTS.md); 0.12 adds [recurring schedules](SCHEDULES.md); 0.13 adds [reviewed portal updates](UPDATES.md). System status now also includes the maintenance and scheduler services. Both web/gateway services remain unprivileged; privileged operations run through the fixed-action root maintenance worker.
+
+## Earlier releases
+
+Version 0.6 introduced **Settings**, **Sessions** and **System status** to the signed-in navigation. Use the normal updater; no reset or replacement CA is needed. The transactional schema-8 migration preserves existing codes, grants, domain rules and administrator credentials. Version 0.7 adds revocable server-side logins; older Flask-only administrator cookies require a fresh login. See [EXCLUSIONS.md](EXCLUSIONS.md) for seven-day rolling sessions and IP exceptions.
+
+[Documentation overview](README.md) · [Project README](../README.md)

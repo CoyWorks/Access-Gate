@@ -1,6 +1,6 @@
 # Phone admin app and access-request notifications
 
-Version 0.14 adds an installable administration PWA and opt-in Web Push. Update normally, then open **Phone app & notifications** in the admin navigation (`/admin/app`). Existing codes, CA, configuration and grants are retained. Schema 10 adds persistent VAPID keys, per-browser subscriptions and queued deliveries.
+Permission does not need a desk. Install the administration portal on your phone and opt in to access-request notifications, then open a request to approve or deny it. Start at **More → Phone app & notifications** (`/admin/app`).
 
 ## Android
 
@@ -59,3 +59,9 @@ Primary references:
 - [Apple: Sending web push notifications](https://developer.apple.com/documentation/usernotifications/sending-web-push-notifications-in-web-apps-and-browsers)
 - [RFC 8292: VAPID](https://www.rfc-editor.org/rfc/rfc8292.html)
 - [Web Push implementation documentation: payload-free support](https://github.com/web-push-libs/web-push)
+
+## Earlier releases
+
+Version 0.14 adds an installable administration PWA and opt-in Web Push. Update normally, then open **Phone app & notifications** in the admin navigation (`/admin/app`). Existing codes, CA, configuration and grants are retained. Schema 10 adds persistent VAPID keys, per-browser subscriptions and queued deliveries.
+
+[Documentation overview](README.md) · [Project README](../README.md)
