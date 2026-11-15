@@ -146,6 +146,7 @@ def invalidate(database,config):
         db.execute('BEGIN IMMEDIATE')
         db.execute('UPDATE api_credentials SET revoked=1')
         db.execute('UPDATE api_policy SET enabled=0')
+        db.execute('DELETE FROM api_requests')
         db.execute('UPDATE remote_gateways SET enabled=0');db.execute('DELETE FROM admin_mfa');db.execute('DELETE FROM mfa_recovery');db.execute('DELETE FROM public_limits')
         db.execute('DELETE FROM push_deliveries');db.execute('DELETE FROM push_subscriptions')
         db.execute('UPDATE schedules SET enabled=0')

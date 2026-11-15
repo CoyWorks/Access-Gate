@@ -1,5 +1,6 @@
 """Independent integration identities; no browser or gateway privileges."""
 import hashlib
+import base64
 import hmac
 import ipaddress
 import json
@@ -101,28 +102,52 @@ class Integrations:
         from .core import GateError,TZ
         from .rest_api import APIError
         import datetime as dt
-        now=time.time()
         fingerprint=hashlib.sha256(json.dumps(values,sort_keys=True,separators=(',',':')).encode()).hexdigest()
         key_hash=hashlib.sha256(key.encode()).hexdigest()
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
+            now=time.time()
             current=db.execute('SELECT * FROM api_credentials WHERE id=?',(credential,)).fetchone()
             if not current or current['revoked'] or current['expires']<=now:raise APIError(401,'unauthorized','A valid integration credential is required.')
             if 'batches:create' not in json.loads(current['scopes']):raise APIError(403,'forbidden','This operation is not permitted.')
+            self._cleanup_api(db,now)
             existing=db.execute('SELECT * FROM api_requests WHERE credential_id=? AND key_hash=?',(credential,key_hash)).fetchone()
             if existing:
                 if existing['fingerprint']!=fingerprint:raise APIError(409,'idempotency_conflict','This key was used with a different request.')
-                raise APIError(409,'replay_expired','The original codes are not available for replay.',batch_id=existing['batch_id'])
+                if now>=existing['created']+86400:raise APIError(409,'replay_expired','The original codes are no longer available for replay.',batch_id=existing['batch_id'])
+                try:
+                    saved=json.loads(self.api_cipher().decrypt(existing['payload']))
+                    if (saved['credential'],saved['key'],saved['fingerprint'])!=(credential,key_hash,fingerprint):raise ValueError()
+                    response=saved['response']
+                except Exception:raise APIError(503,'service_unavailable','The saved response is temporarily unavailable.')
+                db.commit()
+                return response,True
+            if db.execute('SELECT count(*) FROM api_requests').fetchone()[0]>=50000:
+                raise APIError(503,'service_unavailable','API retry-record capacity is temporarily exhausted.')
             batch,codes=self._insert_batch(db,now,now+values['validity_seconds'],values['access_seconds'],values['count'],values['name'],'duration',now,dt.datetime.fromtimestamp(now,TZ).date().isoformat())
             db.execute('INSERT INTO api_batches VALUES(?,?,?)',(batch,credential,now))
             db.execute('INSERT INTO api_requests VALUES(?,?,?,?,?,NULL)',(credential,key_hash,fingerprint,batch,now))
             rows=db.execute('SELECT id,digest FROM codes WHERE batch=?',(batch,)).fetchall()
             ids={r['digest']:r['id'] for r in rows}
             name=db.execute('SELECT name FROM batches WHERE id=?',(batch,)).fetchone()[0]
-            db.commit()
-        return dict(batch_id=batch,name=name,count=len(codes),created_at=utc(now),valid_from=utc(now),valid_until=utc(now+values['validity_seconds']),
+            response=dict(batch_id=batch,name=name,count=len(codes),created_at=utc(now),valid_from=utc(now),valid_until=utc(now+values['validity_seconds']),
                     validity_seconds=values['validity_seconds'],access_seconds=values['access_seconds'],
-                    replay_until=utc(now+86400),key_retained_until=utc(now+30*86400),codes=[dict(id=ids[self.digest(c)],code=c) for c in codes]),False
+                    replay_until=utc(now+86400),key_retained_until=utc(now+30*86400),codes=[dict(id=ids[self.digest(c)],code=c) for c in codes])
+            saved=dict(credential=credential,key=key_hash,fingerprint=fingerprint,response=response)
+            payload=self.api_cipher().encrypt(json.dumps(saved,separators=(',',':')).encode())
+            db.execute('UPDATE api_requests SET payload=? WHERE credential_id=? AND key_hash=?',(payload,credential,key_hash))
+            db.commit()
+        return response,False
+
+    def api_cipher(self):
+        from cryptography.fernet import Fernet
+        key=hmac.new(self.pepper,b'access-gate/api-replay/v1',hashlib.sha256).digest()
+        return Fernet(base64.urlsafe_b64encode(key))
+
+    @staticmethod
+    def _cleanup_api(db,now):
+        db.execute('UPDATE api_requests SET payload=NULL WHERE rowid IN(SELECT rowid FROM api_requests WHERE created<=? AND payload IS NOT NULL LIMIT 5000)',(now-86400,))
+        db.execute('DELETE FROM api_requests WHERE rowid IN(SELECT rowid FROM api_requests WHERE created<=? LIMIT 5000)',(now-30*86400,))
 
 
 def utc(stamp):

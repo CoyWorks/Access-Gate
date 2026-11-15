@@ -81,6 +81,7 @@ class Operations:
             db.execute('BEGIN IMMEDIATE')
             policy=db.execute('SELECT * FROM activity_policy WHERE id=1').fetchone()
             if not force and policy['cleaned_at']>now-60:return
+            self._cleanup_api(db,now)
             cutoff=now-policy['retention_days']*86400
             for table,key in (('activity_events','id'),('website_visits','id')):
                 db.execute(f'DELETE FROM {table} WHERE {key} IN(SELECT {key} FROM {table} WHERE created<? LIMIT 5000)',(cutoff,))

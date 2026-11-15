@@ -1,4 +1,5 @@
 import json
+import concurrent.futures
 import tempfile
 import time
 import unittest
@@ -134,3 +135,66 @@ class GenerationTests(APICase):
         self.assertEqual(self.call('/api/v1/batches?count=1',json={},headers=self.headers).status_code,400)
         self.assertEqual(self.call(method='GET').status_code,405)
         self.assertEqual(self.call('/api/v1/unknown').status_code,404)
+
+
+class RetryTests(GenerationTests):
+    def test_replay_is_stable_and_normalizes_equivalent_units(self):
+        first=self.generate().json
+        second=self.generate(dict(validity_value=168,validity_unit='hours')).json
+        self.assertNotEqual(first.pop('request_id'),second.pop('request_id'))
+        self.assertEqual(first,second)
+        self.assertEqual(self.store.list_batches()['total'],1)
+        self.assertEqual(self.generate().headers['Idempotency-Replayed'],'true')
+        self.assertEqual(self.generate({'count':2}).status_code,409)
+
+    def test_parallel_creation_uses_one_transaction_and_one_result(self):
+        values=dict(name='Concurrent',count=2,validity_seconds=604800,access_seconds=900)
+        def create(_):
+            store=Store(self.config['database'],self.config['pepper'])
+            return store.api_create_batch(self.identity,'192.0.2.20','parallel-operation-key',values)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            results=list(pool.map(create,range(4)))
+        self.assertEqual(sum(not replay for _,replay in results),1)
+        self.assertTrue(all(result==results[0][0] for result,_ in results))
+        self.assertEqual(self.store.list_batches()['total'],1)
+
+    def test_ciphertext_only_restart_recovery_and_expiry(self):
+        now=time.time()
+        with patch('access_gate.integrations.time.time',return_value=now):first=self.generate().json
+        raw=first['codes'][0]['code'].encode()
+        with self.store.connect() as db:
+            payload=db.execute('SELECT payload FROM api_requests').fetchone()[0]
+        self.assertNotIn(raw,payload)
+        self.assertNotIn(raw,Path(self.config['database']).read_bytes())
+        restarted=Store(self.config['database'],self.config['pepper']);restarted.initialize()
+        self.assertEqual(restarted.api_create_batch(self.identity,'192.0.2.20',self.headers['Idempotency-Key'],dict(name='',count=10,validity_seconds=604800,access_seconds=900))[0]['batch_id'],first['batch_id'])
+        with patch('access_gate.integrations.time.time',return_value=now+86400):
+            response=self.generate()
+        self.assertEqual(response.status_code,409)
+        self.assertEqual(response.json['error']['code'],'replay_expired')
+        self.assertEqual(response.json['error']['batch_id'],first['batch_id'])
+        self.store.cleanup_activity(now=now+86401,force=True)
+        with self.store.connect() as db:
+            self.assertIsNone(db.execute('SELECT payload FROM api_requests').fetchone()[0])
+
+    def test_invalid_ciphertext_and_failed_transaction_never_duplicate(self):
+        self.generate()
+        with self.store.connect() as db:db.execute('UPDATE api_requests SET payload=?',(b'invalid',))
+        self.assertEqual(self.generate().status_code,503)
+        self.assertEqual(self.store.list_batches()['total'],1)
+        self.headers={'Idempotency-Key':'rolled-back-operation-key'}
+        with patch.object(self.store,'api_cipher',side_effect=RuntimeError('private-code-must-not-leak')):
+            response=self.generate()
+        self.assertEqual(response.status_code,500)
+        self.assertNotIn(b'private-code-must-not-leak',response.data)
+        self.assertEqual(self.store.list_batches()['total'],1)
+        self.assertEqual(self.generate().status_code,201)
+
+    def test_replay_does_not_undo_revocation_or_accept_a_revoked_credential(self):
+        first=self.generate().json
+        self.store.revoke_batch(first['batch_id'])
+        replay=self.generate()
+        self.assertEqual(replay.status_code,201)
+        with self.assertRaises(GateError):self.store.redeem(replay.json['codes'][0]['code'],'192.0.2.20')
+        self.store.revoke_integration(self.identity)
+        self.assertEqual(self.generate().status_code,401)

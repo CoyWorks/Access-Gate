@@ -18,6 +18,7 @@ def main():
         db.execute('BEGIN IMMEDIATE')
         db.execute('UPDATE api_policy SET enabled=0')
         db.execute('UPDATE api_credentials SET revoked=1')
+        db.execute('UPDATE api_requests SET payload=NULL')
         store._event(db,'integration.revoked',actor='Local recovery',details=dict(reason='all'))
         db.commit()
     print('API disabled. All integration credentials revoked.')

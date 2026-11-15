@@ -1,3 +1,8 @@
+# 0.38.2
+
+- Encrypt API creation responses for 24-hour authenticated retries, with 30-day key tombstones and atomic batch/replay commits (#48).
+- Add bounded cleanup/capacity, restart-safe replay, conflict detection and fail-closed decryption. Restore removes replay records; emergency revocation erases encrypted payloads. HTTP generation remains gated until deployment controls ship.
+
 # 0.38.1
 
 - Add atomic API batch generation, strict JSON validation, shared code rules and source attribution (#47).

@@ -105,6 +105,10 @@ The key is scoped to the integration credential ID and `createBatch`. The server
 | Invalid/expired/revoked credential or forbidden source/scope | Reject before disclosing any stored batch or replay result |
 | Temporary storage/decryption problem or lock contention | `503` with `Retry-After`; no replacement batch |
 
+Replay encryption uses a purpose-separated key derived from the existing application pepper. Back up configuration and database together using the normal encrypted backup workflow; copying only the database is insufficient to recover replay responses. Restore deliberately revokes integration credentials, disables API access and deletes replay records. Reconcile outstanding batches manually before issuing replacement credentials or operations. A normal update/restart preserves identity and replay state.
+
+At most 50000 retry records are retained; capacity exhaustion fails with retryable `503`. Periodic activity maintenance and creation requests clear expired encrypted payloads and prune expired tombstones in bounded chunks. Cleanup lag cannot authorize a replay after its deadline.
+
 The response payload is encrypted at rest and removed after 24 hours; a minimal key/fingerprint/batch tombstone remains for at least 30 days from creation. Replay checks the clock, so delayed cleanup cannot extend the replay window. A replay retains the original timestamps, code IDs, codes and deadlines; only `request_id` changes. It does not extend validity, undo revocation or reset redemption state. The payload is an issuance snapshot, not a live status response; already used/revoked codes may appear and remain unusable.
 
 Concurrent identical requests must commit exactly one batch plus one replay record. A concurrent retry may wait briefly or return retryable `503`; it must never create a second batch. Rejected requests before a successful transaction do not consume the key. A failure after commit is recovered using the same key.
