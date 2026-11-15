@@ -169,6 +169,20 @@ else
     echo 'Reusing the existing configuration, database, admin password and certificates.'
     install -m 0644 /etc/access-gate/ca/root.crt /var/lib/access-gate/public/ca.crt
 fi
+# Trust Access Gate's own public root CA on this Ubuntu server so local API
+# clients (including Python and curl) can verify the HTTPS portal normally.
+# This does not change trust on any other client or distribute a private key.
+local_ca=/usr/local/share/ca-certificates/access-gate.crt
+if [[ ! -s /etc/access-gate/ca/root.crt ]] || ! openssl x509 -in /etc/access-gate/ca/root.crt -noout >/dev/null 2>&1; then
+    echo 'Access Gate root CA certificate is missing or invalid; refusing to update the local trust store.' >&2
+    exit 1
+fi
+if [[ ! -f "$local_ca" ]] || ! cmp -s /etc/access-gate/ca/root.crt "$local_ca"; then
+    install -d -m 0755 /usr/local/share/ca-certificates
+    install -o root -g root -m 0644 /etc/access-gate/ca/root.crt "$local_ca"
+    update-ca-certificates
+    echo 'Installed Access Gate root CA in the local OS trust store.'
+fi
 cd /opt/access-gate
 /usr/bin/python3 /opt/access-gate/configure.py --check
 chown root:accessgate /etc/access-gate/config.json
