@@ -19,6 +19,13 @@ class Fields(HTMLParser):
         if tag=='input' and a.get('name'):self.values[a['name']]=a.get('value','')
 
 class ReportTests(BrowserWebFixture,unittest.TestCase):
+    def test_api_summary_never_copies_future_secret_fields(self):
+        p=self.provider()
+        p.health.store=SimpleNamespace(api_summary=Mock(return_value=dict(enabled=True,active_credentials=2,credential=SECRET,audit=[SECRET])))
+        report=p.collect()
+        self.assertEqual(report['integration_api'],dict(state='collected',enabled=True,active_credentials=2))
+        self.assertNotIn(SECRET,encode(report))
+
     def provider(self,**kwargs):
         health=SimpleNamespace(snapshot=Mock(return_value=dict(checked_at=time.time(),stale=False,checks=[dict(name='Portal',state='healthy',detail=SECRET),dict(name=SECRET,state=SECRET)])),
             performance=Mock(return_value=dict(started=time.time(),counters={'failure_origin':2,'failure_portal':SECRET,SECRET:SECRET},urls=[SECRET])))

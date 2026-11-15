@@ -199,6 +199,6 @@ python3 -m venv /tmp/access-gate-contract-venv
 /tmp/access-gate-contract-venv/bin/python -m unittest discover -s tests -p 'test_api_contract.py' -v
 ```
 
-The checks validate OpenAPI structure, local references, examples, unit-dependent boundaries and error contracts. They do not claim a working HTTP API. Runtime authentication, concurrency, deployment and end-to-end tests belong to #46–#51. Full operator setup and executable integration examples belong to #52.
+The isolated checks validate OpenAPI structure, local references, examples, unit-dependent boundaries and error contracts. In a development environment with the normal application dependencies, run `python3 scripts/check_api.py` to include runtime and HTTP-response contract checks; missing validators or skipped checks fail that runner. Full discovery also includes real TLS gateway acceptance tests and existing browser/PWA/deployment regressions. Full operator setup and executable integration examples are in #52.
 
-[Documentation overview](README.md) · [Project README](../README.md)
+[API validation and acceptance](API_TESTING.md) · [Documentation overview](README.md) · [Project README](../README.md)

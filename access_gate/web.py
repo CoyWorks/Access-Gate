@@ -90,7 +90,8 @@ def create_app(config=None):
         session.clear();g.admin_login=None;g.new_admin_cookie=None;g.clear_admin_cookie=True
 
 
-    from .rest_api import RestAPI
+    from .rest_api import RestAPI,APISessionInterface
+    app.session_interface=APISessionInterface()
     integration_api=RestAPI(store,config)
 
     @app.before_request

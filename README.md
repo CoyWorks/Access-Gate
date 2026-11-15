@@ -50,7 +50,7 @@ Agree the rules with the people using the devices, make any logging clear, and t
 
 Ready to put a timer on temptation? Start with the [installation guide](docs/INSTALLATION.md).
 
-**Version 0.38.4.** Browse the [documentation](docs/README.md), [connect a device](docs/CLIENT_SETUP.md), or check [deployment options](docs/DEPLOYMENTS.md).
+**Version 0.38.5.** Browse the [documentation](docs/README.md), [connect a device](docs/CLIENT_SETUP.md), or check [deployment options](docs/DEPLOYMENTS.md).
 
 Building an integration? The opt-in [REST API v1](docs/REST_API.md) generates single-use codes using independent credentials, source-network controls and safe retries. Enable it under **More → API integrations**; existing installations keep it disabled.
 
@@ -271,7 +271,7 @@ Purge permanently removes application state, credentials, certificates and saved
 
 ## Tests
 
-The optional [API contract checks](docs/REST_API.md#compatibility-and-validation) use developer-only validation dependencies. Without those extras, normal discovery still runs the structural checks and skips schema validation.
+The [API checks](docs/REST_API.md#compatibility-and-validation) use developer-only validation dependencies. Run `python3 scripts/check_api.py` after installing `tests/requirements-contract.txt`; it fails if validators are missing. Normal discovery still runs structural/runtime checks without those extras and skips schema validation.
 
 ```bash
 python3 -m unittest discover -s tests -v

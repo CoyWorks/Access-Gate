@@ -201,6 +201,24 @@ class RetryTests(GenerationTests):
 
 
 class ExposureTests(GenerationTests):
+    def test_api_does_not_read_or_refresh_a_permanent_browser_admin_session(self):
+        self.login()
+        self.call('/admin/integrations',method='GET')
+        with self.client.session_transaction(base_url='https://access.example.org') as session:
+            session.permanent=True;session['admin']=True
+        with self.store.connect() as db:before=[dict(r) for r in db.execute('SELECT * FROM admin_logins')]
+        response=self.generate()
+        self.assertEqual(response.status_code,201)
+        self.assertNotIn('Set-Cookie',response.headers)
+        with self.store.connect() as db:after=[dict(r) for r in db.execute('SELECT * FROM admin_logins')]
+        self.assertEqual(before,after)
+
+    def test_unpaired_unicode_and_unacceptable_response_types_fail_without_mutation(self):
+        self.assertEqual(self.generate({'name':'\ud800'}).status_code,400)
+        response=self.call(json={},headers={**self.headers,'Accept':'application/json;q=0'})
+        self.assertEqual(response.status_code,406)
+        self.assertEqual(self.store.list_batches()['total'],0)
+
     def test_networks_and_tls_origin_are_independent_and_fail_closed(self):
         self.assertEqual(self.call(json={},headers={**self.headers,'X-Real-IP':'198.51.100.20','X-Forwarded-For':'192.0.2.20'}).status_code,403)
         self.assertEqual(self.call(json={},headers={**self.headers,'Host':'other.example.org'}).status_code,400)

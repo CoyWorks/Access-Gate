@@ -657,7 +657,7 @@
           "name": {
             "type": "string",
             "maxLength": 80,
-            "pattern": "^[^\\u0000-\\u001f]*$(?![\\s\\S])",
+            "pattern": "^[^\\u0000-\\u001f\\ud800-\\udfff]*$(?![\\s\\S])",
             "default": "",
             "description": "Trimmed by the server. Empty/whitespace uses the existing generated batch name; length is checked before trimming."
           },
@@ -784,7 +784,7 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 80,
-            "pattern": "^[^\\u0000-\\u001f]*$(?![\\s\\S])"
+            "pattern": "^[^\\u0000-\\u001f\\ud800-\\udfff]*$(?![\\s\\S])"
           },
           "count": {
             "type": "integer",

@@ -1,3 +1,8 @@
+# 0.38.5
+
+- Validate real API responses against OpenAPI, require validator extras in the API check runner and add legacy migration/security acceptance coverage (#51).
+- Prevent integration calls from loading or refreshing permanent browser cookies; reject invalid Unicode names and direct remote-gateway API use.
+
 # 0.38.4
 
 - Add credential-owned batch/code status and idempotent revocation with separate read/revoke scopes (#50).

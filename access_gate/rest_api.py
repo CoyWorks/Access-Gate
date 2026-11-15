@@ -7,9 +7,21 @@ import secrets
 import sqlite3
 from urllib.parse import urlsplit
 from flask import g,request,jsonify
+from flask.sessions import SecureCookieSessionInterface
 from werkzeug.exceptions import RequestEntityTooLarge
 
 GENERATION_READY=True
+
+
+class APISessionInterface(SecureCookieSessionInterface):
+    """The integration API neither reads nor refreshes browser cookies."""
+    def open_session(self,app,req):
+        if req.path=='/api/v1' or req.path.startswith('/api/v1/'):return self.session_class()
+        return super().open_session(app,req)
+
+    def save_session(self,app,session,response):
+        if request.path=='/api/v1' or request.path.startswith('/api/v1/'):return
+        return super().save_session(app,session,response)
 
 
 def batch_values(payload):
@@ -20,6 +32,8 @@ def batch_values(payload):
     values={**defaults,**payload}
     if not isinstance(values['name'],str) or len(values['name'])>80 or any(ord(c)<32 for c in values['name']):
         raise APIError(400,'invalid_request','Batch name must be at most 80 characters without controls.')
+    try:values['name'].encode('utf-8')
+    except UnicodeError:raise APIError(400,'invalid_request','Batch name must contain valid Unicode characters.')
     for field in ('count','validity_value','access_value'):
         value=values[field]
         if type(value) not in (int,float) or (isinstance(value,float) and (not math.isfinite(value) or int(value)!=value)):
@@ -99,6 +113,7 @@ class RestAPI:
         except ValueError:same=False
         if not same:raise APIError(400,'invalid_host','Use the configured canonical portal origin.')
         policy=self.store.api_policy()
+        if self.config.get('remote_gateway'):raise APIError(404,'not_found','The requested API resource was not found.')
         if not policy['enabled']:raise APIError(404,'not_found','The requested API resource was not found.')
         try:address=str(ipaddress.ip_address(request.headers.get('X-Real-IP','')))
         except ValueError:raise APIError(403,'forbidden','This source is not permitted.')
@@ -125,7 +140,7 @@ class RestAPI:
         if request.method!='POST':raise APIError(405,'method_not_allowed','This resource accepts GET or POST.')
         if 'batches:create' not in credential['scopes']:raise APIError(403,'forbidden','This operation is not permitted.')
         if request.query_string:raise APIError(400,'invalid_request','This operation accepts no query parameters.')
-        if request.headers.get('Accept') and not request.accept_mimetypes.accept_json:raise APIError(406,'not_acceptable','This API produces application/json.')
+        if request.headers.get('Accept') and request.accept_mimetypes['application/json']<=0:raise APIError(406,'not_acceptable','This API produces application/json.')
         key=request.headers.get('Idempotency-Key','')
         if not re.fullmatch(r'[A-Za-z0-9._:-]{16,128}',key):raise APIError(400,'invalid_idempotency_key','Supply a valid Idempotency-Key.')
         values=batch_values(json_body())
@@ -154,6 +169,6 @@ class RestAPI:
         size=request.args.get('page_size','25')
         if not re.fullmatch(r'[0-9]{1,3}',size) or not 1<=int(size)<=100:raise APIError(400,'invalid_request','Page size must be between 1 and 100.')
         if kind=='revoke' and json_body()!={}:raise APIError(400,'invalid_request','Revocation accepts only an empty JSON object.')
-        if request.headers.get('Accept') and not request.accept_mimetypes.accept_json:raise APIError(406,'not_acceptable','This API produces application/json.')
+        if request.headers.get('Accept') and request.accept_mimetypes['application/json']<=0:raise APIError(406,'not_acceptable','This API produces application/json.')
         result=self.store.api_lifecycle(credential['id'],g.api_address,kind,batch,code,int(size),request.args.get('cursor'),g.api_request_id)
         return self.response(result)

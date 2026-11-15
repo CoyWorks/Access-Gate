@@ -47,6 +47,8 @@ Addresses in the guides are examples. Use the values reviewed for your own insta
 
 - [REST API v1 contract](REST_API.md) and [OpenAPI specification](openapi/access-gate-v1.json): opt-in external code generation with scoped integration credentials and safe retries. Existing installs keep API access disabled. Follow [#44](https://github.com/CoyWorks/Access-Gate/issues/44) for delivery.
 
+- [API validation and disposable-server acceptance](API_TESTING.md): contract checks and explicit end-to-end testing.
+
 ## Know the boundaries
 
 An access code or approved request grants a timed **browser session covering all currently restricted websites**. It does not create a user/device account or a separate permission for just the requested domain. Per-domain access profiles remain planned.
