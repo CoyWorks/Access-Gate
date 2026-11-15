@@ -1,0 +1,1212 @@
+{
+  "openapi": "3.1.0",
+  "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
+  "info": {
+    "title": "Access Gate integration API",
+    "version": "1.0.0",
+    "description": "Contract only: endpoints and integration credentials are not implemented by issue #45. No existing installation exposes this API. Runtime delivery is tracked in #44 and #46\u2013#52. Specification version is independent of the installed application version."
+  },
+  "servers": [
+    {
+      "url": "https://access.example.org/api/v1",
+      "description": "Example only. Replace the origin with the configured canonical HTTPS portal origin; keep /api/v1."
+    }
+  ],
+  "security": [
+    {
+      "integrationBearer": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Batches",
+      "description": "Single-use visitor-code generation."
+    }
+  ],
+  "paths": {
+    "/batches": {
+      "post": {
+        "tags": [
+          "Batches"
+        ],
+        "operationId": "createBatch",
+        "summary": "Generate a single-use code batch",
+        "description": "Requires batches:create. Apply defaults before fingerprinting, trim name and normalize equivalent duration units to seconds. A retry key is scoped to credential ID and this operation. Authentication grants no browsing or browser-admin access. All codes cover the current global restricted-domain list. See REST_API.md for replay, validation and error ordering.",
+        "x-required-scopes": [
+          "batches:create"
+        ],
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "description": "Unique key for one intended generation operation. Reuse only for retries of the same normalized request. Never use a bearer token or visitor code here.",
+            "schema": {
+              "type": "string",
+              "minLength": 16,
+              "maxLength": 128,
+              "pattern": "^[A-Za-z0-9._:-]{16,128}$(?![\\s\\S])"
+            },
+            "example": "weekly-2026-11-15-550e8400-e29b-41d4-a716-446655440000"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "description": "One JSON object, UTF-8, no Content-Encoding, maximum 16384 bytes. All fields optional; an explicit empty object uses the documented defaults.",
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateBatchRequest"
+              },
+              "examples": {
+                "weeklyAllowance": {
+                  "value": {
+                    "name": "Weekly allowance",
+                    "count": 10,
+                    "validity_value": 7,
+                    "validity_unit": "days",
+                    "access_value": 15,
+                    "access_unit": "minutes"
+                  }
+                },
+                "defaults": {
+                  "value": {}
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "400": {
+            "description": "Bad request; invalid JSON (including duplicate keys/non-finite numbers), fields, host/transport or retry key.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "invalid_json",
+                                "invalid_request",
+                                "invalid_idempotency_key",
+                                "invalid_host",
+                                "insecure_transport"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "invalid_request",
+                        "message": "The request is invalid.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing, malformed, expired or revoked bearer credential. No login redirect.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              },
+              "WWW-Authenticate": {
+                "$ref": "#/components/headers/Authenticate"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "unauthorized"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "unauthorized",
+                        "message": "A valid integration credential is required.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Credential lacks batches:create or the effective source is not allowed.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "forbidden"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "forbidden",
+                        "message": "This integration is not permitted to create batches.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "API disabled or unknown API resource.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "api_disabled",
+                                "not_found"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "not_found",
+                        "message": "The requested API resource was not found.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Unsupported method on the batch creation resource.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              },
+              "Allow": {
+                "$ref": "#/components/headers/Allow"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "method_not_allowed"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "method_not_allowed",
+                        "message": "This resource accepts POST.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "406": {
+            "description": "The Accept header excludes application/json.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "not_acceptable"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "not_acceptable",
+                        "message": "This API produces application/json.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Retry key conflicts with input or its secret replay payload has expired. No new batch is created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "idempotency_conflict",
+                                "replay_expired"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "idempotency_conflict",
+                        "message": "This retry key was used with a different request.",
+                        "details": []
+                      }
+                    }
+                  },
+                  "expiredReplay": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "replay_expired",
+                        "message": "The original codes are no longer available for replay.",
+                        "details": [],
+                        "batch_id": "1234567890abcdef"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body exceeds 16384 bytes; the edge must use the same JSON envelope.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "request_too_large"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "request_too_large",
+                        "message": "The request body is too large.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "Content-Type is not application/json or uses an unsupported charset/content encoding.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "unsupported_media_type"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "unsupported_media_type",
+                        "message": "Send uncompressed UTF-8 application/json.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "A source, credential or global budget is exhausted. No new batch is created.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "rate_limited"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "rate_limited",
+                        "message": "The API request limit was reached.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure. Never include exception text or secrets.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "internal_error"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "internal_error",
+                        "message": "The API could not complete this request.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Temporarily unavailable, including locked storage or unavailable replay decryption. Never create a replacement batch.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              },
+              "Retry-After": {
+                "$ref": "#/components/headers/RetryAfter"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/ErrorResponse"
+                    },
+                    {
+                      "properties": {
+                        "error": {
+                          "properties": {
+                            "code": {
+                              "enum": [
+                                "service_unavailable"
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                },
+                "examples": {
+                  "example": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "error": {
+                        "code": "service_unavailable",
+                        "message": "The API is temporarily unavailable.",
+                        "details": []
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Created once, or replayed with the same 201 status during the 24-hour replay window. Only request_id changes on replay.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              },
+              "Idempotency-Replayed": {
+                "$ref": "#/components/headers/Replayed"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateBatchResponse"
+                },
+                "examples": {
+                  "weeklyAllowance": {
+                    "value": {
+                      "request_id": "1234567890abcdef1234567890abcdef",
+                      "batch_id": "1234567890abcdef",
+                      "name": "Weekly allowance",
+                      "count": 10,
+                      "created_at": "2026-11-15T12:00:00Z",
+                      "valid_from": "2026-11-15T12:00:00Z",
+                      "valid_until": "2026-11-22T12:00:00Z",
+                      "validity_seconds": 604800,
+                      "access_seconds": 900,
+                      "portal_url": "https://access.example.org/",
+                      "replay_until": "2026-11-16T12:00:00Z",
+                      "key_retained_until": "2026-12-15T12:00:00Z",
+                      "codes": [
+                        {
+                          "id": "0000000000000001",
+                          "code": "2345-6789"
+                        },
+                        {
+                          "id": "0000000000000002",
+                          "code": "ABCD-EFGH"
+                        },
+                        {
+                          "id": "0000000000000003",
+                          "code": "JKLM-NPQR"
+                        },
+                        {
+                          "id": "0000000000000004",
+                          "code": "STUV-WXYZ"
+                        },
+                        {
+                          "id": "0000000000000005",
+                          "code": "234A-567B"
+                        },
+                        {
+                          "id": "0000000000000006",
+                          "code": "89CD-EFGH"
+                        },
+                        {
+                          "id": "0000000000000007",
+                          "code": "JKLM-2345"
+                        },
+                        {
+                          "id": "0000000000000008",
+                          "code": "NPQR-6789"
+                        },
+                        {
+                          "id": "0000000000000009",
+                          "code": "STUV-ABCD"
+                        },
+                        {
+                          "id": "000000000000000a",
+                          "code": "WXYZ-EFGH"
+                        }
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Other HTTP failures inside the configured API edge use the same JSON error envelope. TLS/network failures have no API envelope.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateBatchRequest": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^[^\\u0000-\\u001f]*$(?![\\s\\S])",
+            "default": "",
+            "description": "Trimmed by the server. Empty/whitespace uses the existing generated batch name; length is checked before trimming."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 10
+          },
+          "validity_value": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 8760,
+            "default": 7
+          },
+          "validity_unit": {
+            "type": "string",
+            "enum": [
+              "hours",
+              "days"
+            ],
+            "default": "days"
+          },
+          "access_value": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10080,
+            "default": 15
+          },
+          "access_unit": {
+            "type": "string",
+            "enum": [
+              "minutes",
+              "hours"
+            ],
+            "default": "minutes"
+          }
+        },
+        "required": [],
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "validity_unit": {
+                  "const": "hours"
+                }
+              },
+              "required": [
+                "validity_unit"
+              ]
+            },
+            "else": {
+              "properties": {
+                "validity_value": {
+                  "maximum": 365
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "access_unit": {
+                  "const": "hours"
+                }
+              },
+              "required": [
+                "access_unit"
+              ]
+            },
+            "then": {
+              "properties": {
+                "access_value": {
+                  "maximum": 168
+                }
+              }
+            }
+          }
+        ]
+      },
+      "RequestId": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{32}$(?![\\s\\S])"
+      },
+      "Identifier": {
+        "type": "string",
+        "pattern": "^[a-f0-9]{16}$(?![\\s\\S])"
+      },
+      "UtcTimestamp": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "Z$(?![\\s\\S])",
+        "description": "RFC 3339 UTC timestamp, ending in Z."
+      },
+      "GeneratedCode": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "code": {
+            "type": "string",
+            "pattern": "^[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}-[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]{4}$(?![\\s\\S])",
+            "description": "Secret single-use visitor code; never include in logs or ordinary read responses."
+          }
+        },
+        "required": [
+          "id",
+          "code"
+        ]
+      },
+      "CreateBatchResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "batch_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "pattern": "^[^\\u0000-\\u001f]*$(?![\\s\\S])"
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/UtcTimestamp"
+          },
+          "valid_from": {
+            "$ref": "#/components/schemas/UtcTimestamp"
+          },
+          "valid_until": {
+            "$ref": "#/components/schemas/UtcTimestamp"
+          },
+          "validity_seconds": {
+            "type": "integer",
+            "minimum": 3600,
+            "maximum": 31536000,
+            "multipleOf": 3600
+          },
+          "access_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 604800,
+            "multipleOf": 60
+          },
+          "portal_url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://[^/?#]+/$(?![\\s\\S])",
+            "description": "Configured canonical portal root; never a visitor-code URL."
+          },
+          "replay_until": {
+            "$ref": "#/components/schemas/UtcTimestamp"
+          },
+          "key_retained_until": {
+            "$ref": "#/components/schemas/UtcTimestamp"
+          },
+          "codes": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "items": {
+              "$ref": "#/components/schemas/GeneratedCode"
+            }
+          }
+        },
+        "required": [
+          "request_id",
+          "batch_id",
+          "name",
+          "count",
+          "created_at",
+          "valid_from",
+          "valid_until",
+          "validity_seconds",
+          "access_seconds",
+          "portal_url",
+          "replay_until",
+          "key_retained_until",
+          "codes"
+        ]
+      },
+      "FieldError": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "body",
+              "name",
+              "count",
+              "validity_value",
+              "validity_unit",
+              "access_value",
+              "access_unit",
+              "Idempotency-Key"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "required",
+              "invalid_type",
+              "out_of_range",
+              "invalid_value",
+              "unknown_field"
+            ]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": [
+          "field",
+          "code",
+          "message"
+        ]
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request_id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "error": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "invalid_json",
+                  "invalid_request",
+                  "invalid_idempotency_key",
+                  "invalid_host",
+                  "insecure_transport",
+                  "unauthorized",
+                  "forbidden",
+                  "not_found",
+                  "api_disabled",
+                  "method_not_allowed",
+                  "not_acceptable",
+                  "idempotency_conflict",
+                  "replay_expired",
+                  "request_too_large",
+                  "unsupported_media_type",
+                  "rate_limited",
+                  "internal_error",
+                  "service_unavailable"
+                ]
+              },
+              "message": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "details": {
+                "type": "array",
+                "maxItems": 16,
+                "items": {
+                  "$ref": "#/components/schemas/FieldError"
+                }
+              },
+              "batch_id": {
+                "$ref": "#/components/schemas/Identifier"
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "details"
+            ],
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "code": {
+                      "const": "replay_expired"
+                    }
+                  },
+                  "required": [
+                    "code"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "batch_id"
+                  ]
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "batch_id"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "request_id",
+          "error"
+        ]
+      }
+    },
+    "headers": {
+      "RequestId": {
+        "description": "Server-generated request identifier. Matches body request_id; changes on each attempt.",
+        "schema": {
+          "$ref": "#/components/schemas/RequestId"
+        },
+        "required": true
+      },
+      "NoStore": {
+        "description": "Never cache API responses.",
+        "schema": {
+          "type": "string",
+          "const": "no-store"
+        },
+        "required": true
+      },
+      "Replayed": {
+        "description": "false on initial creation; true on authenticated replay.",
+        "schema": {
+          "type": "string",
+          "enum": [
+            "false",
+            "true"
+          ]
+        },
+        "required": true
+      },
+      "RetryAfter": {
+        "description": "Minimum seconds before another attempt. Retry with the same key and payload.",
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 86400
+        },
+        "required": true
+      },
+      "Authenticate": {
+        "description": "Bearer challenge; does not disclose credential validity details.",
+        "schema": {
+          "type": "string",
+          "const": "Bearer realm=\"Access Gate API\""
+        },
+        "required": true
+      },
+      "Allow": {
+        "description": "Methods allowed on the requested resource.",
+        "schema": {
+          "type": "string",
+          "const": "POST"
+        },
+        "required": true
+      }
+    },
+    "securitySchemes": {
+      "integrationBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "opaque integration credential",
+        "description": "Independent integration credential issued by an administrator (#46). Required scope is declared by each operation. Never use browser cookies, the admin password, internal ACL keys or gateway credentials."
+      }
+    }
+  },
+  "x-implementation-status": "contract-only",
+  "x-tracking-issue": "https://github.com/CoyWorks/Access-Gate/issues/44",
+  "x-reserved-operations": [
+    {
+      "method": "GET",
+      "path": "/batches",
+      "scope": "batches:read"
+    },
+    {
+      "method": "GET",
+      "path": "/batches/{batch_id}",
+      "scope": "batches:read"
+    },
+    {
+      "method": "GET",
+      "path": "/batches/{batch_id}/codes",
+      "scope": "batches:read"
+    },
+    {
+      "method": "POST",
+      "path": "/batches/{batch_id}/revoke",
+      "scope": "batches:revoke"
+    },
+    {
+      "method": "POST",
+      "path": "/codes/{code_id}/revoke",
+      "scope": "batches:revoke"
+    }
+  ],
+  "x-pagination-convention": {
+    "status": "reserved for follow-up #50",
+    "page_size": {
+      "minimum": 1,
+      "maximum": 100,
+      "default": 25
+    },
+    "cursor": {
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "response_fields": [
+      "items",
+      "next_cursor"
+    ]
+  }
+}

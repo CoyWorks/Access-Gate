@@ -1,3 +1,8 @@
+# Unreleased
+
+- Define the external code-generation API v1 contract and OpenAPI 3.1 specification (#45), including scoped bearer authentication, strict batch inputs, JSON errors and bounded idempotent replay.
+- Add contract validation and documentation links. This is design/validation only: no API routes, credentials, migrations or server settings are implemented by this change.
+
 # 0.37.0
 
 - Put domain search and existing request/session/client actions directly on Home and More; prioritize daily request/session work above setup reminders.

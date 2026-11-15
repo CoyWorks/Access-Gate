@@ -43,6 +43,10 @@ Addresses in the guides are examples. Use the values reviewed for your own insta
 - [Public portal and private gateways](PUBLIC_PORTAL.md): explicit opt-in deployment with separate gateway enrollment and trust.
 - [HTTPS gateway](GATEWAY.md): certificate issuance, forwarding, browser authorization and enforcement.
 
+## Build an integration
+
+- [REST API v1 contract](REST_API.md) and [OpenAPI specification](openapi/access-gate-v1.json): the planned external code-generation interface. Contract only; HTTP routes and integration credentials are not implemented yet. Follow [#44](https://github.com/CoyWorks/Access-Gate/issues/44) for delivery.
+
 ## Know the boundaries
 
 An access code or approved request grants a timed **browser session covering all currently restricted websites**. It does not create a user/device account or a separate permission for just the requested domain. Per-domain access profiles remain planned.

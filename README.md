@@ -52,6 +52,8 @@ Ready to put a timer on temptation? Start with the [installation guide](docs/INS
 
 **Version 0.37.0.** Browse the [documentation](docs/README.md), [connect a device](docs/CLIENT_SETUP.md), or check [deployment options](docs/DEPLOYMENTS.md).
 
+Building an integration? The [REST API v1 contract](docs/REST_API.md) defines planned external code generation. This is a specification for upcoming implementation; API routes and integration credentials are not available yet.
+
 ## Clone and install
 
 ```bash
@@ -268,6 +270,8 @@ bash /root/Access-Gate/reset.sh --purge
 Purge permanently removes application state, credentials, certificates and saved Access Gate backups. It keeps the source checkout, system account and installed packages. Legacy interception must already be rolled back. FortiGate and Pi-hole are never reset by this command. A fresh install creates a new admin password and CA; device trust must then be updated.
 
 ## Tests
+
+The optional [API contract checks](docs/REST_API.md#compatibility-and-validation) use developer-only validation dependencies. Without those extras, normal discovery still runs the structural checks and skips schema validation.
 
 ```bash
 python3 -m unittest discover -s tests -v

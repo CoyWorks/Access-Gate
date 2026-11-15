@@ -1,0 +1,3 @@
+# Developer-only validation. Do not add these to server installation packages.
+jsonschema>=4.18,<5
+openapi-spec-validator>=0.7,<0.8
