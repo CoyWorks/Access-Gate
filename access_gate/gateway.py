@@ -9,6 +9,7 @@ import ipaddress
 import json
 import math
 import signal
+import secrets
 import socket
 import ssl
 import time
@@ -292,11 +293,22 @@ class Gateway(GatewayActivity):
         if status==503:headers['Retry-After']='5'
         return web.Response(status=status,text=failure_page(kind,self.config['portal_url']),content_type='text/html',headers=headers)
 
+    def api_failure(self,status,code,message):
+        identity=secrets.token_hex(16)
+        headers={'Cache-Control':'no-store','X-Request-ID':identity}
+        if status==503:headers['Retry-After']='60'
+        return web.json_response(dict(request_id=identity,error=dict(code=code,message=message,details=[])),status=status,headers=headers)
+
     async def handle(self,request):
-        if self.active_requests>=128:return self.failure('busy')
+        api=request.path=='/api/v1' or request.path.startswith('/api/v1/')
+        if self.active_requests>=128:
+            return self.api_failure(503,'service_unavailable','The API is temporarily unavailable.') if api else self.failure('busy')
         self.active_requests+=1
         try:return await self._handle(request)
         except web.HTTPException as exc:
+            if api and not request.get(STARTED):
+                code={400:'invalid_request',403:'forbidden',404:'not_found',413:'request_too_large'}.get(exc.status,'service_unavailable')
+                return self.api_failure(exc.status,code,'The API request could not be accepted.')
             if request.get(STARTED) or request.path.startswith(('/gateway/v1/','/__access_gate/')):raise
             response=self.failure('missing' if exc.status==404 else 'setup',exc.status)
             if 'Allow' in exc.headers:response.headers['Allow']=exc.headers['Allow']
@@ -308,7 +320,19 @@ class Gateway(GatewayActivity):
             raise web.HTTPBadRequest(text='Origin-form requests are required.')
         secure = request.transport.get_extra_info('ssl_object') is not None
         host = self.host(request)
-        address = self.client_address(request,secure,public=bool(self.config.get('public_portal') and host in self.portal_hosts))
+        api=request.path=='/api/v1' or request.path.startswith('/api/v1/')
+        address = self.client_address(request,secure,public=api or bool(self.config.get('public_portal') and host in self.portal_hosts))
+        if api:
+            if self.remote:return self.api_failure(404,'not_found','Use the authority portal for integration API access.')
+            if not secure:return self.api_failure(400,'insecure_transport','Use the configured HTTPS portal origin.')
+            if request.headers.get('Host','').lower()!=urlsplit(self.config['portal_url']).netloc.lower():return self.api_failure(400,'invalid_host','Use the configured canonical portal origin.')
+            if request.content_length is not None and request.content_length>16384:return self.api_failure(413,'request_too_large','The request body is too large.')
+            try:return await self.portal(request,address)
+            except (aiohttp.ClientError,asyncio.TimeoutError,OSError,ValueError):
+                if request.get(STARTED):
+                    if request.transport is not None:request.transport.abort()
+                    raise asyncio.CancelledError()
+                return self.api_failure(503,'service_unavailable','The API is temporarily unavailable.')
         if request.method in ('CONNECT', 'TRACE'): raise web.HTTPMethodNotAllowed(request.method, ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
         stage='authorization'
         try:
@@ -382,6 +406,7 @@ class Gateway(GatewayActivity):
     async def portal(self, request, address,local_only=False):
         headers = safe_headers(request.headers)
         headers['Host'] = request.headers['Host']; headers['X-Real-IP'] = address
+        headers['X-Gate-HTTPS']='1' if request.transport.get_extra_info('ssl_object') is not None else '0'
         if request.path.startswith('/gateway/v1/'):
             methods={'/gateway/v1/domain':'GET','/gateway/v1/check':'GET','/gateway/v1/start':'GET','/gateway/v1/finish':'GET','/gateway/v1/rules':'GET','/gateway/v1/health':'GET','/gateway/v1/activate':'POST','/gateway/v1/activity/visit':'POST'}
             if methods.get(request.path)!=request.method or request.raw_path.partition('?')[0]!=request.path:raise web.HTTPNotFound()
@@ -404,9 +429,20 @@ class Gateway(GatewayActivity):
                 total+=len(chunk)
                 if total>limit:raise OSError('Request body limit exceeded.')
                 yield chunk
+        api=request.path=='/api/v1' or request.path.startswith('/api/v1/')
+        body=None
+        if api and request.can_read_body:
+            async def read_api_body():
+                data=bytearray()
+                while True:
+                    chunk=await request.content.read(16385-len(data))
+                    if not chunk:return bytes(data)
+                    data.extend(chunk)
+                    if len(data)>16384:raise web.HTTPRequestEntityTooLarge(max_size=16384,actual_size=len(data))
+            body=await asyncio.wait_for(read_api_body(),10)
         response_start=time.monotonic()
         async with self.local.request(request.method, ('http://127.0.0.1:8088' if local_only else self.api_url) + request.raw_path, headers=headers,
-                data=bounded_body() if request.can_read_body else None,
+                data=body if api else (bounded_body() if request.can_read_body else None),
                 timeout=aiohttp.ClientTimeout(total=180 if request.path=='/admin/recovery' else 45, connect=2, sock_read=45),
                 allow_redirects=False) as response:
             self.performance.observe('portal_response_headers',time.monotonic()-response_start)

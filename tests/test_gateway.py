@@ -199,6 +199,38 @@ class GatewayResolverTests(unittest.IsolatedAsyncioTestCase):
 
 
 class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
+    async def test_rest_api_uses_verified_tls_and_preserves_safe_replay(self):
+        self.store.save_api_policy(True,'127.0.0.0/8')
+        _,token=self.store.create_integration('TLS automation',['batches:create'])
+        headers={'Host':'portal.example','Authorization':'Bearer '+token,'Idempotency-Key':'real-tls-batch-operation','X-Real-IP':'192.0.2.99','X-Gate-HTTPS':'0'}
+        url=f'https://portal.example:{self.port}/api/v1/batches'
+        async with self.client.post(url,headers=headers,json={'count':2},allow_redirects=False) as response:
+            self.assertEqual(response.status,201)
+            first=await response.json();self.assertEqual(len(first['codes']),2)
+            self.assertEqual(response.headers['Idempotency-Replayed'],'false')
+            self.assertNotIn('Set-Cookie',response.headers)
+        async with self.client.post(url,headers=headers,json={'count':2}) as response:
+            self.assertEqual(response.status,201)
+            second=await response.json();self.assertEqual(first['batch_id'],second['batch_id'])
+            self.assertEqual(response.headers['Idempotency-Replayed'],'true')
+        self.assertTrue(all(row['source']=='127.0.0.1' for row in self.store.api_audit_list()))
+        async with self.client.post(url,headers=headers,data=b' '*16385) as response:
+            self.assertEqual(response.status,413);self.assertEqual((await response.json())['error']['code'],'request_too_large')
+        self.assertEqual(self.seen,[])
+
+    async def test_rest_api_has_independent_source_policy_and_rejects_http_or_wrong_host(self):
+        import ipaddress
+        self.store.save_api_policy(True,'127.0.0.0/8')
+        _,token=self.store.create_integration('TLS automation',['batches:create'])
+        self.gateway.networks=[ipaddress.ip_network('192.0.2.0/24')]
+        headers={'Host':'portal.example','Authorization':'Bearer '+token,'Idempotency-Key':'real-tls-independent-policy'}
+        async with self.client.post(f'https://portal.example:{self.port}/api/v1/batches',headers=headers,json={}) as response:
+            self.assertEqual(response.status,201,await response.text())
+        response=await self.get(path='/');self.assertEqual(response.status,403);await response.read()
+        async with self.client.post(f'http://127.0.0.1:{self.http_port}/api/v1/batches',headers={**headers,'X-Real-IP':'127.0.0.1','X-Gate-HTTPS':'1'},json={},allow_redirects=False) as response:
+            self.assertEqual(response.status,400);self.assertEqual((await response.json())['error']['code'],'insecure_transport')
+            self.assertNotIn('Location',response.headers)
+
     async def asyncSetUp(self):
         self.loop = asyncio.get_running_loop(); self.old_handler = self.loop.get_exception_handler()
         def handler(loop, context):

@@ -45,7 +45,7 @@ Addresses in the guides are examples. Use the values reviewed for your own insta
 
 ## Build an integration
 
-- [REST API v1 contract](REST_API.md) and [OpenAPI specification](openapi/access-gate-v1.json): the planned external code-generation interface. Contract only; HTTP routes and integration credentials are not implemented yet. Follow [#44](https://github.com/CoyWorks/Access-Gate/issues/44) for delivery.
+- [REST API v1 contract](REST_API.md) and [OpenAPI specification](openapi/access-gate-v1.json): opt-in external code generation with scoped integration credentials and safe retries. Existing installs keep API access disabled. Follow [#44](https://github.com/CoyWorks/Access-Gate/issues/44) for delivery.
 
 ## Know the boundaries
 

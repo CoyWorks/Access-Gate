@@ -34,6 +34,64 @@ class Integrations:
             credential_id TEXT NOT NULL REFERENCES api_credentials(id),key_hash TEXT NOT NULL,
             fingerprint TEXT NOT NULL,batch_id TEXT NOT NULL,created REAL NOT NULL,payload BLOB,
             PRIMARY KEY(credential_id,key_hash))''')
+        db.execute('CREATE TABLE IF NOT EXISTS api_limits(scope TEXT PRIMARY KEY,expires REAL NOT NULL,value INTEGER NOT NULL)')
+        db.execute('''CREATE TABLE IF NOT EXISTS api_audit(id INTEGER PRIMARY KEY AUTOINCREMENT,
+            created REAL NOT NULL,credential_id TEXT,action TEXT NOT NULL,batch_id TEXT,request_id TEXT NOT NULL,source TEXT NOT NULL,outcome INTEGER NOT NULL)''')
+
+    def save_api_policy(self,enabled,cidrs):
+        from .core import GateError
+        allowed=networks(cidrs)
+        if enabled and not allowed:raise GateError('Choose API source networks before enabling API access.')
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('UPDATE api_policy SET enabled=?,networks=? WHERE id=1',(bool(enabled),json.dumps(allowed)))
+            self._event(db,'integration.policy',details=dict(state='enabled' if enabled else 'disabled'))
+            db.commit()
+
+    @staticmethod
+    def _api_limit(db,scope,limit,window,amount,now):
+        row=db.execute('SELECT * FROM api_limits WHERE scope=?',(scope,)).fetchone()
+        if row and row['expires']>now:
+            if row['value']+amount>limit:return False
+            db.execute('UPDATE api_limits SET value=value+? WHERE scope=?',(amount,scope))
+        else:
+            if not row and db.execute('SELECT count(*) FROM api_limits').fetchone()[0]>=4096:return False
+            db.execute('INSERT OR REPLACE INTO api_limits VALUES(?,?,?)',(scope,now+window,amount))
+        return True
+
+    def api_request_budget(self,address,credential=None):
+        now=time.time()
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            db.execute('DELETE FROM api_limits WHERE expires<=?',(now,))
+            if credential:allowed=self._api_limit(db,'credential-request:'+credential,120,60,1,now)
+            else:
+                allowed=self._api_limit(db,'global-request',600,60,1,now)
+                if allowed:allowed=self._api_limit(db,'source:'+hashlib.sha256(address.encode()).hexdigest(),60,60,1,now)
+            db.commit()
+            return allowed
+
+    @staticmethod
+    def _api_audit(db,credential,action,batch,request_id,source,status,now):
+        db.execute('INSERT INTO api_audit(created,credential_id,action,batch_id,request_id,source,outcome) VALUES(?,?,?,?,?,?,?)',
+                   (now,credential,action,batch,request_id,source,status))
+        db.execute('DELETE FROM api_audit WHERE created<?',(now-30*86400,))
+        db.execute('DELETE FROM api_audit WHERE id<(SELECT id FROM api_audit ORDER BY id DESC LIMIT 1 OFFSET 9999)')
+
+    def api_audit(self,credential,action,batch,request_id,source,status):
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            self._api_audit(db,credential,action,batch,request_id,source,status,time.time())
+            db.commit()
+
+    def api_audit_list(self):
+        with self.connect() as db:return [dict(r) for r in db.execute('SELECT * FROM api_audit ORDER BY id DESC LIMIT 100')]
+
+    def api_summary(self):
+        with self.connect() as db:
+            enabled=bool(db.execute('SELECT enabled FROM api_policy WHERE id=1').fetchone()[0])
+            count=db.execute('SELECT count(*) FROM api_credentials WHERE revoked=0 AND expires>?',(time.time(),)).fetchone()[0]
+        return dict(enabled=enabled,active_credentials=count)
 
     def api_digest(self, token):
         return hmac.new(self.pepper,b'access-gate/integration/v1\0'+token.encode(),hashlib.sha256).hexdigest()
@@ -98,7 +156,7 @@ class Integrations:
             row=db.execute('SELECT credential_id FROM api_batches WHERE batch_id=?',(batch,)).fetchone()
         return row['credential_id'] if row else None
 
-    def api_create_batch(self,credential,address,key,values):
+    def api_create_batch(self,credential,address,key,values,request_id=None):
         from .core import GateError,TZ
         from .rest_api import APIError
         import datetime as dt
@@ -107,9 +165,14 @@ class Integrations:
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
             now=time.time()
+            policy=db.execute('SELECT * FROM api_policy WHERE id=1').fetchone()
+            if not policy['enabled'] or not any(ipaddress.ip_address(address) in ipaddress.ip_network(n) for n in json.loads(policy['networks'])):
+                raise APIError(403,'forbidden','This source is not permitted.')
             current=db.execute('SELECT * FROM api_credentials WHERE id=?',(credential,)).fetchone()
             if not current or current['revoked'] or current['expires']<=now:raise APIError(401,'unauthorized','A valid integration credential is required.')
             if 'batches:create' not in json.loads(current['scopes']):raise APIError(403,'forbidden','This operation is not permitted.')
+            cidrs=json.loads(current['networks'])
+            if cidrs and not any(ipaddress.ip_address(address) in ipaddress.ip_network(n) for n in cidrs):raise APIError(403,'forbidden','This source is not permitted.')
             self._cleanup_api(db,now)
             existing=db.execute('SELECT * FROM api_requests WHERE credential_id=? AND key_hash=?',(credential,key_hash)).fetchone()
             if existing:
@@ -124,6 +187,8 @@ class Integrations:
                 return response,True
             if db.execute('SELECT count(*) FROM api_requests').fetchone()[0]>=50000:
                 raise APIError(503,'service_unavailable','API retry-record capacity is temporarily exhausted.')
+            if not self._api_limit(db,'global-code',10000,3600,values['count'],now) or not self._api_limit(db,'credential-code:'+credential,1000,3600,values['count'],now):
+                raise APIError(429,'rate_limited','The new-code budget was reached.')
             batch,codes=self._insert_batch(db,now,now+values['validity_seconds'],values['access_seconds'],values['count'],values['name'],'duration',now,dt.datetime.fromtimestamp(now,TZ).date().isoformat())
             db.execute('INSERT INTO api_batches VALUES(?,?,?)',(batch,credential,now))
             db.execute('INSERT INTO api_requests VALUES(?,?,?,?,?,NULL)',(credential,key_hash,fingerprint,batch,now))
@@ -136,6 +201,7 @@ class Integrations:
             saved=dict(credential=credential,key=key_hash,fingerprint=fingerprint,response=response)
             payload=self.api_cipher().encrypt(json.dumps(saved,separators=(',',':')).encode())
             db.execute('UPDATE api_requests SET payload=? WHERE credential_id=? AND key_hash=?',(payload,credential,key_hash))
+            self._api_audit(db,credential,'create',batch,request_id or secrets.token_hex(16),address,201,now)
             db.commit()
         return response,False
 
@@ -148,6 +214,8 @@ class Integrations:
     def _cleanup_api(db,now):
         db.execute('UPDATE api_requests SET payload=NULL WHERE rowid IN(SELECT rowid FROM api_requests WHERE created<=? AND payload IS NOT NULL LIMIT 5000)',(now-86400,))
         db.execute('DELETE FROM api_requests WHERE rowid IN(SELECT rowid FROM api_requests WHERE created<=? LIMIT 5000)',(now-30*86400,))
+        db.execute('DELETE FROM api_limits WHERE expires<=?',(now,))
+        db.execute('DELETE FROM api_audit WHERE created<?',(now-30*86400,))
 
 
 def utc(stamp):

@@ -137,7 +137,7 @@ def preflight(data,password,directory):
     try:matched=ipaddress.ip_address(host) in san.get_values_for_type(x509.IPAddress)
     except ValueError:matched=host in san.get_values_for_type(x509.DNSName)
     if not matched:raise GateError('Portal certificate does not cover the configured portal address.')
-    return dict(version=str(bundle.get('version',''))[:40],created=bundle.get('created'),counts=counts,policy='All restored codes, grants, pending requests and administrator sessions will be invalidated.')
+    return dict(version=str(bundle.get('version',''))[:40],created=bundle.get('created'),counts=counts,policy='All restored codes, grants, pending requests, administrator sessions and integration credentials will be invalidated; API access will be disabled.')
 
 
 def invalidate(database,config):
@@ -147,6 +147,8 @@ def invalidate(database,config):
         db.execute('UPDATE api_credentials SET revoked=1')
         db.execute('UPDATE api_policy SET enabled=0')
         db.execute('DELETE FROM api_requests')
+        db.execute('DELETE FROM api_limits')
+        db.execute('DELETE FROM api_audit')
         db.execute('UPDATE remote_gateways SET enabled=0');db.execute('DELETE FROM admin_mfa');db.execute('DELETE FROM mfa_recovery');db.execute('DELETE FROM public_limits')
         db.execute('DELETE FROM push_deliveries');db.execute('DELETE FROM push_subscriptions')
         db.execute('UPDATE schedules SET enabled=0')

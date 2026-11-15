@@ -140,7 +140,10 @@ class TLSRouter:
                     return
 
                 public_portal = bool(self.gateway.config.get('public_portal') and name in self.gateway.portal_hosts)
-                if not public_portal and not any(client_ip in net for net in self.gateway.networks):
+                # Portal TLS must reach the HTTP layer to apply the independent API CIDRs.
+                # Ordinary portal requests still enforce visitor/admin networks there.
+                portal_handshake=name is None or name in self.gateway.portal_hosts
+                if not public_portal and not portal_handshake and not any(client_ip in net for net in self.gateway.networks):
                     return
                 # Never treat a stale/unavailable policy as permission to proxy.
                 if not self.gateway.policy or not self.gateway.policy.fresh():

@@ -198,3 +198,41 @@ class RetryTests(GenerationTests):
         with self.assertRaises(GateError):self.store.redeem(replay.json['codes'][0]['code'],'192.0.2.20')
         self.store.revoke_integration(self.identity)
         self.assertEqual(self.generate().status_code,401)
+
+
+class ExposureTests(GenerationTests):
+    def test_networks_and_tls_origin_are_independent_and_fail_closed(self):
+        self.assertEqual(self.call(json={},headers={**self.headers,'X-Real-IP':'198.51.100.20','X-Forwarded-For':'192.0.2.20'}).status_code,403)
+        self.assertEqual(self.call(json={},headers={**self.headers,'Host':'other.example.org'}).status_code,400)
+        response=self.client.post('/api/v1/batches',json={},base_url='http://access.example.org',
+            environ_overrides={'REMOTE_ADDR':'127.0.0.1'},headers={'X-Real-IP':'192.0.2.20','Authorization':'Bearer '+self.token,**self.headers})
+        self.assertEqual(response.status_code,400);self.assertEqual(response.json['error']['code'],'insecure_transport')
+        self.assertNotIn('Location',response.headers)
+        with self.assertRaises(GateError):self.store.save_api_policy(True,'')
+
+    def test_limits_survive_store_restart_and_replay_does_not_spend_codes_twice(self):
+        response=self.generate({'count':1000});self.assertEqual(response.status_code,201)
+        self.assertEqual(self.generate({'count':1000}).status_code,201)
+        self.headers={'Idempotency-Key':'another-generation-operation'}
+        self.assertEqual(self.generate({'count':1}).status_code,429)
+        fresh=Store(self.config['database'],self.config['pepper']);fresh.initialize()
+        with fresh.connect() as db:
+            self.assertEqual(db.execute("SELECT value FROM api_limits WHERE scope=?",('credential-code:'+self.identity,)).fetchone()[0],1000)
+        for _ in range(70):self.store.api_request_budget('192.0.2.99')
+        self.assertFalse(fresh.api_request_budget('192.0.2.99'))
+
+    def test_policy_disable_and_credential_cidrs_are_rechecked_under_writer_lock(self):
+        from access_gate.rest_api import APIError
+        values=dict(name='',count=1,validity_seconds=604800,access_seconds=900)
+        self.store.save_api_policy(False,'192.0.2.0/24')
+        with self.assertRaises(APIError):self.store.api_create_batch(self.identity,'192.0.2.20','test-revocation-race-key',values)
+        self.enable()
+        with self.store.connect() as db:db.execute('UPDATE api_credentials SET networks=? WHERE id=?',(json.dumps(['198.51.100.0/24']),self.identity))
+        with self.assertRaises(APIError):self.store.api_create_batch(self.identity,'192.0.2.20','test-revocation-race-key',values)
+
+    def test_audit_has_safe_attribution_and_no_credentials_or_codes(self):
+        response=self.generate();data=response.json
+        rows=self.store.api_audit_list();raw=json.dumps(rows)
+        self.assertNotIn(self.token,raw)
+        self.assertNotIn(data['codes'][0]['code'],raw)
+        self.assertTrue(any(r['credential_id']==self.identity and r['request_id']==data['request_id'] and r['source']=='192.0.2.20' and r['batch_id']==data['batch_id'] for r in rows))

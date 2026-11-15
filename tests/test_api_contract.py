@@ -1,4 +1,4 @@
-"""Validate the planned API contract, not an implemented HTTP service.
+"""Validate API schemas independently of HTTP integration tests.
 
 Extra schema validators are developer-only; see requirements-contract.txt.
 Structural tests still run in the normal unittest discovery without those extras.
@@ -38,7 +38,7 @@ def sample():
 
 class ContractStructureTests(unittest.TestCase):
     def test_only_creation_is_exposed_and_followups_are_marked_reserved(self):
-        self.assertEqual(SPEC['x-implementation-status'], 'contract-only')
+        self.assertEqual(SPEC['x-implementation-status'], 'creation-implemented')
         self.assertEqual(set(SPEC['paths']), {'/batches'})
         self.assertEqual(set(SPEC['paths']['/batches']), {'post'})
         self.assertEqual(len(SPEC['x-reserved-operations']), 5)

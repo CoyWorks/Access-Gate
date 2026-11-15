@@ -415,15 +415,18 @@ def create_app(config=None):
         token=None
         if request.method=='POST':
             action=request.form.get('action','')
-            if action=='create':
+            if action in ('create','policy'):
                 if not store.attempt('integration-settings:'+client_ip(),5):raise GateError('Too many attempts. Wait 15 minutes.')
                 if not check_password_hash(g.admin_security['password_hash'],request.form.get('current_password','')):raise GateError('Current password is incorrect.')
+                if action=='policy':
+                    store.save_api_policy(request.form.get('enabled')=='1',request.form.get('networks',''))
+                    return redirect(url_for('integrations_page'))
                 _,token=store.create_integration(request.form.get('name',''),request.form.getlist('scopes'),request.form.get('days','90'),request.form.get('networks',''))
             elif action=='revoke':
                 store.revoke_integration(request.form.get('id',''))
                 return redirect(url_for('integrations_page'))
             else:raise GateError('Unknown integration action.')
-        return render_template('integrations.html',csrf=csrf(),created_token=token,integrations=store.integration_list(),scopes=SCOPES,now=time.time())
+        return render_template('integrations.html',csrf=csrf(),created_token=token,integrations=store.integration_list(),scopes=SCOPES,now=time.time(),api_policy=store.api_policy(),api_audit=store.api_audit_list())
 
     @app.route('/admin/settings',methods=['GET','POST'])
     @admin_only

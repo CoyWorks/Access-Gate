@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 from flask import g,request,jsonify
 from werkzeug.exceptions import RequestEntityTooLarge
 
-GENERATION_READY=False  # Enabled only once replay and deployment controls ship (#48/#49).
+GENERATION_READY=True
 
 
 def batch_values(payload):
@@ -67,7 +67,10 @@ class RestAPI:
         if replayed is not None:response.headers['Idempotency-Replayed']='true' if replayed else 'false'
         if status==401:response.headers['WWW-Authenticate']='Bearer realm="Access Gate API"'
         if status==405:response.headers['Allow']='POST'
-        if status in (429,503):response.headers['Retry-After']='60'
+        if status in (429,503):response.headers['Retry-After']='3600' if status==429 else '60'
+        if getattr(g,'api_audit_allowed',False):
+            try:self.store.api_audit(getattr(g,'api_credential',{}).get('id'),'replay' if replayed else 'request',data.get('batch_id'),g.api_request_id,g.api_address,status)
+            except sqlite3.Error:pass
         return response
 
     def handle(self):
@@ -89,18 +92,28 @@ class RestAPI:
     def authenticate(self):
         if request.remote_addr not in ('127.0.0.1','::1'):
             raise APIError(403,'forbidden','This source is not permitted.')
+        if not request.is_secure and request.headers.get('X-Gate-HTTPS')!='1':raise APIError(400,'insecure_transport','Use the configured HTTPS portal origin.')
+        try:
+            actual=urlsplit('https://'+request.host);expected=urlsplit(self.config['portal_url'])
+            same=actual.hostname==expected.hostname and (actual.port or 443)==(expected.port or 443) and not actual.username and not actual.password and not actual.path
+        except ValueError:same=False
+        if not same:raise APIError(400,'invalid_host','Use the configured canonical portal origin.')
         policy=self.store.api_policy()
         if not policy['enabled']:raise APIError(404,'not_found','The requested API resource was not found.')
         try:address=str(ipaddress.ip_address(request.headers.get('X-Real-IP','')))
         except ValueError:raise APIError(403,'forbidden','This source is not permitted.')
         if not policy['networks'] or not any(ipaddress.ip_address(address) in ipaddress.ip_network(n) for n in policy['networks']):
             raise APIError(403,'forbidden','This source is not permitted.')
+        g.api_address=address
+        if not self.store.api_request_budget(address):raise APIError(429,'rate_limited','The API request budget was reached.')
+        g.api_audit_allowed=True
         auth=request.headers.get('Authorization','')
         parts=auth.split(' ')
         credential=self.store.authenticate_integration(parts[1],address) if len(parts)==2 and parts[0].lower()=='bearer' else None
         if not credential:raise APIError(401,'unauthorized','A valid integration credential is required.')
         if not credential['source_allowed']:raise APIError(403,'forbidden','This source is not permitted.')
         g.api_credential=credential;g.api_address=address
+        if not self.store.api_request_budget(address,credential['id']):raise APIError(429,'rate_limited','The integration request budget was reached.')
         return credential
 
     def dispatch(self):
@@ -114,6 +127,6 @@ class RestAPI:
         key=request.headers.get('Idempotency-Key','')
         if not re.fullmatch(r'[A-Za-z0-9._:-]{16,128}',key):raise APIError(400,'invalid_idempotency_key','Supply a valid Idempotency-Key.')
         values=batch_values(json_body())
-        result,replayed=self.store.api_create_batch(credential['id'],g.api_address,key,values)
+        result,replayed=self.store.api_create_batch(credential['id'],g.api_address,key,values,g.api_request_id)
         result['portal_url']=self.config['portal_url'].rstrip('/')+'/'
         return self.response(result,201,replayed)

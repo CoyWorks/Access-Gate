@@ -37,6 +37,7 @@ def blank(config,collection='not-collected'):
         scope='Server-local observations only. Client DNS, routing and certificate trust are not verified.',
         installed=dict(version='Unknown',commit=None,deployed_at=None),
         deployment=dict(dns_mode=config['dns_mode'],web_mode=config['web_mode'],role='authority' if config['public_portal'] else ('remote-gateway' if config['remote_gateway'] else 'local')),
+        integration_api=dict(state='unknown',enabled=None,active_credentials=None),
         checks=[dict(name=name,state='unknown',checked_at=None) for name in CHECKS],
         certificates=[dict(name=name,state='unknown',sha256=None,not_before=None,expires_at=None) for name in CERTS],
         diagnostics=dict(client='not-collected',dns=dict(state='unknown',checked_at=None)),
@@ -90,6 +91,11 @@ class SupportReport:
                 value=counts.get(name)
                 allowed[name]=value if type(value) is int and 0<=value<=2**63-1 else None
             report['gateway_failures'].update(state='collected' if any(value is not None for value in allowed.values()) else 'unknown',since=stamp(metrics.get('started')))
+        except Exception:pass
+        try:
+            summary=self.health.store.api_summary()
+            if type(summary['enabled']) is bool and type(summary['active_credentials']) is int and 0<=summary['active_credentials']<=1000:
+                report['integration_api']=dict(state='collected',enabled=summary['enabled'],active_credentials=summary['active_credentials'])
         except Exception:pass
         encode(report)
         return report

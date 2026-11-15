@@ -1,12 +1,12 @@
 # REST API v1 contract
 
-**Status: contract only.** Issue [#45](https://github.com/CoyWorks/Access-Gate/issues/45) defines the interface; it does not add HTTP routes, integration credentials or server settings. Existing installations cannot use the examples yet. Runtime delivery is tracked in [#44](https://github.com/CoyWorks/Access-Gate/issues/44), with credentials in #46, generation in #47, retry handling in #48 and deployment controls in #49.
+**Status: opt-in code generation implemented.** Enable the API under **More → API integrations** after updating the application and managed gateway/nginx configuration. Existing and fresh installations keep it disabled. The creation contract was defined in [#45](https://github.com/CoyWorks/Access-Gate/issues/45); delivery is tracked in [#44](https://github.com/CoyWorks/Access-Gate/issues/44).
 
 Use the checked-in [OpenAPI 3.1 specification](openapi/access-gate-v1.json) as the machine-readable reference. Its `info.version` describes the contract, independently of the Access Gate application version. The JSON file can be imported into OpenAPI tooling without a running server. The format follows the [OpenAPI 3.1 specification](https://spec.openapis.org/oas/v3.1.0).
 
 ## Manage integration credentials
 
-Open **More → API integrations** to create a named credential. Choose scopes, a 1–365 day lifetime and optional extra source CIDRs, then confirm with your current administrator password. Copy the secret once; only its digest is stored. Rotate by creating a replacement before revoking the old identity. Revocation applies on the next request. Credentials are preserved by normal updates; a backup restore disables API access and revokes restored credentials. Until generation and deployment controls are delivered, the API remains disabled.
+Open **More → API integrations** to create a named credential. Choose scopes, a 1–365 day lifetime and optional extra source CIDRs, then confirm with your current administrator password. Copy the secret once; only its digest is stored. Rotate by creating a replacement before revoking the old identity. Revocation applies on the next request. Credentials are preserved by normal updates; a backup restore disables API access and revokes restored credentials. Global API source CIDRs are required before enabling it. Credential CIDRs apply as an additional restriction.
 
 For emergency local recovery, run as the server administrator:
 
@@ -18,7 +18,7 @@ This disables API access and revokes every integration credential without changi
 
 ## Create a batch
 
-The first operation is `POST /api/v1/batches` on the configured canonical HTTPS portal origin. `https://access.example.org` is an example, not a default or a hosted service. No port or backend service needs to be opened for this contract.
+The creation operation is `POST /api/v1/batches` on the configured canonical HTTPS portal origin. `https://access.example.org` is an example, not a default or a hosted service. Use the existing HTTPS listener. Backend services stay bound to loopback.
 
 Required headers:
 
@@ -160,6 +160,12 @@ Example field error:
 `Retry-After` is a positive integer number of seconds, at most 86400. Client retries need bounded exponential backoff and jitter; never substitute a new key merely because an HTTP request failed.
 
 Validation order: enforce edge transport/host, feature/network and raw body/request budgets first; authenticate and authorize before decoding fields or looking up replay data; validate JSON/media type, schema and retry key before attempting creation. If several failures apply, an earlier protective check can win. A source/global rate limit can return `429` before credential verification. Requests exceeding edge limits may return `413` before authentication. Disabled/unknown routes return `404`; an existing route with an unsupported method returns `405`. No check may disclose another credential's replay record.
+
+The API is opt-in. Its enablement and CIDRs are validated database policy, retained across install/resume/update and server reconfiguration. A private/local server and the public authority support the API; remote gateway nodes return 404 for these routes. Only the canonical portal origin is accepted, even when portal aliases exist. TLS handshakes for portal identities can reach HTTP-layer policy checks; this does not relax ordinary visitor/admin access.
+
+Fixed budgets are shared across workers and persist through restarts: 60 requests/source/minute, 120/credential/minute, 600 globally/minute; 1000 new codes/credential/hour and 10000 globally/hour. Request windows start on their first use, not wall-clock boundaries. Limiter keys are bounded to 4096 rows. Authentication failures consume source/global budgets. Rate-limit failures return a conservative 3600-second Retry-After; temporary service failures return 60 seconds.
+
+Recent API audit records appear on the integrations screen (100 shown); retain at most 10000 for 30 days, independent of optional visitor-history settings. Only server-generated request IDs, integration IDs, fixed actions/status, batch IDs and validated effective source IPs are stored. Admission-limit floods are not individually logged. The support report exposes only API enabled state and active-credential count.
 
 The API is opt-in. Public visitor-portal access must not automatically enable API access or expose administration. API routes use bearer authentication and independent network policy; they do not change `/admin/api/*`, `/internal/*` or `/gateway/v1/*`. Use the configured HTTPS origin, reject wrong host/scheme rather than redirecting secrets, and provide no permissive cross-origin browser access. Edge HTTP requests may be rejected before reaching the app; never send a bearer credential over HTTP to discover a redirect.
 

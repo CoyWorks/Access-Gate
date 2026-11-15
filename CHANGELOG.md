@@ -1,3 +1,8 @@
+# 0.38.3
+
+- Enable the opt-in REST API with independent source CIDRs, trusted HTTPS/canonical-host checks, shared SQLite request/code budgets and bounded safe audit history (#49).
+- Preserve disabled-by-default upgrades, browser/gateway authentication, local backend binding and no-cache responses. Add JSON gateway/nginx edge errors, protected source forwarding and allowlisted support summary. Schema 16 adds limiter/audit state.
+
 # 0.38.2
 
 - Encrypt API creation responses for 24-hour authenticated retries, with 30-day key tombstones and atomic batch/replay commits (#48).
