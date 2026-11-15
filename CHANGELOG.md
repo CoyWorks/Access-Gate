@@ -1,3 +1,8 @@
+# 0.38.1
+
+- Add atomic API batch generation, strict JSON validation, shared code rules and source attribution (#47).
+- Keep HTTP generation behind an internal readiness gate until replay and deployment controls are complete. Repeat keys already cannot create a second batch; encrypted replay follows in #48. Add schema 15 for batch provenance and retry records.
+
 # 0.38.0
 
 - Add independent expiring/scoped integration credentials, one-time secret display, revocation and local emergency recovery (#46).

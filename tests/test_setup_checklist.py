@@ -68,7 +68,7 @@ class ChecklistTests(BrowserWebFixture,unittest.TestCase):
         self.assertEqual(self.view()['confirmed'],0);self.assertEqual(self.store.batch_detail(batch)['id'],batch)
         self.assertTrue(self.store.restricted_host('example.org'))
         with self.store.connect() as db:
-            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],14)
+            self.assertEqual(db.execute('PRAGMA user_version').fetchone()[0],15)
             self.assertIsNotNone(db.execute('SELECT 1 FROM codes WHERE digest=?',(self.store.digest(codes[0]),)).fetchone())
     def test_restore_resets_acknowledgements_and_reminder_without_losing_hostname(self):
         self.change(step='domain',hostname='www.example.org');self.change('hide','')

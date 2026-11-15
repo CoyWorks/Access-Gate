@@ -27,6 +27,12 @@ class Integrations:
             id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,
             networks TEXT NOT NULL DEFAULT '[]')''')
         db.execute('INSERT OR IGNORE INTO api_policy(id) VALUES(1)')
+        db.execute('''CREATE TABLE IF NOT EXISTS api_batches(
+            batch_id TEXT PRIMARY KEY REFERENCES batches(id),credential_id TEXT NOT NULL REFERENCES api_credentials(id),created REAL NOT NULL)''')
+        db.execute('''CREATE TABLE IF NOT EXISTS api_requests(
+            credential_id TEXT NOT NULL REFERENCES api_credentials(id),key_hash TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,batch_id TEXT NOT NULL,created REAL NOT NULL,payload BLOB,
+            PRIMARY KEY(credential_id,key_hash))''')
 
     def api_digest(self, token):
         return hmac.new(self.pepper,b'access-gate/integration/v1\0'+token.encode(),hashlib.sha256).hexdigest()
@@ -85,3 +91,40 @@ class Integrations:
             row=dict(db.execute('SELECT * FROM api_policy WHERE id=1').fetchone())
         row['networks']=json.loads(row['networks'])
         return row
+
+    def api_origin(self,batch):
+        with self.connect() as db:
+            row=db.execute('SELECT credential_id FROM api_batches WHERE batch_id=?',(batch,)).fetchone()
+        return row['credential_id'] if row else None
+
+    def api_create_batch(self,credential,address,key,values):
+        from .core import GateError,TZ
+        from .rest_api import APIError
+        import datetime as dt
+        now=time.time()
+        fingerprint=hashlib.sha256(json.dumps(values,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+        key_hash=hashlib.sha256(key.encode()).hexdigest()
+        with self.connect() as db:
+            db.execute('BEGIN IMMEDIATE')
+            current=db.execute('SELECT * FROM api_credentials WHERE id=?',(credential,)).fetchone()
+            if not current or current['revoked'] or current['expires']<=now:raise APIError(401,'unauthorized','A valid integration credential is required.')
+            if 'batches:create' not in json.loads(current['scopes']):raise APIError(403,'forbidden','This operation is not permitted.')
+            existing=db.execute('SELECT * FROM api_requests WHERE credential_id=? AND key_hash=?',(credential,key_hash)).fetchone()
+            if existing:
+                if existing['fingerprint']!=fingerprint:raise APIError(409,'idempotency_conflict','This key was used with a different request.')
+                raise APIError(409,'replay_expired','The original codes are not available for replay.',batch_id=existing['batch_id'])
+            batch,codes=self._insert_batch(db,now,now+values['validity_seconds'],values['access_seconds'],values['count'],values['name'],'duration',now,dt.datetime.fromtimestamp(now,TZ).date().isoformat())
+            db.execute('INSERT INTO api_batches VALUES(?,?,?)',(batch,credential,now))
+            db.execute('INSERT INTO api_requests VALUES(?,?,?,?,?,NULL)',(credential,key_hash,fingerprint,batch,now))
+            rows=db.execute('SELECT id,digest FROM codes WHERE batch=?',(batch,)).fetchall()
+            ids={r['digest']:r['id'] for r in rows}
+            name=db.execute('SELECT name FROM batches WHERE id=?',(batch,)).fetchone()[0]
+            db.commit()
+        return dict(batch_id=batch,name=name,count=len(codes),created_at=utc(now),valid_from=utc(now),valid_until=utc(now+values['validity_seconds']),
+                    validity_seconds=values['validity_seconds'],access_seconds=values['access_seconds'],
+                    replay_until=utc(now+86400),key_retained_until=utc(now+30*86400),codes=[dict(id=ids[self.digest(c)],code=c) for c in codes]),False
+
+
+def utc(stamp):
+    import datetime as dt
+    return dt.datetime.fromtimestamp(stamp,dt.timezone.utc).isoformat(timespec='milliseconds').replace('+00:00','Z')

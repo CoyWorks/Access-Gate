@@ -3,6 +3,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 from werkzeug.security import generate_password_hash
 from access_gate.core import Store,GateError
 from access_gate.web import create_app
@@ -92,3 +93,44 @@ class CredentialTests(APICase):
         self.assertIsNotNone(self.store.authenticate_integration(self.token,'192.0.2.20'))
         with self.store.connect() as db:db.execute('PRAGMA user_version=99')
         with self.assertRaises(GateError):self.store.initialize()
+
+
+class GenerationTests(APICase):
+    def setUp(self):
+        super().setUp();self.enable()
+        self.ready=patch('access_gate.rest_api.GENERATION_READY',True);self.ready.start();self.addCleanup(self.ready.stop)
+        self.headers={'Idempotency-Key':'test-generation-operation-1'}
+
+    def generate(self,body=None,**kwargs):
+        return self.call(json={} if body is None else body,headers=self.headers,**kwargs)
+
+    def test_generated_codes_use_normal_redemption_and_admin_counts(self):
+        response=self.generate(dict(name='External',count=10,validity_value=7,validity_unit='days',access_value=15,access_unit='minutes'))
+        self.assertEqual(response.status_code,201,response.json)
+        data=response.json;self.assertEqual(len(data['codes']),10)
+        self.assertEqual(data['access_seconds'],900);self.assertEqual(data['validity_seconds'],604800)
+        self.assertEqual(self.store.api_origin(data['batch_id']),self.identity)
+        self.assertEqual(self.store.batch_detail(data['batch_id'])['total'],10)
+        code=data['codes'][0]['code']
+        now=time.time();end=self.store.redeem(code,'192.0.2.20',now=now,browser_token='b'*64)
+        self.assertEqual(end,now+900)
+        with self.assertRaises(GateError):self.store.redeem(code,'192.0.2.21',browser_token='c'*64)
+        self.store.revoke_batch(data['batch_id'])
+        self.assertIsNone(self.store.browser_grant('b'*64))
+        self.assertNotIn('Set-Cookie',response.headers)
+
+    def test_validation_is_atomic_and_rejects_wrong_types_units_and_unknown_fields(self):
+        for body in ({'count':True},{'count':'10'},{'count':1.5},{'count':1001},{'access_unit':'days'},
+                     {'validity_value':366},{'profile_id':'default'},[],{'count':10**300}):
+            with self.subTest(body=body):self.assertEqual(self.generate(body).status_code,400)
+        self.assertEqual(self.store.list_batches()['total'],0)
+
+    def test_json_media_type_size_and_retry_key_validation(self):
+        for raw in ('{"count":1,"count":2}','{"count":NaN}','null','[1]'):
+            self.assertEqual(self.call(data=raw,content_type='application/json',headers=self.headers).status_code,400)
+        self.assertEqual(self.call(data='{}',headers=self.headers).status_code,415)
+        self.assertEqual(self.call(json={}).status_code,400)
+        self.assertEqual(self.call(data=' '*16385,content_type='application/json',headers=self.headers).status_code,413)
+        self.assertEqual(self.call('/api/v1/batches?count=1',json={},headers=self.headers).status_code,400)
+        self.assertEqual(self.call(method='GET').status_code,405)
+        self.assertEqual(self.call('/api/v1/unknown').status_code,404)

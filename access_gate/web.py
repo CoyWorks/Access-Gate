@@ -933,7 +933,7 @@ def create_app(config=None):
     @admin_only
     def batch_detail(batch_id):
         return render_template('batch_detail.html',batch=store.batch_detail(batch_id),
-                               extensions=store.extension_history(batch_id),**list_context(batch_id))
+                               api_origin=store.api_origin(batch_id),extensions=store.extension_history(batch_id),**list_context(batch_id))
 
     @app.route('/admin/batches/<batch_id>/revoke',methods=['GET','POST'])
     @admin_only
