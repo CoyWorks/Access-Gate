@@ -90,8 +90,13 @@ def create_app(config=None):
         session.clear();g.admin_login=None;g.new_admin_cookie=None;g.clear_admin_cookie=True
 
 
+    from .rest_api import RestAPI
+    integration_api=RestAPI(store,config)
+
     @app.before_request
     def guard():
+        if request.path=='/api/v1' or request.path.startswith('/api/v1/'):
+            return integration_api.handle()
         g.gateway_id=None
         if request.path.startswith('/gateway/v1/'):
             if not config['public_portal']:abort(404)
@@ -402,6 +407,23 @@ def create_app(config=None):
             flash(f'Removed {count} reviewed revoked batches.','success')
             return redirect(url_for('batches'))
         return render_template('remove_batches.html',items=store.removable_batches(),bulk=True,csrf=csrf())
+
+    @app.route('/admin/integrations',methods=['GET','POST'])
+    @admin_only
+    def integrations_page():
+        from .integrations import SCOPES
+        token=None
+        if request.method=='POST':
+            action=request.form.get('action','')
+            if action=='create':
+                if not store.attempt('integration-settings:'+client_ip(),5):raise GateError('Too many attempts. Wait 15 minutes.')
+                if not check_password_hash(g.admin_security['password_hash'],request.form.get('current_password','')):raise GateError('Current password is incorrect.')
+                _,token=store.create_integration(request.form.get('name',''),request.form.getlist('scopes'),request.form.get('days','90'),request.form.get('networks',''))
+            elif action=='revoke':
+                store.revoke_integration(request.form.get('id',''))
+                return redirect(url_for('integrations_page'))
+            else:raise GateError('Unknown integration action.')
+        return render_template('integrations.html',csrf=csrf(),created_token=token,integrations=store.integration_list(),scopes=SCOPES,now=time.time())
 
     @app.route('/admin/settings',methods=['GET','POST'])
     @admin_only

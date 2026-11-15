@@ -4,6 +4,18 @@
 
 Use the checked-in [OpenAPI 3.1 specification](openapi/access-gate-v1.json) as the machine-readable reference. Its `info.version` describes the contract, independently of the Access Gate application version. The JSON file can be imported into OpenAPI tooling without a running server. The format follows the [OpenAPI 3.1 specification](https://spec.openapis.org/oas/v3.1.0).
 
+## Manage integration credentials
+
+Open **More → API integrations** to create a named credential. Choose scopes, a 1–365 day lifetime and optional extra source CIDRs, then confirm with your current administrator password. Copy the secret once; only its digest is stored. Rotate by creating a replacement before revoking the old identity. Revocation applies on the next request. Credentials are preserved by normal updates; a backup restore disables API access and revokes restored credentials. Until generation and deployment controls are delivered, the API remains disabled.
+
+For emergency local recovery, run as the server administrator:
+
+```bash
+python3 /root/Access-Gate/scripts/revoke_api.py --all
+```
+
+This disables API access and revokes every integration credential without changing browser access, administrator passwords or the CA.
+
 ## Create a batch
 
 The first operation is `POST /api/v1/batches` on the configured canonical HTTPS portal origin. `https://access.example.org` is an example, not a default or a hosted service. No port or backend service needs to be opened for this contract.

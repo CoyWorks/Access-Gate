@@ -50,7 +50,7 @@ Agree the rules with the people using the devices, make any logging clear, and t
 
 Ready to put a timer on temptation? Start with the [installation guide](docs/INSTALLATION.md).
 
-**Version 0.37.0.** Browse the [documentation](docs/README.md), [connect a device](docs/CLIENT_SETUP.md), or check [deployment options](docs/DEPLOYMENTS.md).
+**Version 0.38.0.** Browse the [documentation](docs/README.md), [connect a device](docs/CLIENT_SETUP.md), or check [deployment options](docs/DEPLOYMENTS.md).
 
 Building an integration? The [REST API v1 contract](docs/REST_API.md) defines planned external code generation. This is a specification for upcoming implementation; API routes and integration credentials are not available yet.
 

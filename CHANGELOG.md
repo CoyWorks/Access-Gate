@@ -1,4 +1,7 @@
-# Unreleased
+# 0.38.0
+
+- Add independent expiring/scoped integration credentials, one-time secret display, revocation and local emergency recovery (#46).
+- Add schema 14 with disabled-by-default API policy. Restore disables the API and revokes restored credentials; existing browser/gateway authentication is unchanged.
 
 - Define the external code-generation API v1 contract and OpenAPI 3.1 specification (#45), including scoped bearer authentication, strict batch inputs, JSON errors and bounded idempotent replay.
 - Add contract validation and documentation links. This is design/validation only: no API routes, credentials, migrations or server settings are implemented by this change.
