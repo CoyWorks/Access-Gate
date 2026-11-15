@@ -50,9 +50,9 @@ Agree the rules with the people using the devices, make any logging clear, and t
 
 Ready to put a timer on temptation? Start with the [installation guide](docs/INSTALLATION.md).
 
-**Version 0.38.5.** Browse the [documentation](docs/README.md), [connect a device](docs/CLIENT_SETUP.md), or check [deployment options](docs/DEPLOYMENTS.md).
+**Version 0.38.6.** Browse the [documentation](docs/README.md), [connect a device](docs/CLIENT_SETUP.md), or check [deployment options](docs/DEPLOYMENTS.md).
 
-Building an integration? The opt-in [REST API v1](docs/REST_API.md) generates single-use codes using independent credentials, source-network controls and safe retries. Enable it under **More → API integrations**; existing installations keep it disabled.
+Building an integration? The opt-in [REST API v1](docs/REST_API.md) generates single-use codes using independent credentials, source-network controls and safe retries. Enable it under **More → API integrations**; existing installations keep it disabled. Start with the [curl, Python or PowerShell examples](examples/api/README.md).
 
 ## Clone and install
 
@@ -241,7 +241,7 @@ cd /opt/access-gate
 python3 configure.py --check
 ```
 
-The configured portal URL must have matching DNS and certificate coverage. The updater preserves deployment settings. Use the documented deployment profile for new installations; do not hand-edit listener or identity fields on an installed server. Gunicorn binds only to loopback. The gateway uses the actual HTTPS client peer address, trusts forwarded addresses only from the loopback HTTP proxy, strips private headers and hides `/internal/` from browsers. Do not expose the private API or upload config secrets, code exports, private keys or the runtime database to GitHub.
+The configured portal URL must have matching DNS and certificate coverage. The updater preserves deployment settings. Use the documented deployment profile for new installations; do not hand-edit listener or identity fields on an installed server. Gunicorn binds only to loopback. The gateway uses the actual HTTPS client peer address, trusts forwarded addresses only from the loopback HTTP proxy, strips private headers and hides `/internal/` from browsers. Keep internal gateway APIs and loopback backends private. The external [REST API](docs/REST_API.md) has separate opt-in credentials and source-network policy. Do not upload config secrets, code exports, private keys or the runtime database to GitHub.
 
 ## Runtime paths
 

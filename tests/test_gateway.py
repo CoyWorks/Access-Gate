@@ -201,7 +201,7 @@ class GatewayResolverTests(unittest.IsolatedAsyncioTestCase):
 class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
     async def test_rest_api_uses_verified_tls_and_preserves_safe_replay(self):
         self.store.save_api_policy(True,'127.0.0.0/8')
-        _,token=self.store.create_integration('TLS automation',['batches:create'])
+        _,token=self.store.create_integration('TLS automation',['batches:create','batches:read','batches:revoke'])
         headers={'Host':'portal.example','Authorization':'Bearer '+token,'Idempotency-Key':'real-tls-batch-operation','X-Real-IP':'192.0.2.99','X-Gate-HTTPS':'0'}
         url=f'https://portal.example:{self.port}/api/v1/batches'
         async with self.client.post(url,headers=headers,json={'count':2},allow_redirects=False) as response:
@@ -217,6 +217,13 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         async with self.client.post(url,headers=headers,data=b' '*16385) as response:
             self.assertEqual(response.status,413);self.assertEqual((await response.json())['error']['code'],'request_too_large')
         self.assertEqual(self.seen,[])
+        await self.activate(first['codes'][0]['code'])
+        response=await self.get('restricted.example')
+        self.assertEqual(response.status,200);self.assertEqual(await response.text(),'Origin reached')
+        async with self.client.post(f'https://portal.example:{self.port}/api/v1/codes/'+first['codes'][0]['id']+'/revoke',headers=headers,json={}) as response:
+            self.assertEqual(response.status,200);await response.read()
+        response=await self.get('restricted.example');self.assertEqual(response.status,302);await response.read()
+        self.assertEqual(len(self.seen),1)
 
     async def test_rest_api_has_independent_source_policy_and_rejects_http_or_wrong_host(self):
         import ipaddress
@@ -378,12 +385,13 @@ class GatewayTLSFlowTests(unittest.IsolatedAsyncioTestCase):
         return await self.client.request(method, f'https://{host}:{self.port}{path}', headers={'Host': host},
             data=data, allow_redirects=False, **kwargs)
 
-    async def activate(self):
+    async def activate(self,code=None):
         first = await self.get('restricted.example'); self.assertEqual(first.status, 302)
         entry = first.headers['Location'].split('entry=')[1]; await first.read()
         form = await self.get(path='/?entry='+entry)
         csrf = re.search(r'name="csrf" value="([^"]+)"', await form.text()).group(1)
-        _, codes = self.store.create_batch(count=1)
+        if code is None:_, codes = self.store.create_batch(count=1)
+        else:codes=[code]
         accepted = await self.get(path='/?entry='+entry, method='POST', data={'csrf': csrf, 'code': codes[0], 'entry': entry})
         self.assertEqual(accepted.status, 303)
         self.assertEqual(accepted.headers['Location'], '/continue?entry='+entry); await accepted.read()

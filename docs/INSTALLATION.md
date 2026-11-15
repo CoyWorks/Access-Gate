@@ -108,3 +108,12 @@ Existing installations receive an optional reminder, with no forced setup redire
 The checklist migration adds schema 13 tables without changing existing codes or configuration. Encrypted recovery archives retain the existing strict matching-schema requirement: keep the matching application version for old archives and create a new backup after updating.
 
 [Documentation overview](README.md) · [Project README](../README.md)
+
+
+## Optional external code-generation API
+
+The REST API is installed with the portal but defaults to disabled on new and upgraded installations. It uses the existing HTTPS listener; backend ports remain private. No extra Python/runtime package is needed for API operation.
+
+After the normal server update/install and readiness checks, open **More → API integrations**, select independent source CIDRs, enable the API with your current password and create a narrowly scoped expiring credential. Keep the canonical portal URL and verified certificate trust. A private/local server or the public authority can serve the API; remote gateway nodes cannot.
+
+Follow the [operator setup and integration examples](../examples/api/README.md) and the [disposable-server acceptance procedure](API_TESTING.md). Developer schema-validation packages are optional test dependencies and are not added to production installation packages.

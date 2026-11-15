@@ -1,3 +1,8 @@
+# 0.38.6
+
+- Document API enablement, credentials, canonical HTTPS trust, quotas, rotation, recovery and troubleshooting (#52).
+- Add runnable curl/Python/PowerShell clients with durable credential/URL/body-bound retry plans, private one-time outputs, redirect refusal and a conservative 24-hour local recovery window. Verify all three against disposable CA-verified HTTPS, including replay, unauthorized calls, stale plans, credential rotation and redirects.
+
 # 0.38.5
 
 - Validate real API responses against OpenAPI, require validator extras in the API check runner and add legacy migration/security acceptance coverage (#51).

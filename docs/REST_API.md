@@ -1,8 +1,10 @@
 # REST API v1 contract
 
-**Status: opt-in code generation implemented.** Enable the API under **More → API integrations** after updating the application and managed gateway/nginx configuration. Existing and fresh installations keep it disabled. The creation contract was defined in [#45](https://github.com/CoyWorks/Access-Gate/issues/45); delivery is tracked in [#44](https://github.com/CoyWorks/Access-Gate/issues/44).
+**Status: opt-in code generation, owned status and revocation implemented.** Enable the API under **More → API integrations** after updating the application and managed gateway/nginx configuration. Existing and fresh installations keep it disabled. The creation contract was defined in [#45](https://github.com/CoyWorks/Access-Gate/issues/45); delivery is tracked in [#44](https://github.com/CoyWorks/Access-Gate/issues/44).
 
 Use the checked-in [OpenAPI 3.1 specification](openapi/access-gate-v1.json) as the machine-readable reference. Its `info.version` describes the contract, independently of the Access Gate application version. The JSON file can be imported into OpenAPI tooling without a running server. The format follows the [OpenAPI 3.1 specification](https://spec.openapis.org/oas/v3.1.0).
+
+For ready-to-run curl, Python and PowerShell clients, start with the [integration examples and operator setup](../examples/api/README.md).
 
 ## Manage integration credentials
 
@@ -115,7 +117,7 @@ Concurrent identical requests must commit exactly one batch plus one replay reco
 
 Always authenticate, check network policy and scope, and enforce request budgets on every retry. Replays count against request budgets but must not consume the new-code generation budget again. Lost-response retries after a credential rotation must not use the replacement credential as if it were the same identity.
 
-After 30 days the server may prune the tombstone, and reusing that key might create a new batch. **Clients must never reuse old keys for a new operation or retry beyond `key_retained_until`.** Beyond the replay window, inspect/revoke the original batch through the administrator portal before intentionally replacing it with a new key. A restore can roll back batches and retry records together; reconcile outstanding operations after a restore before retrying. The runtime recovery guide must document replay-key backup and invalidation behavior in #48/#52.
+After 30 days the server may prune the tombstone, and reusing that key might create a new batch. **Clients must never reuse old keys for a new operation or retry beyond `key_retained_until`.** Beyond the replay window, inspect/revoke the original batch through the administrator portal before intentionally replacing it with a new key. A restore can roll back batches and retry records together; reconcile outstanding operations after a restore before retrying. The [recovery guide](RECOVERY.md) documents the backup and invalidation policy.
 
 ## Errors and transport
 
@@ -187,6 +189,21 @@ For collection reads, use `page_size` (integer 1–100, default 25) and `cursor`
 
 Send an explicit empty JSON object (`{}`) when revoking a batch or code. Revocation returns `200` with `revoked: true` and the target identifier, including when repeated. It ends associated active access through the existing authorization checks; it never extends or reopens access. Read responses expose counts, status, hints and redemption timestamps, without raw codes, addresses or session identifiers. Cleared/removed records remain visible as retained state.
 
+## Troubleshoot an integration
+
+| Symptom | Check |
+| --- | --- |
+| Certificate/hostname failure before HTTP | Use the configured portal identity and independently verified CA. Keep TLS verification enabled. |
+| `401` | Credential format, expiry and revocation. Browser logins and internal gateway keys cannot authenticate the integration. |
+| `403` | Global API source CIDRs, the source actually observed through any proxy, extra credential CIDRs and required operation scope. |
+| `404` | API enabled state, canonical authority/local portal URL and documented path; remote gateway nodes do not expose this API. |
+| `400` / `415` / `406` | Canonical host, strict JSON fields/units, required retry key, Content-Type and Accept. |
+| `409` | Stop and reconcile the original batch. Do not substitute another key automatically. |
+| `429` | Wait at least Retry-After, then reuse the same operation/key. Replays do not reset budgets. |
+| `500` / `503` / timeout | Preserve the same operation/key and use bounded backoff; check safe audit/request IDs and server health. |
+
+See **More → API integrations → Recent API requests** for attribution and status. Never upload bearer headers, raw code outputs, replay payloads or your database to troubleshoot an integration.
+
 ## Compatibility and validation
 
 Breaking changes require `/api/v2` or a pre-release contract revision explicitly noted before the first API release. Additive v1 operations and optional response fields are allowed; clients must ignore unrecognized response properties. Servers reject unknown request properties to prevent typo-driven defaults. The current specification closes response objects to catch accidental data leakage during validation; update the schemas and tests when deliberately adding response fields. Machine error codes and existing meanings remain stable; clients must still handle unfamiliar codes as failures.
@@ -199,6 +216,6 @@ python3 -m venv /tmp/access-gate-contract-venv
 /tmp/access-gate-contract-venv/bin/python -m unittest discover -s tests -p 'test_api_contract.py' -v
 ```
 
-The isolated checks validate OpenAPI structure, local references, examples, unit-dependent boundaries and error contracts. In a development environment with the normal application dependencies, run `python3 scripts/check_api.py` to include runtime and HTTP-response contract checks; missing validators or skipped checks fail that runner. Full discovery also includes real TLS gateway acceptance tests and existing browser/PWA/deployment regressions. Full operator setup and executable integration examples are in #52.
+The isolated checks validate OpenAPI structure, local references, examples, unit-dependent boundaries and error contracts. In a development environment with the normal application dependencies, run `python3 scripts/check_api.py` to include runtime and HTTP-response contract checks; missing validators or skipped checks fail that runner. Full discovery also includes real TLS gateway acceptance tests and existing browser/PWA/deployment regressions. The [integration examples](../examples/api/README.md) cover operator setup and executable clients.
 
 [API validation and acceptance](API_TESTING.md) · [Documentation overview](README.md) · [Project README](../README.md)

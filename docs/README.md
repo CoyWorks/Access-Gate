@@ -45,6 +45,8 @@ Addresses in the guides are examples. Use the values reviewed for your own insta
 
 ## Build an integration
 
+- [Connect an external program](../examples/api/README.md): operator setup and tested curl, Python and PowerShell clients.
+
 - [REST API v1 contract](REST_API.md) and [OpenAPI specification](openapi/access-gate-v1.json): opt-in external code generation with scoped integration credentials and safe retries. Existing installs keep API access disabled. Follow [#44](https://github.com/CoyWorks/Access-Gate/issues/44) for delivery.
 
 - [API validation and disposable-server acceptance](API_TESTING.md): contract checks and explicit end-to-end testing.

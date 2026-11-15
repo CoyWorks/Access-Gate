@@ -35,3 +35,18 @@ On replacement failure the worker attempts rollback with the same fail-closed re
 Automated synthetic-server tests exercise committed WAL backup, authenticated encryption, wrong-password/corruption/schema refusal, preview without replacement, full restore and post-restore revocation, readiness failure/rollback, duplicate jobs, symlink/path refusal and admin/CSRF/password controls. The exercise uses temporary certificate/database state and mocked service commands; final service/route/CA acceptance on the real server remains an operator check.
 
 Public/remote deployments additionally restore with registrations in the restored authority database revoked, MFA/recovery cleared and public-admin/remote-node mode disabled. Private-node credential/activation files are discarded; revoke the retired private-node ID on the separate authority as well. Retained inspection CAs are preserved. Re-enroll deliberately using [Public portal recovery](PUBLIC_PORTAL.md); ACME account/source directories remain external to this backup.
+
+
+## Integration API recovery
+
+Normal updates/restarts preserve API policy, credential digests, batch ownership and unexpired encrypted replay records in the application database. Back up configuration and database together: the existing application pepper derives a separate replay-encryption key. API credentials are never stored as plaintext; encrypted response payloads can contain usable visitor codes during their 24-hour replay window. Treat backups as secret server state.
+
+Applying a restore deliberately disables the API, revokes all restored integration credentials and clears replay, limiter and API-audit state. Batch ownership remains as retained provenance; restored codes/grants are revoked by the normal restore policy. Reconcile outstanding external operations before creating replacement credentials or re-enabling the API. A restored database is not permission to retry old operations with a new credential: that would be a different idempotency scope.
+
+For emergency local shutdown without a restore:
+
+```bash
+python3 /root/Access-Gate/scripts/revoke_api.py --all
+```
+
+This disables the API, revokes every integration credential and removes encrypted replay payloads. It does not change the administrator password, CA or existing browser grants. Revoke unwanted batches separately through administration.

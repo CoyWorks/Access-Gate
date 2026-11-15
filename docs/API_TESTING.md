@@ -10,6 +10,8 @@ python3 -m unittest discover -s tests -v
 
 Use a virtual environment or a disposable development system for package installation. Validation extras are not installed on production servers. `check_api.py` fails if validators are missing or any selected checks are skipped; the normal discovery command can skip optional schema checks when those extras are absent.
 
+Full discovery needs the optional built-in DNS dependency `dnspython` in the development environment, even when the tested server profile uses external DNS. The example-client tests additionally use curl/Bash and optionally PowerShell 7.4+; set `ACCESS_GATE_TEST_PWSH` to its executable when it is not on PATH. No certificate-verification bypass is used.
+
 The API checks cover actual JSON responses against OpenAPI, independent credential authentication, scopes, trusted sources, body/type validation, retry concurrency and encryption, bounded request/code budgets, ownership, pagination, revocation and migration. Full discovery also checks the verified-TLS gateway flow and existing browser, notification, certificate, deployment and recovery behavior. It does not contact or change a live installation.
 
 ## Opt-in HTTPS acceptance test

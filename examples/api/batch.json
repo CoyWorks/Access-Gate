@@ -1,0 +1,8 @@
+{
+  "name": "Weekly allowance",
+  "count": 10,
+  "validity_value": 7,
+  "validity_unit": "days",
+  "access_value": 15,
+  "access_unit": "minutes"
+}
