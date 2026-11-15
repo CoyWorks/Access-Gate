@@ -20,7 +20,7 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = json.loads((ROOT / 'docs/openapi/access-gate-v1.json').read_text())
-OPERATION = SPEC['paths']['/batches']['post']
+OPERATION = copy.deepcopy(SPEC['paths']['/batches']['post'])
 SCHEMAS = SPEC['components']['schemas']
 EXTRAS = 'Install tests/requirements-contract.txt to validate API schemas.'
 
@@ -32,16 +32,20 @@ def resolve(pointer):
     return value
 
 
+for status, response in list(OPERATION['responses'].items()):
+    if '$ref' in response:
+        OPERATION['responses'][status] = resolve(response['$ref'])
+
 def sample():
     return copy.deepcopy(OPERATION['responses']['201']['content']['application/json']['examples']['weeklyAllowance']['value'])
 
 
 class ContractStructureTests(unittest.TestCase):
-    def test_only_creation_is_exposed_and_followups_are_marked_reserved(self):
-        self.assertEqual(SPEC['x-implementation-status'], 'creation-implemented')
-        self.assertEqual(set(SPEC['paths']), {'/batches'})
-        self.assertEqual(set(SPEC['paths']['/batches']), {'post'})
-        self.assertEqual(len(SPEC['x-reserved-operations']), 5)
+    def test_only_scoped_generation_and_owned_lifecycle_operations_are_exposed(self):
+        self.assertEqual(SPEC['x-implementation-status'], 'implemented')
+        self.assertEqual(set(SPEC['paths']), {'/batches','/batches/{batch_id}','/batches/{batch_id}/codes','/batches/{batch_id}/revoke','/codes/{code_id}/revoke'})
+        self.assertEqual(set(SPEC['paths']['/batches']), {'post','get'})
+        self.assertEqual(SPEC['x-reserved-operations'], [])
         self.assertEqual(SPEC['security'], [{'integrationBearer': []}])
         self.assertEqual(OPERATION['x-required-scopes'], ['batches:create'])
         self.assertNotIn('profile_id', SCHEMAS['CreateBatchRequest']['properties'])

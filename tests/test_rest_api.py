@@ -133,7 +133,7 @@ class GenerationTests(APICase):
         self.assertEqual(self.call(json={}).status_code,400)
         self.assertEqual(self.call(data=' '*16385,content_type='application/json',headers=self.headers).status_code,413)
         self.assertEqual(self.call('/api/v1/batches?count=1',json={},headers=self.headers).status_code,400)
-        self.assertEqual(self.call(method='GET').status_code,405)
+        self.assertEqual(self.call(method='PUT').status_code,405)
         self.assertEqual(self.call('/api/v1/unknown').status_code,404)
 
 
@@ -236,3 +236,59 @@ class ExposureTests(GenerationTests):
         self.assertNotIn(self.token,raw)
         self.assertNotIn(data['codes'][0]['code'],raw)
         self.assertTrue(any(r['credential_id']==self.identity and r['request_id']==data['request_id'] and r['source']=='192.0.2.20' and r['batch_id']==data['batch_id'] for r in rows))
+
+
+class LifecycleTests(GenerationTests):
+    def setUp(self):
+        super().setUp()
+        from access_gate.integrations import SCOPES
+        self.identity,self.token=self.store.create_integration('Full automation',list(SCOPES))
+
+    def test_reads_never_expose_raw_codes_addresses_or_other_credentials_batches(self):
+        first=self.generate({'count':3}).json
+        _,other=self.store.create_integration('Other',['batches:create','batches:read','batches:revoke'])
+        for path in ('/api/v1/batches/'+first['batch_id'],'/api/v1/batches/'+first['batch_id']+'/codes'):
+            response=self.call(path,method='GET')
+            self.assertEqual(response.status_code,200,response.json)
+            for item in first['codes']:self.assertNotIn(item['code'].encode(),response.data)
+            self.assertNotIn(b'192.0.2.20',response.data)
+            self.assertEqual(self.call(path,method='GET',token=other).status_code,404)
+        self.assertEqual(self.call(method='GET',token=other).json['items'],[])
+        self.assertEqual(self.call(method='GET').json['items'][0]['batch_id'],first['batch_id'])
+
+    def test_code_and_batch_revocation_are_owned_and_idempotent(self):
+        data=self.generate({'count':2}).json
+        code=data['codes'][0]
+        self.store.redeem(code['code'],'192.0.2.20',browser_token='d'*64)
+        path='/api/v1/codes/'+code['id']+'/revoke'
+        _,other=self.store.create_integration('Other',['batches:revoke'])
+        self.assertEqual(self.call(path,json={},token=other).status_code,404)
+        for _ in range(2):self.assertEqual(self.call(path,json={}).status_code,200)
+        self.assertIsNone(self.store.browser_grant('d'*64))
+        batch='/api/v1/batches/'+data['batch_id']+'/revoke'
+        for _ in range(2):self.assertEqual(self.call(batch,json={}).status_code,200)
+        with self.assertRaises(GateError):self.store.redeem(data['codes'][1]['code'],'192.0.2.20')
+        self.assertEqual(self.call('/api/v1/batches/'+data['batch_id'],method='GET').json['batch']['counts']['revoked'],2)
+
+    def test_pagination_is_bounded_signed_and_scoped_to_collection(self):
+        data=self.generate({'count':5}).json
+        path='/api/v1/batches/'+data['batch_id']+'/codes?page_size=2'
+        seen=[];response=self.call(path,method='GET').json
+        seen.extend(i['id'] for i in response['items'])
+        cursor=response['next_cursor'];self.assertIsNotNone(cursor)
+        self.assertEqual(self.call('/api/v1/batches?cursor='+cursor+'&page_size=2',method='GET').status_code,400)
+        self.assertEqual(self.call(path+'&cursor='+cursor[:-1]+'!',method='GET').status_code,400)
+        while response['next_cursor']:
+            response=self.call(path+'&cursor='+response['next_cursor'],method='GET').json
+            seen.extend(i['id'] for i in response['items'])
+        self.assertEqual(len(seen),5);self.assertEqual(len(set(seen)),5)
+        for suffix in ('page_size=101','page_size=0','page_size=2&page_size=3','unknown=1'):
+            self.assertEqual(self.call('/api/v1/batches?'+suffix,method='GET').status_code,400)
+
+    def test_create_only_scope_cannot_read_or_revoke_and_manual_batches_stay_private(self):
+        batch,codes=self.store.create_batch(count=1)
+        self.assertEqual(self.call('/api/v1/batches/'+batch,method='GET').status_code,404)
+        self.assertEqual(self.call('/api/v1/batches/'+batch+'/revoke',json={}).status_code,404)
+        _,create_only=self.store.create_integration('Creation only',['batches:create'])
+        self.assertEqual(self.call(method='GET',token=create_only).status_code,403)
+        self.assertEqual(self.call('/api/v1/batches/'+batch+'/revoke',json={},token=create_only).status_code,403)

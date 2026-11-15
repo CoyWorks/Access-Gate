@@ -222,28 +222,35 @@ class Store(Integrations, SetupChecklist, Subscriptions, BrowserSessions, DNSExp
             db.commit()
         return expires
 
+    def _revoke_code(self,db,code_id):
+        changed=db.execute('UPDATE codes SET revoked=1 WHERE id=? AND revoked=0',(code_id,)).rowcount
+        db.execute('UPDATE grants SET revoked=1 WHERE code=?',(code_id,))
+        if changed:self._event(db,'code.revoked',code_id=code_id)
+
     def revoke(self, code_id):
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            changed=db.execute('UPDATE codes SET revoked=1 WHERE id=? AND revoked=0',(code_id,)).rowcount
-            db.execute('UPDATE grants SET revoked=1 WHERE code=?',(code_id,))
-            if changed:self._event(db,'code.revoked',code_id=code_id)
+            self._revoke_code(db,code_id)
             db.commit()
 
-    def revoke_batch(self, batch_id, now=None):
-        now = time.time() if now is None else now
+    def _revoke_batch(self,db,batch_id,now):
+        from .core import GateError
+        if not db.execute('SELECT id FROM batches WHERE id=?',(batch_id,)).fetchone():raise GateError('Batch not found.')
+        count=db.execute('SELECT count(*) FROM codes WHERE batch=? AND revoked=0',(batch_id,)).fetchone()[0]
+        active=db.execute('SELECT count(*) FROM grants WHERE code IN(SELECT id FROM codes WHERE batch=?) AND revoked=0 AND expires>?',(batch_id,now)).fetchone()[0]
+        db.execute('UPDATE batches SET revoked=1 WHERE id=?',(batch_id,))
+        db.execute('UPDATE codes SET revoked=1 WHERE batch=?',(batch_id,))
+        db.execute('UPDATE grants SET revoked=1 WHERE code IN(SELECT id FROM codes WHERE batch=?)',(batch_id,))
+        self._event(db,'batch.revoked',batch_id=batch_id,details=dict(count=count,active=active),now=now)
+        return count,active
+
+    def revoke_batch(self,batch_id,now=None):
+        now=time.time() if now is None else now
         with self.connect() as db:
             db.execute('BEGIN IMMEDIATE')
-            if not db.execute('SELECT id FROM batches WHERE id=?',(batch_id,)).fetchone(): raise GateError('Batch not found.')
-            count = db.execute('SELECT count(*) FROM codes WHERE batch=? AND revoked=0',(batch_id,)).fetchone()[0]
-            active = db.execute('''SELECT count(*) FROM grants WHERE code IN(SELECT id FROM codes WHERE batch=?)
-                AND revoked=0 AND expires>?''',(batch_id,now)).fetchone()[0]
-            db.execute('UPDATE batches SET revoked=1 WHERE id=?',(batch_id,))
-            db.execute('UPDATE codes SET revoked=1 WHERE batch=?',(batch_id,))
-            db.execute('UPDATE grants SET revoked=1 WHERE code IN(SELECT id FROM codes WHERE batch=?)',(batch_id,))
-            self._event(db,'batch.revoked',batch_id=batch_id,details=dict(count=count,active=active),now=now)
+            result=self._revoke_batch(db,batch_id,now)
             db.commit()
-        return count, active
+        return result
 
     def clear_revoked(self, batch_id=None, now=None):
         now = time.time() if now is None else now

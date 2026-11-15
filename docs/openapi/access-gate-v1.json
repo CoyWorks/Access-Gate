@@ -3,8 +3,8 @@
   "jsonSchemaDialect": "https://json-schema.org/draft/2020-12/schema",
   "info": {
     "title": "Access Gate integration API",
-    "version": "1.0.0",
-    "description": "Opt-in external code generation with independently scoped bearer credentials. Existing installations default to disabled. Creation, encrypted replay and deployment controls delivered in #46\u2013#49; follow-up read/revoke operations remain reserved until #50. Specification version is independent of the installed application version."
+    "version": "1.1.0",
+    "description": "Opt-in integration API for single-use code generation, encrypted creation replay and credential-owned status/revocation. Existing installations default to disabled. Credentials do not grant browser/admin access; source CIDRs and separate scopes apply. Specification version is independent of the installed application version."
   },
   "servers": [
     {
@@ -78,597 +78,40 @@
         },
         "responses": {
           "400": {
-            "description": "Bad request; invalid JSON (including duplicate keys/non-finite numbers), fields, host/transport or retry key.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "invalid_json",
-                                "invalid_request",
-                                "invalid_idempotency_key",
-                                "invalid_host",
-                                "insecure_transport"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "invalid_request",
-                        "message": "The request is invalid.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error400"
           },
           "401": {
-            "description": "Missing, malformed, expired or revoked bearer credential. No login redirect.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              },
-              "WWW-Authenticate": {
-                "$ref": "#/components/headers/Authenticate"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "unauthorized"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "unauthorized",
-                        "message": "A valid integration credential is required.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error401"
           },
           "403": {
-            "description": "Credential lacks batches:create or the effective source is not allowed.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "forbidden"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "forbidden",
-                        "message": "This integration is not permitted to create batches.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error403"
           },
           "404": {
-            "description": "API disabled or unknown API resource.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "api_disabled",
-                                "not_found"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "not_found",
-                        "message": "The requested API resource was not found.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error404"
           },
           "405": {
-            "description": "Unsupported method on the batch creation resource.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              },
-              "Allow": {
-                "$ref": "#/components/headers/Allow"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "method_not_allowed"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "method_not_allowed",
-                        "message": "This resource accepts POST.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error405"
           },
           "406": {
-            "description": "The Accept header excludes application/json.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "not_acceptable"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "not_acceptable",
-                        "message": "This API produces application/json.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error406"
           },
           "409": {
-            "description": "Retry key conflicts with input or its secret replay payload has expired. No new batch is created.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "idempotency_conflict",
-                                "replay_expired"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "idempotency_conflict",
-                        "message": "This retry key was used with a different request.",
-                        "details": []
-                      }
-                    }
-                  },
-                  "expiredReplay": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "replay_expired",
-                        "message": "The original codes are no longer available for replay.",
-                        "details": [],
-                        "batch_id": "1234567890abcdef"
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error409"
           },
           "413": {
-            "description": "Body exceeds 16384 bytes; the edge must use the same JSON envelope.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "request_too_large"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "request_too_large",
-                        "message": "The request body is too large.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error413"
           },
           "415": {
-            "description": "Content-Type is not application/json or uses an unsupported charset/content encoding.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "unsupported_media_type"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "unsupported_media_type",
-                        "message": "Send uncompressed UTF-8 application/json.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error415"
           },
           "429": {
-            "description": "A source, credential or global budget is exhausted. No new batch is created.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              },
-              "Retry-After": {
-                "$ref": "#/components/headers/RetryAfter"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "rate_limited"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "rate_limited",
-                        "message": "The API request limit was reached.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error429"
           },
           "500": {
-            "description": "Unexpected server failure. Never include exception text or secrets.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "internal_error"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "internal_error",
-                        "message": "The API could not complete this request.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error500"
           },
           "503": {
-            "description": "Temporarily unavailable, including locked storage or unavailable replay decryption. Never create a replacement batch.",
-            "headers": {
-              "X-Request-ID": {
-                "$ref": "#/components/headers/RequestId"
-              },
-              "Cache-Control": {
-                "$ref": "#/components/headers/NoStore"
-              },
-              "Retry-After": {
-                "$ref": "#/components/headers/RetryAfter"
-              }
-            },
-            "content": {
-              "application/json": {
-                "schema": {
-                  "allOf": [
-                    {
-                      "$ref": "#/components/schemas/ErrorResponse"
-                    },
-                    {
-                      "properties": {
-                        "error": {
-                          "properties": {
-                            "code": {
-                              "enum": [
-                                "service_unavailable"
-                              ]
-                            }
-                          }
-                        }
-                      }
-                    }
-                  ]
-                },
-                "examples": {
-                  "example": {
-                    "value": {
-                      "request_id": "1234567890abcdef1234567890abcdef",
-                      "error": {
-                        "code": "service_unavailable",
-                        "message": "The API is temporarily unavailable.",
-                        "details": []
-                      }
-                    }
-                  }
-                }
-              }
-            }
+            "$ref": "#/components/responses/Error503"
           },
           "201": {
             "description": "Created once, or replayed with the same 201 status during the 24-hour replay window. Only request_id changes on replay.",
@@ -752,7 +195,81 @@
             }
           },
           "default": {
-            "description": "Other HTTP failures inside the configured API edge use the same JSON error envelope. TLS/network failures have no API envelope.",
+            "$ref": "#/components/responses/Errordefault"
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Batches"
+        ],
+        "operationId": "listBatches",
+        "summary": "listBatches",
+        "description": "Owned resources only. Unknown and non-owned resources return the same 404. No raw codes, visitor IPs, browser cookies or browsing history.",
+        "x-required-scopes": [
+          "batches:read"
+        ],
+        "parameters": [
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Opaque signed cursor bound to credential, collection, parent batch and page size. Use the same page size on subsequent pages."
+          }
+        ],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "406": {
+            "$ref": "#/components/responses/Error406"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "default": {
+            "$ref": "#/components/responses/Errordefault"
+          },
+          "200": {
+            "description": "Successful owned-resource result. Revocation is safe to repeat.",
             "headers": {
               "X-Request-ID": {
                 "$ref": "#/components/headers/RequestId"
@@ -764,9 +281,367 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/BatchCollection"
                 }
               }
+            }
+          }
+        }
+      }
+    },
+    "/batches/{batch_id}": {
+      "get": {
+        "tags": [
+          "Batches"
+        ],
+        "operationId": "getBatch",
+        "summary": "getBatch",
+        "description": "Owned resources only. Unknown and non-owned resources return the same 404. No raw codes, visitor IPs, browser cookies or browsing history.",
+        "x-required-scopes": [
+          "batches:read"
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "406": {
+            "$ref": "#/components/responses/Error406"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "default": {
+            "$ref": "#/components/responses/Errordefault"
+          },
+          "200": {
+            "description": "Successful owned-resource result. Revocation is safe to repeat.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchDetailResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/batches/{batch_id}/codes": {
+      "get": {
+        "tags": [
+          "Batches"
+        ],
+        "operationId": "listCodes",
+        "summary": "listCodes",
+        "description": "Owned resources only. Unknown and non-owned resources return the same 404. No raw codes, visitor IPs, browser cookies or browsing history.",
+        "x-required-scopes": [
+          "batches:read"
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          },
+          {
+            "name": "page_size",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "description": "Opaque signed cursor bound to credential, collection, parent batch and page size. Use the same page size on subsequent pages."
+          }
+        ],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "406": {
+            "$ref": "#/components/responses/Error406"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "default": {
+            "$ref": "#/components/responses/Errordefault"
+          },
+          "200": {
+            "description": "Successful owned-resource result. Revocation is safe to repeat.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeCollection"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/batches/{batch_id}/revoke": {
+      "post": {
+        "tags": [
+          "Batches"
+        ],
+        "operationId": "revokeBatch",
+        "summary": "revokeBatch",
+        "description": "Owned resources only. Unknown and non-owned resources return the same 404. No raw codes, visitor IPs, browser cookies or browsing history.",
+        "x-required-scopes": [
+          "batches:revoke"
+        ],
+        "parameters": [
+          {
+            "name": "batch_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "406": {
+            "$ref": "#/components/responses/Error406"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "default": {
+            "$ref": "#/components/responses/Errordefault"
+          },
+          "200": {
+            "description": "Successful owned-resource result. Revocation is safe to repeat.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchRevocation"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyObject"
+              },
+              "example": {}
+            }
+          }
+        }
+      }
+    },
+    "/codes/{code_id}/revoke": {
+      "post": {
+        "tags": [
+          "Batches"
+        ],
+        "operationId": "revokeCode",
+        "summary": "revokeCode",
+        "description": "Owned resources only. Unknown and non-owned resources return the same 404. No raw codes, visitor IPs, browser cookies or browsing history.",
+        "x-required-scopes": [
+          "batches:revoke"
+        ],
+        "parameters": [
+          {
+            "name": "code_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Identifier"
+            }
+          }
+        ],
+        "responses": {
+          "400": {
+            "$ref": "#/components/responses/Error400"
+          },
+          "401": {
+            "$ref": "#/components/responses/Error401"
+          },
+          "403": {
+            "$ref": "#/components/responses/Error403"
+          },
+          "404": {
+            "$ref": "#/components/responses/Error404"
+          },
+          "405": {
+            "$ref": "#/components/responses/Error405"
+          },
+          "406": {
+            "$ref": "#/components/responses/Error406"
+          },
+          "413": {
+            "$ref": "#/components/responses/Error413"
+          },
+          "415": {
+            "$ref": "#/components/responses/Error415"
+          },
+          "429": {
+            "$ref": "#/components/responses/Error429"
+          },
+          "500": {
+            "$ref": "#/components/responses/Error500"
+          },
+          "503": {
+            "$ref": "#/components/responses/Error503"
+          },
+          "default": {
+            "$ref": "#/components/responses/Errordefault"
+          },
+          "200": {
+            "description": "Successful owned-resource result. Revocation is safe to repeat.",
+            "headers": {
+              "X-Request-ID": {
+                "$ref": "#/components/headers/RequestId"
+              },
+              "Cache-Control": {
+                "$ref": "#/components/headers/NoStore"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CodeRevocation"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EmptyObject"
+              },
+              "example": {}
             }
           }
         }
@@ -1100,6 +975,279 @@
           "request_id",
           "error"
         ]
+      },
+      "BatchCounts": {
+        "type": "object",
+        "properties": {
+          "unused": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "redeemed": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "revoked": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "expired": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "future": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "cleared": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "active": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "unused",
+          "redeemed",
+          "revoked",
+          "expired",
+          "future",
+          "cleared",
+          "active"
+        ],
+        "additionalProperties": false
+      },
+      "BatchStatus": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "created_at": {
+            "$ref": "#/components/schemas/UtcTimestamp"
+          },
+          "valid_from": {
+            "$ref": "#/components/schemas/UtcTimestamp"
+          },
+          "valid_until": {
+            "$ref": "#/components/schemas/UtcTimestamp"
+          },
+          "access_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "maximum": 604800
+          },
+          "revoked": {
+            "type": "boolean"
+          },
+          "removed": {
+            "type": "boolean"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/BatchCounts"
+          }
+        },
+        "required": [
+          "batch_id",
+          "name",
+          "count",
+          "created_at",
+          "valid_from",
+          "valid_until",
+          "access_seconds",
+          "revoked",
+          "removed",
+          "counts"
+        ],
+        "additionalProperties": false
+      },
+      "CodeStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "hint": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 4
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "unused",
+              "redeemed",
+              "revoked",
+              "expired",
+              "future"
+            ]
+          },
+          "redeemed_at": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/UtcTimestamp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "cleared": {
+            "type": "boolean"
+          },
+          "active": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "hint",
+          "status",
+          "redeemed_at",
+          "cleared",
+          "active"
+        ],
+        "additionalProperties": false
+      },
+      "BatchCollection": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/BatchStatus"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "request_id",
+          "items",
+          "next_cursor"
+        ],
+        "additionalProperties": false
+      },
+      "CodeCollection": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "items": {
+            "type": "array",
+            "maxItems": 100,
+            "items": {
+              "$ref": "#/components/schemas/CodeStatus"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 256
+          }
+        },
+        "required": [
+          "request_id",
+          "items",
+          "next_cursor"
+        ],
+        "additionalProperties": false
+      },
+      "BatchDetailResponse": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "batch": {
+            "$ref": "#/components/schemas/BatchStatus"
+          }
+        },
+        "required": [
+          "request_id",
+          "batch"
+        ],
+        "additionalProperties": false
+      },
+      "BatchRevocation": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "batch_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "revoked": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "request_id",
+          "batch_id",
+          "revoked"
+        ],
+        "additionalProperties": false
+      },
+      "CodeRevocation": {
+        "type": "object",
+        "properties": {
+          "request_id": {
+            "$ref": "#/components/schemas/RequestId"
+          },
+          "code_id": {
+            "$ref": "#/components/schemas/Identifier"
+          },
+          "revoked": {
+            "type": "boolean",
+            "const": true
+          }
+        },
+        "required": [
+          "request_id",
+          "code_id",
+          "revoked"
+        ],
+        "additionalProperties": false
+      },
+      "EmptyObject": {
+        "type": "object",
+        "additionalProperties": false,
+        "maxProperties": 0
       }
     },
     "headers": {
@@ -1147,10 +1295,14 @@
         "required": true
       },
       "Allow": {
-        "description": "Methods allowed on the requested resource.",
+        "description": "GET on read resources; POST on revocation resources; GET, POST on /batches.",
         "schema": {
           "type": "string",
-          "const": "POST"
+          "enum": [
+            "GET",
+            "POST",
+            "GET, POST"
+          ]
         },
         "required": true
       }
@@ -1162,39 +1314,626 @@
         "bearerFormat": "opaque integration credential",
         "description": "Independent integration credential issued by an administrator (#46). Required scope is declared by each operation. Never use browser cookies, the admin password, internal ACL keys or gateway credentials."
       }
+    },
+    "responses": {
+      "Error400": {
+        "description": "Bad request; invalid JSON (including duplicate keys/non-finite numbers), fields, host/transport or retry key.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "invalid_json",
+                            "invalid_request",
+                            "invalid_idempotency_key",
+                            "invalid_host",
+                            "insecure_transport"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "invalid_request",
+                    "message": "The request is invalid.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error401": {
+        "description": "Missing, malformed, expired or revoked bearer credential. No login redirect.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "WWW-Authenticate": {
+            "$ref": "#/components/headers/Authenticate"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "unauthorized"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "unauthorized",
+                    "message": "A valid integration credential is required.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error403": {
+        "description": "Credential lacks batches:create or the effective source is not allowed.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "forbidden"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "forbidden",
+                    "message": "This integration is not permitted to create batches.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error404": {
+        "description": "API disabled or unknown API resource.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "api_disabled",
+                            "not_found"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "not_found",
+                    "message": "The requested API resource was not found.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error405": {
+        "description": "Unsupported method on the batch creation resource.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "Allow": {
+            "$ref": "#/components/headers/Allow"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "method_not_allowed"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "method_not_allowed",
+                    "message": "This resource accepts POST.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error406": {
+        "description": "The Accept header excludes application/json.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "not_acceptable"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "not_acceptable",
+                    "message": "This API produces application/json.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error409": {
+        "description": "Retry key conflicts with input or its secret replay payload has expired. No new batch is created.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "idempotency_conflict",
+                            "replay_expired"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "idempotency_conflict",
+                    "message": "This retry key was used with a different request.",
+                    "details": []
+                  }
+                }
+              },
+              "expiredReplay": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "replay_expired",
+                    "message": "The original codes are no longer available for replay.",
+                    "details": [],
+                    "batch_id": "1234567890abcdef"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error413": {
+        "description": "Body exceeds 16384 bytes; the edge must use the same JSON envelope.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "request_too_large"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "request_too_large",
+                    "message": "The request body is too large.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error415": {
+        "description": "Content-Type is not application/json or uses an unsupported charset/content encoding.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "unsupported_media_type"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "unsupported_media_type",
+                    "message": "Send uncompressed UTF-8 application/json.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error429": {
+        "description": "A source, credential or global budget is exhausted. No new batch is created.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "rate_limited"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "rate_limited",
+                    "message": "The API request limit was reached.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error500": {
+        "description": "Unexpected server failure. Never include exception text or secrets.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "internal_error"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "internal_error",
+                    "message": "The API could not complete this request.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Error503": {
+        "description": "Temporarily unavailable, including locked storage or unavailable replay decryption. Never create a replacement batch.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          },
+          "Retry-After": {
+            "$ref": "#/components/headers/RetryAfter"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                {
+                  "properties": {
+                    "error": {
+                      "properties": {
+                        "code": {
+                          "enum": [
+                            "service_unavailable"
+                          ]
+                        }
+                      }
+                    }
+                  }
+                }
+              ]
+            },
+            "examples": {
+              "example": {
+                "value": {
+                  "request_id": "1234567890abcdef1234567890abcdef",
+                  "error": {
+                    "code": "service_unavailable",
+                    "message": "The API is temporarily unavailable.",
+                    "details": []
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "Errordefault": {
+        "description": "Other HTTP failures inside the configured API edge use the same JSON error envelope. TLS/network failures have no API envelope.",
+        "headers": {
+          "X-Request-ID": {
+            "$ref": "#/components/headers/RequestId"
+          },
+          "Cache-Control": {
+            "$ref": "#/components/headers/NoStore"
+          }
+        },
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorResponse"
+            }
+          }
+        }
+      }
     }
   },
-  "x-implementation-status": "creation-implemented",
+  "x-implementation-status": "implemented",
   "x-tracking-issue": "https://github.com/CoyWorks/Access-Gate/issues/44",
-  "x-reserved-operations": [
-    {
-      "method": "GET",
-      "path": "/batches",
-      "scope": "batches:read"
-    },
-    {
-      "method": "GET",
-      "path": "/batches/{batch_id}",
-      "scope": "batches:read"
-    },
-    {
-      "method": "GET",
-      "path": "/batches/{batch_id}/codes",
-      "scope": "batches:read"
-    },
-    {
-      "method": "POST",
-      "path": "/batches/{batch_id}/revoke",
-      "scope": "batches:revoke"
-    },
-    {
-      "method": "POST",
-      "path": "/codes/{code_id}/revoke",
-      "scope": "batches:revoke"
-    }
-  ],
+  "x-reserved-operations": [],
   "x-pagination-convention": {
-    "status": "reserved for follow-up #50",
+    "status": "implemented; codes use descending identifier order because batch codes share a creation time",
     "page_size": {
       "minimum": 1,
       "maximum": 100,

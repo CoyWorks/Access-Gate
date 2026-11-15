@@ -1,3 +1,8 @@
+# 0.38.4
+
+- Add credential-owned batch/code status and idempotent revocation with separate read/revoke scopes (#50).
+- Use signed collection-bound pagination, allowlisted status fields and shared revocation transactions. Manual/other-credential objects stay private; ordinary reads never disclose raw codes or visitor data. Extend OpenAPI to contract 1.1.0.
+
 # 0.38.3
 
 - Enable the opt-in REST API with independent source CIDRs, trusted HTTPS/canonical-host checks, shared SQLite request/code budgets and bounded safe audit history (#49).

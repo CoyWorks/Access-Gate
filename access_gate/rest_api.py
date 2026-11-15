@@ -66,7 +66,7 @@ class RestAPI:
         response.headers.update({'X-Request-ID':g.api_request_id,'Cache-Control':'no-store'})
         if replayed is not None:response.headers['Idempotency-Replayed']='true' if replayed else 'false'
         if status==401:response.headers['WWW-Authenticate']='Bearer realm="Access Gate API"'
-        if status==405:response.headers['Allow']='POST'
+        if status==405:response.headers['Allow']=getattr(g,'api_allowed_method','POST')
         if status in (429,503):response.headers['Retry-After']='3600' if status==429 else '60'
         if getattr(g,'api_audit_allowed',False):
             try:self.store.api_audit(getattr(g,'api_credential',{}).get('id'),'replay' if replayed else 'request',data.get('batch_id'),g.api_request_id,g.api_address,status)
@@ -119,8 +119,10 @@ class RestAPI:
     def dispatch(self):
         credential=self.authenticate()
         if not GENERATION_READY:raise APIError(404,'not_found','The requested API resource was not found.')
-        if request.path!='/api/v1/batches':raise APIError(404,'not_found','The requested API resource was not found.')
-        if request.method!='POST':raise APIError(405,'method_not_allowed','This resource accepts POST.')
+        if request.path=='/api/v1/batches':g.api_allowed_method='GET, POST'
+        if request.path!='/api/v1/batches' or request.method=='GET':
+            return self.lifecycle(credential)
+        if request.method!='POST':raise APIError(405,'method_not_allowed','This resource accepts GET or POST.')
         if 'batches:create' not in credential['scopes']:raise APIError(403,'forbidden','This operation is not permitted.')
         if request.query_string:raise APIError(400,'invalid_request','This operation accepts no query parameters.')
         if request.headers.get('Accept') and not request.accept_mimetypes.accept_json:raise APIError(406,'not_acceptable','This API produces application/json.')
@@ -130,3 +132,28 @@ class RestAPI:
         result,replayed=self.store.api_create_batch(credential['id'],g.api_address,key,values,g.api_request_id)
         result['portal_url']=self.config['portal_url'].rstrip('/')+'/'
         return self.response(result,201,replayed)
+
+    def lifecycle(self,credential):
+        path=request.path
+        batch=code=None
+        collection=False
+        if path=='/api/v1/batches':kind='batches';collection=True;method='GET'
+        else:
+            match=re.fullmatch(r'/api/v1/batches/([a-f0-9]{16})(?:/(codes|revoke))?',path)
+            code_match=re.fullmatch(r'/api/v1/codes/([a-f0-9]{16})/revoke',path)
+            if match:
+                batch=match[1];kind=match[2] or 'detail';collection=kind=='codes';method='POST' if kind=='revoke' else 'GET'
+            elif code_match:code=code_match[1];kind='revoke';method='POST'
+            else:raise APIError(404,'not_found','The requested API resource was not found.')
+        g.api_allowed_method=method
+        if request.method!=method:raise APIError(405,'method_not_allowed','Use the documented method for this resource.')
+        scope='batches:revoke' if kind=='revoke' else 'batches:read'
+        if scope not in credential['scopes']:raise APIError(403,'forbidden','This operation is not permitted.')
+        allowed={'page_size','cursor'} if collection else set()
+        if set(request.args)-allowed or any(len(request.args.getlist(k))!=1 for k in request.args):raise APIError(400,'invalid_request','Invalid collection parameters.')
+        size=request.args.get('page_size','25')
+        if not re.fullmatch(r'[0-9]{1,3}',size) or not 1<=int(size)<=100:raise APIError(400,'invalid_request','Page size must be between 1 and 100.')
+        if kind=='revoke' and json_body()!={}:raise APIError(400,'invalid_request','Revocation accepts only an empty JSON object.')
+        if request.headers.get('Accept') and not request.accept_mimetypes.accept_json:raise APIError(406,'not_acceptable','This API produces application/json.')
+        result=self.store.api_lifecycle(credential['id'],g.api_address,kind,batch,code,int(size),request.args.get('cursor'),g.api_request_id)
+        return self.response(result)

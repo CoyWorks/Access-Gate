@@ -148,7 +148,7 @@ Example field error:
 | `401` | `unauthorized` | Correct/replace the credential. Includes `WWW-Authenticate: Bearer realm="Access Gate API"`. |
 | `403` | `forbidden` | Check credential scope and effective-source network policy. |
 | `404` | `api_disabled`, `not_found` | Check feature availability and path. A disabled API may return generic `not_found` rather than disclose configuration. |
-| `405` | `method_not_allowed` | Use POST; includes `Allow: POST` on `/batches`. |
+| `405` | `method_not_allowed` | Use POST; includes an operation-appropriate `Allow` header (`GET, POST` on `/batches`). |
 | `406` | `not_acceptable` | Permit `application/json` in Accept. |
 | `409` | `idempotency_conflict`, `replay_expired` | Stop automatic retries; reconcile the original operation. |
 | `413` | `request_too_large` | Reduce the body below 16385 bytes. |
@@ -169,9 +169,9 @@ Recent API audit records appear on the integrations screen (100 shown); retain a
 
 The API is opt-in. Public visitor-portal access must not automatically enable API access or expose administration. API routes use bearer authentication and independent network policy; they do not change `/admin/api/*`, `/internal/*` or `/gateway/v1/*`. Use the configured HTTPS origin, reject wrong host/scheme rather than redirecting secrets, and provide no permissive cross-origin browser access. Edge HTTP requests may be rejected before reaching the app; never send a bearer credential over HTTP to discover a redirect.
 
-## Reserved follow-up operations
+## Read status and revoke codes
 
-These are **reserved designs for #50**, not implemented operations. They are listed under `x-reserved-operations` rather than published as executable OpenAPI paths:
+The following operations are implemented with independent scopes. Choose the needed scopes when creating the credential; existing creation-only credentials do not gain them automatically.
 
 | Method and path below `/api/v1` | Scope |
 | --- | --- |
@@ -183,7 +183,9 @@ These are **reserved designs for #50**, not implemented operations. They are lis
 
 Reads and mutations are restricted to objects created by the same credential. A rotation creates a new identity; managing older batches remains possible through the admin UI. Ordinary reads must never return raw codes, browser cookies, visitor IPs or browsing history. Unknown and non-owned objects use the same `404` response. Revocation is safe to repeat.
 
-For future collection reads, reserve `page_size` (integer 1–100, default 25) and `cursor` (opaque, 1–256 characters when supplied). Responses use `items` and `next_cursor` (opaque string or `null`), with deterministic descending creation-time/identifier order. Reject invalid/foreign cursor contexts; never encode secrets in cursors. Concurrent changes need not provide a snapshot, so clients deduplicate identifiers. #50 must define item/filter/cursor schemas in OpenAPI before exposing those routes. No pagination parameters are accepted by batch creation.
+For collection reads, use `page_size` (integer 1–100, default 25) and `cursor` (opaque, 1–256 characters when supplied). Responses use `items` and `next_cursor` (opaque string or `null`), with deterministic descending creation-time/identifier order for batches; codes within one batch use descending identifier order because they share a creation time. Reject invalid/foreign cursor contexts; never encode secrets in cursors. Concurrent changes need not provide a snapshot, so clients deduplicate identifiers. The OpenAPI reference defines item/cursor schemas. Only `page_size` and `cursor` query parameters are accepted; duplicate and unknown parameters are rejected. No pagination parameters are accepted by batch creation.
+
+Send an explicit empty JSON object (`{}`) when revoking a batch or code. Revocation returns `200` with `revoked: true` and the target identifier, including when repeated. It ends associated active access through the existing authorization checks; it never extends or reopens access. Read responses expose counts, status, hints and redemption timestamps, without raw codes, addresses or session identifiers. Cleared/removed records remain visible as retained state.
 
 ## Compatibility and validation
 
